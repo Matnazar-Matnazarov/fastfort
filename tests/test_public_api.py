@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 
 import fastfort
@@ -27,8 +28,16 @@ def test_all_exports_exist() -> None:
 def test_importing_fastfort_does_not_pull_in_an_orm() -> None:
     """`import fastfort` must work without any optional dependency installed.
 
-    An ORM is only required once a backend is constructed, so users who install
-    the bare package still get a working import.
+    Checked in a fresh interpreter: within this session other tests have already
+    imported the SQLAlchemy backend, so `sys.modules` here proves nothing.
     """
-    assert "fastfort.orm.sqlalchemy" not in sys.modules
-    assert "fastfort.orm.tortoise" not in sys.modules
+    probe = (
+        "import sys, fastfort; "
+        "leaked = [m for m in sys.modules if m.split('.')[0] "
+        "in {'sqlalchemy', 'tortoise', 'asyncpg', 'asyncmy', 'aiosqlite'}]; "
+        "print(','.join(sorted(leaked)))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    )
+    assert result.stdout.strip() == "", f"importing fastfort pulled in: {result.stdout.strip()}"
