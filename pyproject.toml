@@ -78,6 +78,9 @@ path = "fastfort/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["fastfort"]
+# Stylesheets, templates and JavaScript are data files, so they need naming
+# explicitly or the wheel ships a package with no interface.
+artifacts = ["fastfort/ui/static/**", "fastfort/ui/templates/**"]
 
 [tool.hatch.build.targets.sdist]
 include = ["/fastfort", "/tests", "/README.md", "/LICENSE", "/CHANGELOG.md"]
