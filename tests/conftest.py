@@ -17,9 +17,10 @@ Connection strings can be overridden through the environment::
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
-from typing import TYPE_CHECKING
+from collections.abc import AsyncIterator, Iterator
+from typing import TYPE_CHECKING, Any
 
+import httpx
 import pytest
 
 if TYPE_CHECKING:
@@ -99,3 +100,25 @@ def db_url(db_backend: str, tmp_path: Path) -> Iterator[str]:
 
     env_var = f"FASTFORT_TEST_{db_backend.upper()}_URL"
     yield os.environ.get(env_var, DEFAULT_URLS[db_backend])
+
+
+@pytest.fixture
+async def client_for() -> AsyncIterator[Any]:
+    """Factory returning an httpx client wired straight to an ASGI app.
+
+    Requests go through the real routing and middleware stack without opening a
+    socket, which is what makes these tests worth writing.
+    """
+    opened: list[httpx.AsyncClient] = []
+
+    async def factory(app: Any) -> httpx.AsyncClient:
+        client = httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+        )
+        opened.append(client)
+        return client
+
+    yield factory
+
+    for client in opened:
+        await client.aclose()
