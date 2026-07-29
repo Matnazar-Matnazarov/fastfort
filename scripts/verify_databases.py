@@ -36,7 +36,7 @@ URLS = {
     ),
     "mysql": os.environ.get(
         "FASTFORT_TEST_MYSQL_URL",
-        "mysql+asyncmy://fastfort:fastfort@localhost:33306/fastfort_test",
+        "mysql+aiomysql://fastfort:fastfort@localhost:33306/fastfort_test",
     ),
 }
 
