@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_FROZEN: "1"
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Linting, typing and architecture rules -- the fastest gate, so it runs first.
+  # -------------------------------------------------------------------------
+  quality:
+    name: Lint · types · architecture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --all-extras
+
+      - name: ruff check
+        run: uv run ruff check --output-format=github .
+
+      - name: ruff format
+        run: uv run ruff format --check .
+
+      - name: mypy --strict
+        run: uv run mypy fastfort
+
+      - name: Architecture rules
+        run: uv run pytest tests/test_architecture.py -q
+
+  # -------------------------------------------------------------------------
+  # SQLite across every supported Python version. Needs no external services.
+  # -------------------------------------------------------------------------
+  test-sqlite:
+    name: Tests · SQLite · py${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python }}
+
+      - run: uv sync --all-extras
+
+      - run: uv run pytest --db=sqlite -q --cov --cov-report=xml
+
+      - uses: actions/upload-artifact@v4
+        if: matrix.python == '3.12'
+        with:
+          name: coverage-sqlite
+          path: coverage.xml
+
+  # -------------------------------------------------------------------------
+  # PostgreSQL and MySQL, exercised against real servers.
+  # -------------------------------------------------------------------------
+  test-postgres:
+    name: Tests · PostgreSQL 16
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: fastfort
+          POSTGRES_PASSWORD: fastfort
+          POSTGRES_DB: fastfort_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fastfort"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - run: uv sync --all-extras
+      - run: uv run pytest --db=postgres -q
+        env:
+          FASTFORT_TEST_POSTGRES_URL: postgresql+asyncpg://fastfort:fastfort@localhost:5432/fastfort_test
+
+  test-mysql:
+    name: Tests · MySQL 8.4
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: fastfort
+          MYSQL_USER: fastfort
+          MYSQL_PASSWORD: fastfort
+          MYSQL_DATABASE: fastfort_test
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -ufastfort -pfastfort"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - run: uv sync --all-extras
+      - run: uv run pytest --db=mysql -q
+        env:
+          FASTFORT_TEST_MYSQL_URL: mysql+asyncmy://fastfort:fastfort@127.0.0.1:3306/fastfort_test
+
+  # -------------------------------------------------------------------------
+  # Known vulnerabilities in the dependency tree.
+  # -------------------------------------------------------------------------
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - run: uv run --with pip-audit pip-audit --strict
+
+  # -------------------------------------------------------------------------
+  # Verify the wheel builds and installs into a clean environment.
+  # -------------------------------------------------------------------------
+  build:
+    name: Build distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build
+      - name: Install into a clean environment
+        run: uv run --isolated --no-project --with dist/*.whl python -c "import fastfort; print(fastfort.__version__)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

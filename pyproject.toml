@@ -1,0 +1,203 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fastfort"
+dynamic = ["version"]
+description = "Batteries-included authentication and admin framework for FastAPI."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "Matnazar" }]
+keywords = [
+    "fastapi",
+    "admin",
+    "admin-panel",
+    "authentication",
+    "jwt",
+    "sqlalchemy",
+    "tortoise-orm",
+    "starlette",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Typing :: Typed",
+]
+
+dependencies = [
+    "fastapi>=0.115",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "jinja2>=3.1.4",
+    "itsdangerous>=2.2",
+    "pyjwt>=2.9",
+    "pwdlib[argon2]>=0.2.1",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+sqlalchemy = ["sqlalchemy>=2.0.30", "greenlet>=3.0"]
+tortoise = ["tortoise-orm>=0.21"]
+sqlite = ["aiosqlite>=0.20"]
+postgres = ["asyncpg>=0.29"]
+mysql = ["asyncmy>=0.2.9"]
+cli = ["typer>=0.12", "rich>=13.7"]
+all = [
+    "fastfort[sqlalchemy]",
+    "fastfort[sqlite]",
+    "fastfort[postgres]",
+    "fastfort[mysql]",
+    "fastfort[cli]",
+]
+
+[project.urls]
+Homepage = "https://github.com/matnazar/fastfort"
+Documentation = "https://github.com/matnazar/fastfort#readme"
+Repository = "https://github.com/matnazar/fastfort"
+Changelog = "https://github.com/matnazar/fastfort/blob/main/CHANGELOG.md"
+Issues = "https://github.com/matnazar/fastfort/issues"
+
+[project.scripts]
+fastfort = "fastfort.cli.main:main"
+
+[tool.hatch.version]
+path = "fastfort/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["fastfort"]
+
+[tool.hatch.build.targets.sdist]
+include = ["/fastfort", "/tests", "/README.md", "/LICENSE", "/CHANGELOG.md"]
+
+# ---------------------------------------------------------------------------
+# Dependency groups (uv) — not shipped to PyPI
+# ---------------------------------------------------------------------------
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "pytest-randomly>=3.15",
+    "httpx>=0.27",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "uvicorn>=0.30",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["fastfort", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "N",      # pep8-naming
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "DTZ",    # flake8-datetimez
+    "T20",    # flake8-print
+    "PT",     # flake8-pytest-style
+    "RET",    # flake8-return
+    "SIM",    # flake8-simplify
+    "PTH",    # flake8-use-pathlib
+    "RUF",    # ruff-specific
+    "S",      # flake8-bandit
+    "A",      # flake8-builtins
+    "ASYNC",  # flake8-async
+]
+ignore = [
+    "S101",  # assert -- required in tests
+    "B008",  # FastAPI uses Depends() as a default argument
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "T20"]
+"examples/**" = ["T20"]
+# N818: `ObjectNotFound`, `PermissionDenied` and `ImproperlyConfigured` are names
+# Django users already know. Appending "Error" would only hurt the developer
+# experience, so the deviation is deliberate.
+"fastfort/core/exceptions.py" = ["N818"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["fastfort"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+# ---------------------------------------------------------------------------
+# Mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+warn_no_return = true
+disallow_any_generics = true
+show_error_codes = true
+pretty = true
+files = ["fastfort"]
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "examples.*"]
+ignore_errors = true
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "sqlite: requires SQLite",
+    "postgres: requires a PostgreSQL server",
+    "mysql: requires a MySQL server",
+    "slow: slow running test",
+]
+filterwarnings = ["error"]
+
+# ---------------------------------------------------------------------------
+# Coverage
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["fastfort"]
+branch = true
+omit = ["fastfort/cli/*"]
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@overload",
+    "\\.\\.\\.",
+]
