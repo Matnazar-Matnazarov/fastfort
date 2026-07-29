@@ -1,0 +1,44 @@
+# Local databases used by the test suite.
+#
+#   make services-up      # start
+#   uv run pytest --db=all
+#   make services-down    # stop and drop the data
+#
+# The credentials match the defaults in `tests/conftest.py`.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: fastfort
+      POSTGRES_PASSWORD: fastfort
+      POSTGRES_DB: fastfort_test
+    ports:
+      - "5432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data # faster for tests; nothing is written to disk
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fastfort -d fastfort_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: fastfort
+      MYSQL_USER: fastfort
+      MYSQL_PASSWORD: fastfort
+      MYSQL_DATABASE: fastfort_test
+    command: >-
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_0900_ai_ci
+    ports:
+      - "3306:3306"
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-ufastfort", "-pfastfort"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
