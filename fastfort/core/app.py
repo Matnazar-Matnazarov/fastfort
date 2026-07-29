@@ -221,28 +221,12 @@ class FastFort:
     def _build_router(self) -> Any:
         """Build the admin router.
 
-        For now this exposes the registry so that an installation can be verified
-        end to end; the rendered admin replaces the index in a later stage.
+        Imported here rather than at module scope: `fastfort.admin` sits above
+        `fastfort.core`, and a top-level import would invert the layering.
         """
-        from fastapi import APIRouter
+        from fastfort.admin.site import build_admin_router
 
-        router = APIRouter(tags=["fastfort-admin"])
-        fort = self
-
-        @router.get("/", name="fastfort:index")
-        async def index() -> dict[str, Any]:
-            return {
-                "project": fort.settings.project_name,
-                "models": [
-                    {"key": entry.key, "model": entry.model.__name__} for entry in fort.registry
-                ],
-                "groups": {
-                    name: [entry.key for entry in entries]
-                    for name, entries in fort.registry.grouped().items()
-                },
-            }
-
-        return router
+        return build_admin_router(self)
 
 
 def _module_exists(dotted_path: str) -> bool:

@@ -1,0 +1,273 @@
+/* The admin shell: sidebar, topbar, content.
+ *
+ * A grid rather than fixed positioning, so the sidebar participates in layout
+ * and the content column cannot end up underneath it. Collapsing is one custom
+ * property, which keeps the transition on a single element.
+ */
+
+.ff-app {
+  display: grid;
+  grid-template-columns: var(--ff-sidebar-width) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "sidebar topbar"
+    "sidebar content";
+  min-height: 100dvh;
+  transition: grid-template-columns var(--ff-duration) var(--ff-ease);
+}
+
+.ff-app[data-collapsed="true"] {
+  grid-template-columns: var(--ff-sidebar-width-collapsed) minmax(0, 1fr);
+}
+
+/* --- Sidebar -------------------------------------------------------------- */
+
+.ff-sidebar {
+  grid-area: sidebar;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ff-space-1);
+  padding: var(--ff-space-3);
+  background: var(--ff-surface);
+  border-inline-end: 1px solid var(--ff-border);
+  /* Sticky, not fixed: a long model list scrolls inside the sidebar while the
+   * brand stays put. */
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  overflow-y: auto;
+  z-index: var(--ff-z-sidebar);
+}
+
+.ff-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-3);
+  height: var(--ff-topbar-height);
+  padding-inline: var(--ff-space-2);
+  margin-bottom: var(--ff-space-2);
+  font-size: var(--ff-text-md);
+  font-weight: var(--ff-weight-semibold);
+  letter-spacing: -0.01em;
+  color: var(--ff-text);
+}
+
+.ff-brand__mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--ff-radius);
+  background: var(--ff-accent);
+  color: var(--ff-accent-text);
+  font-size: var(--ff-text-sm);
+  font-weight: var(--ff-weight-semibold);
+}
+
+.ff-brand__logo {
+  height: 1.75rem;
+  width: auto;
+}
+
+.ff-nav-group {
+  margin-top: var(--ff-space-4);
+}
+
+.ff-nav-group__label {
+  padding: var(--ff-space-1) var(--ff-space-2);
+  font-size: var(--ff-text-xs);
+  font-weight: var(--ff-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ff-text-subtle);
+}
+
+.ff-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-3);
+  min-height: var(--ff-control-height);
+  padding: var(--ff-space-2) var(--ff-space-3);
+  border-radius: var(--ff-radius);
+  color: var(--ff-text-muted);
+  font-size: var(--ff-text-base);
+  transition:
+    background var(--ff-duration-fast) var(--ff-ease),
+    color var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-nav-item:hover {
+  background: var(--ff-surface-hover);
+  color: var(--ff-text);
+}
+
+/* `aria-current` rather than a class: the accessible state and the visual state
+ * cannot then drift apart. */
+.ff-nav-item[aria-current="page"] {
+  background: var(--ff-accent-subtle);
+  color: var(--ff-accent);
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-nav-item__count {
+  margin-inline-start: auto;
+  font-size: var(--ff-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ff-text-subtle);
+}
+
+.ff-sidebar__footer {
+  margin-top: auto;
+  padding-top: var(--ff-space-4);
+  border-top: 1px solid var(--ff-border);
+  font-size: var(--ff-text-xs);
+  color: var(--ff-text-subtle);
+}
+
+/* Collapsed: labels are hidden but remain in the accessibility tree. */
+.ff-app[data-collapsed="true"] .ff-collapsible {
+  display: none;
+}
+
+/* --- Topbar --------------------------------------------------------------- */
+
+.ff-topbar {
+  grid-area: topbar;
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-3);
+  height: var(--ff-topbar-height);
+  padding-inline: var(--ff-space-5);
+  background: var(--ff-surface);
+  border-bottom: 1px solid var(--ff-border);
+  position: sticky;
+  top: 0;
+  z-index: var(--ff-z-sticky);
+}
+
+.ff-topbar__spacer {
+  flex: 1 1 auto;
+}
+
+.ff-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+  min-width: 0;
+  font-size: var(--ff-text-base);
+  color: var(--ff-text-muted);
+}
+
+.ff-breadcrumbs__sep {
+  color: var(--ff-text-subtle);
+}
+
+.ff-breadcrumbs__current {
+  color: var(--ff-text);
+  font-weight: var(--ff-weight-medium);
+}
+
+/* --- Content -------------------------------------------------------------- */
+
+.ff-content {
+  grid-area: content;
+  min-width: 0;
+  padding: var(--ff-space-6) var(--ff-space-5) var(--ff-space-12);
+}
+
+.ff-container {
+  max-width: var(--ff-content-max);
+  margin-inline: auto;
+}
+
+.ff-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--ff-space-4);
+  margin-bottom: var(--ff-space-6);
+}
+
+.ff-page-header__text {
+  min-width: 0;
+  flex: 1 1 20rem;
+}
+
+.ff-page-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ff-space-2);
+}
+
+.ff-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ff-space-4);
+}
+
+.ff-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ff-space-2);
+}
+
+.ff-grid {
+  display: grid;
+  gap: var(--ff-space-4);
+  /* auto-fit collapses empty tracks, so two cards do not stretch to fill four
+   * columns. */
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
+}
+
+/* --- Mobile --------------------------------------------------------------
+ * Below the breakpoint the sidebar becomes an overlay drawer. The grid drops to
+ * one column so the content is never squeezed.
+ */
+
+@media (max-width: 60rem) {
+  .ff-app,
+  .ff-app[data-collapsed="true"] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "topbar"
+      "content";
+  }
+
+  .ff-sidebar {
+    position: fixed;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: min(var(--ff-sidebar-width), 85vw);
+    transform: translateX(-100%);
+    box-shadow: var(--ff-shadow-lg);
+    transition: transform var(--ff-duration) var(--ff-ease-out);
+  }
+
+  .ff-app[data-drawer="open"] .ff-sidebar {
+    transform: translateX(0);
+  }
+
+  .ff-app[data-collapsed="true"] .ff-collapsible {
+    display: revert;
+  }
+
+  .ff-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--ff-z-sidebar) - 1);
+    background: oklch(0.2 0.02 var(--ff-h) / 0.4);
+  }
+
+  .ff-content {
+    padding-inline: var(--ff-space-4);
+  }
+}
+
+@media (min-width: 60.0625rem) {
+  .ff-scrim,
+  .ff-drawer-toggle {
+    display: none;
+  }
+}

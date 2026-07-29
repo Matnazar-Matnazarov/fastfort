@@ -181,8 +181,22 @@ class Backend(Protocol):
         """Derive the canonical description of `model`."""
         ...
 
-    def adapter(self, model: type, uow: UnitOfWork) -> ModelAdapter:
-        """Return an adapter for `model` bound to `uow`."""
+    def adapter(
+        self,
+        model: type,
+        uow: UnitOfWork,
+        *,
+        key: str | None = None,
+        search_fields: tuple[str, ...] = (),
+        select_related: tuple[str, ...] = (),
+        prefetch_related: tuple[str, ...] = (),
+    ) -> ModelAdapter:
+        """Return an adapter for `model` bound to `uow`.
+
+        The eager-load hints are part of the contract rather than an optimisation
+        an implementation may ignore: without them a list of N rows showing a
+        related name costs N extra queries, on any ORM.
+        """
         ...
 
     def unit_of_work(self) -> UnitOfWork:

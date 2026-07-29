@@ -30,6 +30,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   identically
 - `scripts/verify_databases.py`: prints a read/write cycle's results per database
 
+- `fastfort.ui`: the design token system, the Jinja2 renderer and the admin shell
+- `fastfort.admin`: `ModelAdmin`, and a server-rendered dashboard and list view
+  with sorting, search, filters and pagination
+
 ### Changed
 
 - The `mysql` extra installs `aiomysql` instead of `asyncmy`. PYSEC-2026-286 is an

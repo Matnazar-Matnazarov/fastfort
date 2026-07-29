@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="ff-page-header">
+    <div class="ff-page-header__text">
+      <h1 class="ff-h1">{{ settings.project_name }}</h1>
+      <p class="ff-muted ff-mt-2">
+        {% if models %}
+          {{ models|length }} model{{ "" if models|length == 1 else "s" }} registered
+          · {{ dialect }}
+        {% else %}
+          Nothing registered yet
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  {% if issues %}
+    {# Configuration problems belong on the first page someone opens, not in a
+       log they will not read. #}
+    <div class="ff-alert ff-alert--warning ff-mt-0">
+      <div>
+        <div class="ff-alert__title">Configuration needs attention</div>
+        <ul class="ff-mt-2">
+          {% for issue in issues %}
+            <li>{{ issue }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if models %}
+    <div class="ff-grid ff-mt-6">
+      {% for model in models %}
+        <a class="ff-stat" href="{{ model.url }}">
+          <span class="ff-stat__label">{{ model.group }}</span>
+          <span class="ff-stat__value">{{ model.count }}</span>
+          <span class="ff-stat__meta">{{ model.title }}</span>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="ff-card ff-mt-6">
+      <div class="ff-empty">
+        <div class="ff-empty__icon" aria-hidden="true">◇</div>
+        <div class="ff-empty__title">No models are registered</div>
+        <p class="ff-empty__body">
+          Register one with <code class="ff-mono">@admin.register(Model)</code>, then make
+          sure the module is imported — see
+          <code class="ff-mono">fort.autodiscover(...)</code> and
+          <code class="ff-mono">fort.include_admin(...)</code>.
+        </p>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}

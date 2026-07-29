@@ -31,8 +31,22 @@ class Product:
     pass
 
 
+class NoOpUnitOfWork:
+    """Enough of a unit of work for a dashboard with nothing registered."""
+
+    async def __aenter__(self) -> NoOpUnitOfWork:
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        return None
+
+
 class FakeBackend:
-    """A backend that reports on the models it is asked about, and nothing else."""
+    """A backend that answers questions about models and opens no connection.
+
+    These tests are about wiring, not queries: a real backend would drag the ORM
+    into a module whose job is to prove `mount()` works.
+    """
 
     name = "fake"
     dialect = "sqlite"
@@ -42,6 +56,9 @@ class FakeBackend:
 
     def supports(self, model: type) -> bool:
         return self._supported is None or model in self._supported
+
+    def unit_of_work(self) -> NoOpUnitOfWork:
+        return NoOpUnitOfWork()
 
 
 @pytest.fixture
@@ -204,19 +221,22 @@ async def test_mounting_with_an_empty_registry_still_serves_the_admin(
     response = await (await client_for(app)).get("/admin/")
 
     assert response.status_code == 200
-    assert response.json() == {"project": "Shop", "models": [], "groups": {}}
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Shop" in response.text
+    # An empty admin explains itself rather than showing a blank page.
+    assert "No models are registered" in response.text
 
 
-async def test_the_admin_reports_its_registered_models(fort: FastFort, client_for: Any) -> None:
-    fort.register(Product, object(), key="shop.product")
+async def test_the_stylesheet_is_reachable_from_a_mounted_admin(
+    fort: FastFort, client_for: Any
+) -> None:
     app = FastAPI()
     fort.mount(app)
 
-    response = await (await client_for(app)).get("/admin/")
-    payload: dict[str, Any] = response.json()
+    response = await (await client_for(app)).get("/admin/static/fastfort.css")
 
-    assert payload["models"] == [{"key": "shop.product", "model": "Product"}]
-    assert payload["groups"] == {"shop": ["shop.product"]}
+    assert response.status_code == 200
+    assert "--ff-h:" in response.text
 
 
 async def test_the_admin_honours_a_custom_url(fort: FastFort, client_for: Any) -> None:
@@ -226,6 +246,7 @@ async def test_the_admin_honours_a_custom_url(fort: FastFort, client_for: Any) -
 
     client = await client_for(app)
     assert (await client.get("/back-office/")).status_code == 200
+    assert (await client.get("/back-office/static/fastfort.css")).status_code == 200
     assert (await client.get("/admin/")).status_code == 404
 
 
