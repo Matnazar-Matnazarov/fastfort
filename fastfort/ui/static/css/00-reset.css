@@ -1,0 +1,109 @@
+/* Reset.
+ *
+ * Only the rules that earn their place. The admin renders into a page the host
+ * project does not control, so this stays scoped to what the admin shell needs
+ * and never touches anything outside it beyond box-sizing.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Anchors scrolled to by the command palette must not hide under the topbar. */
+  scroll-padding-top: calc(var(--ff-topbar-height) + var(--ff-space-4));
+}
+
+body {
+  min-height: 100dvh;
+  line-height: var(--ff-leading);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+img,
+picture,
+video,
+canvas,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+/* Inputs do not inherit typography by default, which is the single most common
+ * cause of a form looking unrelated to the page around it. */
+input,
+button,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+/* Long identifiers -- a UUID in a table cell, a URL in a detail view -- must
+ * wrap rather than force the page into horizontal scrolling. */
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  overflow-wrap: break-word;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: var(--ff-leading-tight);
+}
+
+ul[role="list"],
+ol[role="list"] {
+  list-style: none;
+  padding: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+th {
+  text-align: start;
+  font-weight: inherit;
+}
+
+fieldset {
+  border: 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+
+legend {
+  padding: 0;
+}
+
+/* `hidden` losing to a later `display` rule is a recurring source of elements
+ * that refuse to disappear. */
+[hidden] {
+  display: none !important;
+}
