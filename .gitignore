@@ -218,3 +218,7 @@ __marimo__/
 .streamlit/secrets.toml
 package_plan/
 package_plan/*
+
+# Local scratch application used to exercise FastFort the way a consumer
+# project would. Deliberately untracked: it is a sandbox, not a deliverable.
+test_api/
