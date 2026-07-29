@@ -167,10 +167,13 @@ def test_density_is_written_to_the_root() -> None:
 
 def test_a_project_stylesheet_loads_last() -> None:
     """So it can override tokens without fighting specificity."""
-    sheets = Theme.from_settings(UISettings(custom_css_url="/static/mine.css")).stylesheets()
+    theme = Theme.from_settings(UISettings(custom_css_url="/static/mine.css"))
+    sheets = theme.stylesheets("/admin/static")
     assert sheets[-1] == "/static/mine.css"
     assert len(sheets) == 2
 
 
 def test_without_a_custom_sheet_only_ours_loads() -> None:
-    assert len(Theme.from_settings(UISettings()).stylesheets()) == 1
+    assert Theme.from_settings(UISettings()).stylesheets("/admin/static") == (
+        "/admin/static/fastfort.css",
+    )

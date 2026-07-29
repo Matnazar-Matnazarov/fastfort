@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="ff-page-header">
+    <div class="ff-page-header__text">
+      <h1 class="ff-h1">{{ admin.title }}</h1>
+      <p class="ff-muted ff-mt-2">
+        {% if page.total %}
+          {{ "{:,}".format(page.total) }} {{ admin.title|lower if page.total != 1 else admin.singular|lower }}
+        {% else %}
+          Nothing here yet
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  <form class="ff-row ff-no-print" method="get" action="{{ list_url }}">
+    {% if admin.searchable() %}
+      <div class="ff-search">
+        <span class="ff-search__icon" aria-hidden="true">⌕</span>
+        <input
+          class="ff-input"
+          type="search"
+          name="q"
+          value="{{ query.search }}"
+          placeholder="Search {{ admin.title|lower }}…"
+          aria-label="Search {{ admin.title }}"
+        />
+      </div>
+    {% endif %}
+
+    {% for filter in filters %}
+      <label class="ff-field">
+        <span class="ff-sr-only">{{ filter.label }}</span>
+        <select class="ff-select" name="{{ filter.name }}" aria-label="{{ filter.label }}">
+          <option value="">{{ filter.label }}: any</option>
+          {% for choice in filter.choices %}
+            <option value="{{ choice.value }}" {% if choice.selected %}selected{% endif %}>
+              {{ choice.label }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+    {% endfor %}
+
+    {# The ordering rides along in a hidden field, so applying a filter does not
+       silently reset the column the user sorted by. #}
+    {% if ordering_param %}
+      <input type="hidden" name="o" value="{{ ordering_param }}" />
+    {% endif %}
+
+    <button class="ff-btn" type="submit">Apply</button>
+    {% if query.search or query.filters %}
+      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">Clear</a>
+    {% endif %}
+  </form>
+
+  {% if page.items %}
+    <div class="ff-table-wrap ff-scroll ff-mt-4">
+      <table class="ff-table">
+        <thead>
+          <tr>
+            {% for column in columns %}
+              <th scope="col" {% if column.sort_state != "none" %}aria-sort="{{ column.sort_state }}"{% endif %}>
+                {% if column.sort_url %}
+                  <a
+                    class="ff-table__sort"
+                    href="{{ column.sort_url }}"
+                    aria-sort="{{ column.sort_state }}"
+                  >
+                    {{ column.label }}
+                    <span class="ff-table__arrow" aria-hidden="true">
+                      {%- if column.sort_state == "ascending" %}▲{% elif column.sort_state == "descending" %}▼{% else %}⇅{% endif -%}
+                    </span>
+                  </a>
+                {% else %}
+                  {{ column.label }}
+                {% endif %}
+              </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              {% for cell in row.cells %}
+                <td {% if cell.numeric %}class="ff-numeric"{% endif %}>
+                  {% if cell.boolean %}
+                    {{ cell.value|ff_bool }}
+                  {% elif cell.url %}
+                    <a class="ff-link" href="{{ cell.url }}">{{ cell.value|ff_display }}</a>
+                  {% else %}
+                    {{ cell.value|ff_display }}
+                  {% endif %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <nav class="ff-pagination ff-no-print" aria-label="Pagination">
+      {# One line, so the rendered text is a contiguous "1–25 of 400" rather
+         than being broken by template indentation. #}
+      <span class="ff-pagination__info">{{ "{:,}".format(page.start_index) }}–{{ "{:,}".format(page.end_index) }} of {{ "{:,}".format(page.total) }}</span>
+      {% if page.has_previous %}
+        <a class="ff-btn ff-btn--sm" href="{{ page_url(page.page - 1) }}">Previous</a>
+      {% else %}
+        <span class="ff-btn ff-btn--sm" aria-disabled="true">Previous</span>
+      {% endif %}
+      <span class="ff-muted">Page {{ page.page }} of {{ page.pages }}</span>
+      {% if page.has_next %}
+        <a class="ff-btn ff-btn--sm" href="{{ page_url(page.page + 1) }}">Next</a>
+      {% else %}
+        <span class="ff-btn ff-btn--sm" aria-disabled="true">Next</span>
+      {% endif %}
+    </nav>
+  {% else %}
+    <div class="ff-card ff-mt-4">
+      <div class="ff-empty">
+        <div class="ff-empty__icon" aria-hidden="true">◇</div>
+        {% if query.search or query.filters %}
+          <div class="ff-empty__title">Nothing matched</div>
+          <p class="ff-empty__body">
+            No {{ admin.title|lower }} match the current search and filters.
+          </p>
+          <a class="ff-btn" href="{{ list_url }}">Clear search and filters</a>
+        {% else %}
+          <div class="ff-empty__title">No {{ admin.title|lower }} yet</div>
+          <p class="ff-empty__body">
+            Once rows exist in <code class="ff-mono">{{ admin.spec.key }}</code>, they appear here.
+          </p>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}

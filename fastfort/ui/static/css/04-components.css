@@ -1,0 +1,475 @@
+/* Components.
+ *
+ * Semantic class names rather than utility stacks, so a template reads as markup
+ * and a project can restyle a component by naming it.
+ */
+
+/* --- Button --------------------------------------------------------------- */
+
+.ff-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ff-space-2);
+  min-height: var(--ff-control-height);
+  padding-inline: var(--ff-space-4);
+  border: 1px solid var(--ff-border-strong);
+  border-radius: var(--ff-radius);
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  font-size: var(--ff-text-base);
+  font-weight: var(--ff-weight-medium);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--ff-duration-fast) var(--ff-ease),
+    border-color var(--ff-duration-fast) var(--ff-ease),
+    color var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-btn:hover {
+  background: var(--ff-surface-hover);
+  border-color: var(--ff-text-subtle);
+}
+
+.ff-btn:active {
+  background: var(--ff-surface-sunken);
+}
+
+/* `:disabled` and `[aria-disabled]` together: a disabled link has no :disabled. */
+.ff-btn:disabled,
+.ff-btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.ff-btn--primary {
+  background: var(--ff-accent);
+  border-color: var(--ff-accent);
+  color: var(--ff-accent-text);
+}
+
+.ff-btn--primary:hover {
+  background: var(--ff-accent-hover);
+  border-color: var(--ff-accent-hover);
+}
+
+.ff-btn--primary:active {
+  background: var(--ff-accent-active);
+}
+
+.ff-btn--danger {
+  background: var(--ff-danger);
+  border-color: var(--ff-danger);
+  color: var(--ff-text-inverse);
+}
+
+.ff-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ff-text-muted);
+}
+
+.ff-btn--ghost:hover {
+  background: var(--ff-surface-hover);
+  border-color: transparent;
+  color: var(--ff-text);
+}
+
+.ff-btn--sm {
+  min-height: var(--ff-control-height-sm);
+  padding-inline: var(--ff-space-3);
+  font-size: var(--ff-text-sm);
+}
+
+/* Square, for icon-only controls. The label lives in .ff-sr-only. */
+.ff-btn--icon {
+  padding-inline: 0;
+  width: var(--ff-control-height);
+}
+
+.ff-btn--icon.ff-btn--sm {
+  width: var(--ff-control-height-sm);
+}
+
+/* --- Input ---------------------------------------------------------------- */
+
+.ff-input,
+.ff-select,
+.ff-textarea {
+  width: 100%;
+  min-height: var(--ff-control-height);
+  padding: var(--ff-space-2) var(--ff-space-3);
+  border: 1px solid var(--ff-border-strong);
+  border-radius: var(--ff-radius);
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  font-size: var(--ff-text-base);
+  transition:
+    border-color var(--ff-duration-fast) var(--ff-ease),
+    box-shadow var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-input::placeholder,
+.ff-textarea::placeholder {
+  color: var(--ff-text-subtle);
+}
+
+/* A ring on focus rather than only the outline, so the field itself reads as
+ * active and not merely outlined. */
+.ff-input:focus-visible,
+.ff-select:focus-visible,
+.ff-textarea:focus-visible {
+  outline: none;
+  border-color: var(--ff-accent);
+  box-shadow: 0 0 0 3px var(--ff-accent-muted);
+}
+
+.ff-textarea {
+  min-height: calc(var(--ff-control-height) * 3);
+  line-height: var(--ff-leading);
+  resize: vertical;
+}
+
+.ff-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ff-space-2);
+}
+
+.ff-label {
+  font-size: var(--ff-text-sm);
+  font-weight: var(--ff-weight-medium);
+  color: var(--ff-text);
+}
+
+.ff-help {
+  font-size: var(--ff-text-xs);
+  color: var(--ff-text-muted);
+}
+
+.ff-error {
+  font-size: var(--ff-text-xs);
+  color: var(--ff-danger);
+}
+
+/* --- Search --------------------------------------------------------------- */
+
+.ff-search {
+  position: relative;
+  flex: 1 1 18rem;
+  max-width: 26rem;
+}
+
+.ff-search .ff-input {
+  padding-inline-start: var(--ff-space-8);
+}
+
+.ff-search__icon {
+  position: absolute;
+  inset-inline-start: var(--ff-space-3);
+  top: 50%;
+  translate: 0 -50%;
+  color: var(--ff-text-subtle);
+  pointer-events: none;
+}
+
+/* --- Card ---------------------------------------------------------------- */
+
+.ff-card {
+  background: var(--ff-surface);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-lg);
+  box-shadow: var(--ff-shadow-xs);
+}
+
+.ff-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-3);
+  padding: var(--ff-space-4) var(--ff-space-5);
+  border-bottom: 1px solid var(--ff-border);
+}
+
+.ff-card__title {
+  font-size: var(--ff-text-md);
+  font-weight: var(--ff-weight-semibold);
+}
+
+.ff-card__body {
+  padding: var(--ff-space-5);
+}
+
+/* --- Stat tile ----------------------------------------------------------- */
+
+.ff-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ff-space-1);
+  padding: var(--ff-space-5);
+  background: var(--ff-surface);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-lg);
+  box-shadow: var(--ff-shadow-xs);
+  transition:
+    border-color var(--ff-duration-fast) var(--ff-ease),
+    box-shadow var(--ff-duration-fast) var(--ff-ease);
+}
+
+a.ff-stat:hover {
+  border-color: var(--ff-accent-border);
+  box-shadow: var(--ff-shadow-sm);
+}
+
+.ff-stat__label {
+  font-size: var(--ff-text-xs);
+  font-weight: var(--ff-weight-medium);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ff-text-subtle);
+}
+
+.ff-stat__value {
+  font-size: var(--ff-text-2xl);
+  font-weight: var(--ff-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.ff-stat__meta {
+  font-size: var(--ff-text-sm);
+  color: var(--ff-text-muted);
+}
+
+/* --- Table ---------------------------------------------------------------
+ * Wrapped in .ff-table-wrap so a wide table scrolls inside its own container
+ * and the page body never scrolls horizontally.
+ */
+
+.ff-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-lg);
+  background: var(--ff-surface);
+}
+
+.ff-table {
+  width: 100%;
+  font-size: var(--ff-text-base);
+}
+
+.ff-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--ff-space-3) var(--ff-space-4);
+  background: var(--ff-surface-sunken);
+  border-bottom: 1px solid var(--ff-border);
+  font-size: var(--ff-text-xs);
+  font-weight: var(--ff-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ff-text-muted);
+  white-space: nowrap;
+}
+
+.ff-table tbody td {
+  padding: var(--ff-space-3) var(--ff-space-4);
+  border-bottom: 1px solid var(--ff-border);
+  vertical-align: middle;
+}
+
+.ff-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.ff-table tbody tr:hover {
+  background: var(--ff-surface-hover);
+}
+
+.ff-table__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ff-space-1);
+  color: inherit;
+  cursor: pointer;
+}
+
+.ff-table__sort:hover {
+  color: var(--ff-text);
+}
+
+.ff-table__sort[aria-sort]:not([aria-sort="none"]) {
+  color: var(--ff-accent);
+}
+
+.ff-table__arrow {
+  font-size: 0.7em;
+  opacity: 0.5;
+}
+
+.ff-table__sort[aria-sort]:not([aria-sort="none"]) .ff-table__arrow {
+  opacity: 1;
+}
+
+/* --- Badge --------------------------------------------------------------- */
+
+.ff-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ff-space-1);
+  padding: 0.125rem var(--ff-space-2);
+  border-radius: var(--ff-radius-full);
+  background: var(--ff-surface-sunken);
+  color: var(--ff-text-muted);
+  font-size: var(--ff-text-xs);
+  font-weight: var(--ff-weight-medium);
+  white-space: nowrap;
+}
+
+.ff-badge--success {
+  background: var(--ff-success-subtle);
+  color: var(--ff-success);
+}
+
+.ff-badge--danger {
+  background: var(--ff-danger-subtle);
+  color: var(--ff-danger);
+}
+
+.ff-badge--warning {
+  background: var(--ff-warning-subtle);
+  color: var(--ff-warning);
+}
+
+.ff-badge--info {
+  background: var(--ff-info-subtle);
+  color: var(--ff-info);
+}
+
+/* A boolean cell reads faster as a mark than as the word "True". */
+.ff-bool {
+  font-weight: var(--ff-weight-semibold);
+}
+
+.ff-bool--on {
+  color: var(--ff-success);
+}
+
+.ff-bool--off {
+  color: var(--ff-text-subtle);
+}
+
+/* --- Pagination ---------------------------------------------------------- */
+
+.ff-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ff-space-2);
+  margin-top: var(--ff-space-4);
+}
+
+.ff-pagination__info {
+  margin-inline-end: auto;
+  font-size: var(--ff-text-sm);
+  color: var(--ff-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Empty state --------------------------------------------------------
+ * Designed rather than blank: an empty table with no explanation reads as a
+ * broken page.
+ */
+
+.ff-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ff-space-3);
+  padding: var(--ff-space-16) var(--ff-space-5);
+  text-align: center;
+}
+
+.ff-empty__icon {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: var(--ff-radius-full);
+  background: var(--ff-surface-sunken);
+  color: var(--ff-text-subtle);
+}
+
+.ff-empty__title {
+  font-size: var(--ff-text-md);
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-empty__body {
+  max-width: 32rem;
+  font-size: var(--ff-text-base);
+  color: var(--ff-text-muted);
+}
+
+/* --- Alert --------------------------------------------------------------- */
+
+.ff-alert {
+  display: flex;
+  gap: var(--ff-space-3);
+  padding: var(--ff-space-3) var(--ff-space-4);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-md);
+  background: var(--ff-surface-sunken);
+  font-size: var(--ff-text-base);
+}
+
+.ff-alert--warning {
+  background: var(--ff-warning-subtle);
+  border-color: var(--ff-warning);
+  color: var(--ff-text);
+}
+
+.ff-alert--danger {
+  background: var(--ff-danger-subtle);
+  border-color: var(--ff-danger);
+}
+
+.ff-alert__title {
+  font-weight: var(--ff-weight-semibold);
+}
+
+/* --- HTMX ---------------------------------------------------------------
+ * `.ff-busy` is shown only while a request is in flight, which HTMX toggles.
+ */
+
+.ff-busy {
+  opacity: 0;
+  transition: opacity var(--ff-duration-fast) var(--ff-ease);
+}
+
+.htmx-request .ff-busy,
+.htmx-request.ff-busy {
+  opacity: 1;
+}
+
+.htmx-request .ff-table tbody {
+  opacity: 0.5;
+  transition: opacity var(--ff-duration) var(--ff-ease);
+}
+
+/* --- Utilities ----------------------------------------------------------
+ * A deliberately short list. Anything used more than a few times becomes a
+ * component instead.
+ */
+
+.ff-mt-0 { margin-top: 0; }
+.ff-mt-2 { margin-top: var(--ff-space-2); }
+.ff-mt-4 { margin-top: var(--ff-space-4); }
+.ff-mt-6 { margin-top: var(--ff-space-6); }
+.ff-ml-auto { margin-inline-start: auto; }
+.ff-w-full { width: 100%; }
+.ff-flex-1 { flex: 1 1 auto; }
+.ff-text-center { text-align: center; }
+.ff-nowrap { white-space: nowrap; }

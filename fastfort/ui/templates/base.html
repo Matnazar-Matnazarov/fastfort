@@ -1,0 +1,120 @@
+{#
+  The admin shell.
+
+  Every page extends this. The theme is applied as attributes on <html> rather
+  than by swapping a stylesheet, so there is one stylesheet and no flash of the
+  wrong theme on load.
+#}
+<!doctype html>
+<html
+  lang="{{ settings.ui.language }}"
+  {% for name, value in theme.root_attributes().items() %}{{ name }}="{{ value }}" {% endfor %}
+>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {# An admin must never be indexed, and never leak its URLs through a referer. #}
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="same-origin" />
+    <title>{% block title %}{{ page_title }}{% endblock %} · {{ settings.project_name }}</title>
+    {% if theme.favicon_url %}
+      <link rel="icon" href="{{ theme.favicon_url }}" />
+    {% endif %}
+    {% for stylesheet in stylesheets %}
+      <link rel="stylesheet" href="{{ stylesheet }}" />
+    {% endfor %}
+    <script src="{{ static_url }}/js/fastfort.js" defer></script>
+  </head>
+
+  <body>
+    {# First tab stop on every page: keyboard users should not have to walk the
+       whole sidebar to reach the table. #}
+    <a class="ff-skip-link" href="#ff-main">Skip to content</a>
+
+    <div class="ff-app" id="ff-app" data-collapsed="false">
+      <aside class="ff-sidebar ff-scroll" id="ff-sidebar">
+        <a class="ff-brand" href="{{ admin_url }}/">
+          {% if theme.logo_url %}
+            <img class="ff-brand__logo" src="{{ theme.logo_url }}" alt="{{ settings.project_name }}" />
+          {% else %}
+            <span class="ff-brand__mark" aria-hidden="true">{{ settings.project_name[:1]|upper }}</span>
+          {% endif %}
+          <span class="ff-collapsible ff-truncate">{{ settings.project_name }}</span>
+        </a>
+
+        <nav aria-label="Models">
+          <a
+            class="ff-nav-item"
+            href="{{ admin_url }}/"
+            {% if current_key is none %}aria-current="page"{% endif %}
+          >
+            <span class="ff-collapsible">Dashboard</span>
+          </a>
+
+          {% for group in nav %}
+            <div class="ff-nav-group">
+              <div class="ff-nav-group__label ff-collapsible">{{ group.label }}</div>
+              {% for item in group.entries %}
+                <a
+                  class="ff-nav-item"
+                  href="{{ item.url }}"
+                  {% if item.key == current_key %}aria-current="page"{% endif %}
+                >
+                  <span class="ff-collapsible ff-truncate">{{ item.title }}</span>
+                </a>
+              {% endfor %}
+            </div>
+          {% endfor %}
+        </nav>
+
+        <div class="ff-sidebar__footer ff-collapsible">
+          {% if theme.environment_label %}
+            <span class="ff-badge ff-badge--warning">{{ theme.environment_label }}</span>
+          {% endif %}
+          <div class="ff-mt-2">FastFort {{ version }}</div>
+        </div>
+      </aside>
+
+      <header class="ff-topbar ff-no-print">
+        <button
+          class="ff-btn ff-btn--ghost ff-btn--icon ff-btn--sm ff-drawer-toggle"
+          type="button"
+          data-ff-drawer
+          aria-controls="ff-sidebar"
+          aria-expanded="false"
+        >
+          <span aria-hidden="true">☰</span>
+          <span class="ff-sr-only">Open navigation</span>
+        </button>
+
+        <nav class="ff-breadcrumbs" aria-label="Breadcrumb">
+          <a class="ff-link" href="{{ admin_url }}/">Home</a>
+          {% for crumb in breadcrumbs %}
+            <span class="ff-breadcrumbs__sep" aria-hidden="true">/</span>
+            {% if crumb.url %}
+              <a class="ff-link" href="{{ crumb.url }}">{{ crumb.label }}</a>
+            {% else %}
+              <span class="ff-breadcrumbs__current ff-truncate">{{ crumb.label }}</span>
+            {% endif %}
+          {% endfor %}
+        </nav>
+
+        <span class="ff-topbar__spacer"></span>
+
+        <button
+          class="ff-btn ff-btn--ghost ff-btn--icon ff-btn--sm"
+          type="button"
+          data-ff-theme-toggle
+          title="Toggle theme"
+        >
+          <span aria-hidden="true" data-ff-theme-icon>◐</span>
+          <span class="ff-sr-only">Toggle light or dark theme</span>
+        </button>
+      </header>
+
+      <main class="ff-content" id="ff-main">
+        <div class="ff-container">{% block content %}{% endblock %}</div>
+      </main>
+    </div>
+  </body>
+</html>

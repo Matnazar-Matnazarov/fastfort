@@ -79,13 +79,13 @@ class Theme:
         """The inline custom properties that carry the brand."""
         return f"--ff-h:{self.hue};--ff-c:{self.chroma}"
 
-    def stylesheets(self) -> tuple[str, ...]:
+    def stylesheets(self, static_url: str) -> tuple[str, ...]:
         """Stylesheet URLs in load order.
 
         A project's own sheet comes last so it can override tokens without
         fighting specificity.
         """
-        sheets = ["/static/fastfort.css"]
+        sheets = [f"{static_url}/fastfort.css"]
         if self.custom_css_url:
             sheets.append(self.custom_css_url)
         return tuple(sheets)
