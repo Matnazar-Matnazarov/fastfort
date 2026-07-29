@@ -57,12 +57,16 @@ class FilterOperator(StrEnum):
     GT = "gt"
     GTE = "gte"
     IN = "in"
-    CONTAINS = "contains"
-    ICONTAINS = "icontains"
-    STARTSWITH = "startswith"
-    ENDSWITH = "endswith"
     ISNULL = "isnull"
     RANGE = "range"
+
+    # String matching is case-insensitive on every database, and named so that
+    # the call site says as much. A case-sensitive variant would need three
+    # different mechanisms (GLOB, LIKE BINARY, plain LIKE) to mean the same
+    # thing on SQLite, MySQL and PostgreSQL, and an admin filter never wants it.
+    ICONTAINS = "icontains"
+    ISTARTSWITH = "istartswith"
+    IENDSWITH = "iendswith"
 
     @property
     def takes_many_values(self) -> bool:

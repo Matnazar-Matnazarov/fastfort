@@ -10,8 +10,12 @@ Add the other engines explicitly::
 
 Connection strings can be overridden through the environment::
 
-    FASTFORT_TEST_POSTGRES_URL   (default: localhost:5432)
-    FASTFORT_TEST_MYSQL_URL      (default: localhost:3306)
+    FASTFORT_TEST_POSTGRES_URL   (default: localhost:55432)
+    FASTFORT_TEST_MYSQL_URL      (default: localhost:33306)
+
+The default ports are shifted away from 5432/3306 to match
+`docker-compose.test.yml`, so the test containers never collide with a database
+already installed on the machine. CI sets both variables explicitly.
 """
 
 from __future__ import annotations
@@ -29,8 +33,8 @@ if TYPE_CHECKING:
 ALL_BACKENDS = ("sqlite", "postgres", "mysql")
 
 DEFAULT_URLS = {
-    "postgres": "postgresql+asyncpg://fastfort:fastfort@localhost:5432/fastfort_test",
-    "mysql": "mysql+asyncmy://fastfort:fastfort@localhost:3306/fastfort_test",
+    "postgres": "postgresql+asyncpg://fastfort:fastfort@localhost:55432/fastfort_test",
+    "mysql": "mysql+asyncmy://fastfort:fastfort@localhost:33306/fastfort_test",
 }
 
 

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install test test-all test-pg test-mysql lint fmt types check cov clean services-up services-down
+.PHONY: help install test test-all test-pg test-mysql lint fmt types check cov verify clean services-up services-down
 
 help:  ## Show the available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -19,6 +19,9 @@ test-pg:  ## Run against PostgreSQL only
 
 test-mysql:  ## Run against MySQL only
 	uv run pytest --db=mysql -q
+
+verify:  ## Run a read/write cycle against every database and print the results
+	uv run python scripts/verify_databases.py all
 
 cov:  ## Produce a coverage report
 	uv run pytest --cov --cov-report=term-missing --cov-report=html

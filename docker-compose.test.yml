@@ -4,7 +4,9 @@
 #   uv run pytest --db=all
 #   make services-down    # stop and drop the data
 #
-# The credentials match the defaults in `tests/conftest.py`.
+# The credentials and ports match the defaults in `tests/conftest.py`. Ports are
+# shifted away from 5432/3306 so these throwaway containers never collide with a
+# PostgreSQL or MySQL already installed on the host.
 
 services:
   postgres:
@@ -14,7 +16,7 @@ services:
       POSTGRES_PASSWORD: fastfort
       POSTGRES_DB: fastfort_test
     ports:
-      - "5432:5432"
+      - "55432:5432"
     tmpfs:
       - /var/lib/postgresql/data # faster for tests; nothing is written to disk
     healthcheck:
@@ -34,7 +36,7 @@ services:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_0900_ai_ci
     ports:
-      - "3306:3306"
+      - "33306:3306"
     tmpfs:
       - /var/lib/mysql
     healthcheck:
