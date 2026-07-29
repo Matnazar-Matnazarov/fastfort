@@ -30,4 +30,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   identically
 - `scripts/verify_databases.py`: prints a read/write cycle's results per database
 
+### Changed
+
+- The `mysql` extra installs `aiomysql` instead of `asyncmy`. PYSEC-2026-286 is an
+  unfixed SQL injection affecting every released version of `asyncmy` (0.2.11 is
+  the latest and the advisory covers "thru 0.2.11"), which is not a defensible
+  default for an authentication framework. `aiomysql` audits clean and the full
+  suite passes against MySQL 8.4 with it.
+- The dependency audit in CI runs against the exported lockfile rather than the
+  installed environment, so the unpublished project itself is not treated as an
+  unauditable dependency.
+
 [Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/main...HEAD

@@ -121,7 +121,7 @@ jobs:
       - run: uv sync --all-extras
       - run: uv run pytest --db=mysql -q
         env:
-          FASTFORT_TEST_MYSQL_URL: mysql+asyncmy://fastfort:fastfort@127.0.0.1:3306/fastfort_test
+          FASTFORT_TEST_MYSQL_URL: mysql+aiomysql://fastfort:fastfort@127.0.0.1:3306/fastfort_test
 
   # -------------------------------------------------------------------------
   # Known vulnerabilities in the dependency tree.
@@ -135,7 +135,17 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-extras
-      - run: uv run --with pip-audit pip-audit --strict
+
+      # The audit runs against the locked third-party dependencies only.
+      # `--no-emit-project` leaves fastfort itself out: it is not published yet,
+      # and pip-audit treats a package it cannot find on PyPI as a hard failure.
+      - name: Export locked dependencies
+        run: >-
+          uv export --all-extras --no-emit-project --no-hashes
+          --format requirements-txt > requirements-audit.txt
+
+      - name: Audit dependencies
+        run: uv run --with pip-audit pip-audit --strict --requirement requirements-audit.txt
 
   # -------------------------------------------------------------------------
   # Verify the wheel builds and installs into a clean environment.

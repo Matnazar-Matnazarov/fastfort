@@ -34,7 +34,7 @@ ALL_BACKENDS = ("sqlite", "postgres", "mysql")
 
 DEFAULT_URLS = {
     "postgres": "postgresql+asyncpg://fastfort:fastfort@localhost:55432/fastfort_test",
-    "mysql": "mysql+asyncmy://fastfort:fastfort@localhost:33306/fastfort_test",
+    "mysql": "mysql+aiomysql://fastfort:fastfort@localhost:33306/fastfort_test",
 }
 
 

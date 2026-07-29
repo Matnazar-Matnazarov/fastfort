@@ -20,7 +20,7 @@ PACKAGE_ROOT = Path(__file__).resolve().parent.parent / "fastfort"
 ORM_FREE_PACKAGES = ("core", "spec", "admin", "auth", "ui", "cli", "i18n")
 
 #: Top-level module names that count as "an ORM or a database driver".
-FORBIDDEN_ORM_MODULES = frozenset({"sqlalchemy", "tortoise", "aiosqlite", "asyncpg", "asyncmy"})
+FORBIDDEN_ORM_MODULES = frozenset({"sqlalchemy", "tortoise", "aiosqlite", "asyncpg", "aiomysql"})
 
 #: Only these paths are allowed to depend on an ORM.
 ORM_ALLOWED_PREFIXES = ("fastfort/orm/",)
