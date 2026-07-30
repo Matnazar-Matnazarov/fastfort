@@ -9,9 +9,9 @@
       {% endif %}
     </div>
     <div class="ff-page-header__actions">
-      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">Back to {{ admin.title|lower }}</a>
+      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">{{ _("Back to {name}", name=admin.title|lower) }}</a>
       {% if delete_url %}
-        <a class="ff-btn ff-btn--ghost" href="{{ delete_url }}">Delete</a>
+        <a class="ff-btn ff-btn--ghost" href="{{ delete_url }}">{{ _("Delete") }}</a>
       {% endif %}
     </div>
   </div>
@@ -19,7 +19,7 @@
   {% if form.non_field_errors %}
     <div class="ff-alert ff-alert--danger" role="alert">
       <div>
-        <div class="ff-alert__title">This could not be saved</div>
+        <div class="ff-alert__title">{{ _("This could not be saved") }}</div>
         <ul class="ff-mt-2">
           {% for message in form.non_field_errors %}
             <li>{{ message }}</li>
@@ -30,7 +30,8 @@
   {% elif form.error_count %}
     <div class="ff-alert ff-alert--danger" role="alert">
       <div class="ff-alert__title">
-        {{ form.error_count }} field{{ "" if form.error_count == 1 else "s" }} need attention
+        {{ _("{count} field needs attention", count=form.error_count) if form.error_count == 1
+           else _("{count} fields need attention", count=form.error_count) }}
       </div>
     </div>
   {% endif %}
@@ -56,7 +57,7 @@
               {{ field.label }}
               {% if field.required %}
                 <span class="ff-required" aria-hidden="true">*</span>
-                <span class="ff-sr-only">(required)</span>
+                <span class="ff-sr-only">{{ _("(required)") }}</span>
               {% endif %}
             </label>
 
@@ -82,7 +83,7 @@
                   value="1"
                   {% if field.value %}checked{% endif %}
                 />
-                <span>{{ field.help_text or "Enabled" }}</span>
+                <span>{{ field.help_text or _("Enabled") }}</span>
               </label>
 
             {% elif field.widget == "password" %}
@@ -101,8 +102,8 @@
                 name="{{ field.confirm_name }}"
                 type="password"
                 autocomplete="new-password"
-                placeholder="Confirm {{ field.label|lower }}"
-                aria-label="Confirm {{ field.label|lower }}"
+                placeholder="{{ _("Confirm {name}", name=field.label|lower) }}"
+                aria-label="{{ _("Confirm {name}", name=field.label|lower) }}"
               />
 
             {% elif field.widget == "select" or field.widget == "relation" %}
@@ -113,7 +114,7 @@
                 {% if field.errors %}aria-invalid="true"{% endif %}
               >
                 {% if not field.required %}
-                  <option value="">— none —</option>
+                  <option value="">{{ _("— none —") }}</option>
                 {% endif %}
                 {% for choice in field.choices %}
                   <option
@@ -138,7 +139,7 @@
                   >{{ choice.label }}</option>
                 {% endfor %}
               </select>
-              <span class="ff-help">Hold Ctrl (or Cmd) to select more than one.</span>
+              <span class="ff-help">{{ _("Hold Ctrl (or Cmd) to select more than one.") }}</span>
 
             {% else %}
               <input
@@ -169,7 +170,7 @@
 
     <div class="ff-form-actions">
       <button class="ff-btn ff-btn--primary" type="submit">{{ submit_label }}</button>
-      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">Cancel</a>
+      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">{{ _("Cancel") }}</a>
     </div>
   </form>
 {% endblock %}

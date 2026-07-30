@@ -7,7 +7,7 @@
 #}
 <!doctype html>
 <html
-  lang="{{ settings.ui.language }}"
+  lang="{{ language }}"
   {% for name, value in theme.root_attributes().items() %}{{ name }}="{{ value }}" {% endfor %}
 >
   <head>
@@ -29,7 +29,7 @@
   <body>
     {# First tab stop on every page: keyboard users should not have to walk the
        whole sidebar to reach the table. #}
-    <a class="ff-skip-link" href="#ff-main">Skip to content</a>
+    <a class="ff-skip-link" href="#ff-main">{{ _("Skip to content") }}</a>
 
     <div class="ff-app" id="ff-app" data-collapsed="false">
       <aside class="ff-sidebar ff-scroll" id="ff-sidebar">
@@ -42,13 +42,13 @@
           <span class="ff-collapsible ff-truncate">{{ settings.project_name }}</span>
         </a>
 
-        <nav aria-label="Models">
+        <nav aria-label="{{ _("Models") }}">
           <a
             class="ff-nav-item"
             href="{{ admin_url }}/"
             {% if current_key is none %}aria-current="page"{% endif %}
           >
-            <span class="ff-collapsible">Dashboard</span>
+            <span class="ff-collapsible">{{ _("Dashboard") }}</span>
           </a>
 
           {% for group in nav %}
@@ -84,11 +84,11 @@
           aria-expanded="false"
         >
           <span aria-hidden="true">☰</span>
-          <span class="ff-sr-only">Open navigation</span>
+          <span class="ff-sr-only">{{ _("Open navigation") }}</span>
         </button>
 
-        <nav class="ff-breadcrumbs" aria-label="Breadcrumb">
-          <a class="ff-link" href="{{ admin_url }}/">Home</a>
+        <nav class="ff-breadcrumbs" aria-label="{{ _("Breadcrumb") }}">
+          <a class="ff-link" href="{{ admin_url }}/">{{ _("Home") }}</a>
           {% for crumb in breadcrumbs %}
             <span class="ff-breadcrumbs__sep" aria-hidden="true">/</span>
             {% if crumb.url %}
@@ -105,10 +105,10 @@
           class="ff-btn ff-btn--ghost ff-btn--icon ff-btn--sm"
           type="button"
           data-ff-theme-toggle
-          title="Toggle theme"
+          title="{{ _("Toggle theme") }}"
         >
           <span aria-hidden="true" data-ff-theme-icon>◐</span>
-          <span class="ff-sr-only">Toggle light or dark theme</span>
+          <span class="ff-sr-only">{{ _("Toggle light or dark theme") }}</span>
         </button>
 
         {% if user %}
@@ -123,12 +123,38 @@
               <div class="ff-account__identity">
                 <div class="ff-account__name ff-truncate">{{ user_label }}</div>
                 <div class="ff-account__meta">
-                  {% if is_superuser %}Superuser{% else %}Staff{% endif %}
+                  {% if is_superuser %}{{ _("Superuser") }}{% else %}{{ _("Staff") }}{% endif %}
                 </div>
               </div>
+              {% if languages|length > 1 %}
+                {# A form rather than links, so the choice is a POST that sets a
+                   cookie and returns to the same page. #}
+                <form class="ff-account__section" method="post" action="{{ language_url }}">
+                  <input type="hidden" name="next" value="{{ request.url.path }}" />
+                  <label class="ff-account__meta" for="ff-language">{{ _("Language") }}</label>
+                  <select
+                    class="ff-select ff-select--sm ff-mt-2"
+                    id="ff-language"
+                    name="language"
+                    onchange="this.form.submit()"
+                  >
+                    {% for code, name in languages %}
+                      <option value="{{ code }}" {% if code == language %}selected{% endif %}>
+                        {{ name }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                  <noscript>
+                    <button class="ff-btn ff-btn--sm ff-w-full ff-mt-2" type="submit">
+                      {{ _("Apply") }}
+                    </button>
+                  </noscript>
+                </form>
+              {% endif %}
+
               <form method="post" action="{{ logout_url }}">
                 <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
-                <button class="ff-btn ff-btn--ghost ff-w-full" type="submit">Sign out</button>
+                <button class="ff-btn ff-btn--ghost ff-w-full" type="submit">{{ _("Sign out") }}</button>
               </form>
             </div>
           </details>

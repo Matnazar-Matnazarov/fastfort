@@ -21,6 +21,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastfort._version import __version__
 from fastfort.core.exceptions import SecurityError
 from fastfort.core.hooks import Hook
+from fastfort.i18n import Translator, negotiate_language
 from fastfort.spec import FieldType
 from fastfort.ui.theming import Theme
 
@@ -60,10 +61,21 @@ def build_auth_router(fort: FastFort, auth: AdminAuth, renderer: Renderer) -> AP
     ) -> HTMLResponse:
         theme = Theme.from_settings(settings.ui)
         identity_field = _identity_field(fort)
+        translator = Translator(
+            negotiate_language(
+                chosen=request.cookies.get("ff_language"),
+                configured=settings.ui.language,
+                accept=request.headers.get("accept-language", ""),
+            )
+        )
         body = renderer.render(
             "auth/login.html",
             settings=settings,
             theme=theme,
+            _=translator,
+            language=translator.language,
+            languages=translator.choices(),
+            language_url=f"{admin_url}/language",
             stylesheets=theme.stylesheets(static_url),
             version=__version__,
             login_url=login_url,

@@ -6,10 +6,11 @@
       <h1 class="ff-h1">{{ settings.project_name }}</h1>
       <p class="ff-muted ff-mt-2">
         {% if models %}
-          {{ models|length }} model{{ "" if models|length == 1 else "s" }} registered
+          {{ _("{count} model registered", count=models|length) if models|length == 1
+             else _("{count} models registered", count=models|length) }}
           · {{ dialect }}
         {% else %}
-          Nothing registered yet
+          {{ _("Nothing registered yet") }}
         {% endif %}
       </p>
     </div>
@@ -20,7 +21,7 @@
        log they will not read. #}
     <div class="ff-alert ff-alert--warning ff-mt-0">
       <div>
-        <div class="ff-alert__title">Configuration needs attention</div>
+        <div class="ff-alert__title">{{ _("Configuration needs attention") }}</div>
         <ul class="ff-mt-2">
           {% for issue in issues %}
             <li>{{ issue }}</li>
@@ -44,7 +45,7 @@
     <div class="ff-card ff-mt-6">
       <div class="ff-empty">
         <div class="ff-empty__icon" aria-hidden="true">◇</div>
-        <div class="ff-empty__title">No models are registered</div>
+        <div class="ff-empty__title">{{ _("No models are registered") }}</div>
         <p class="ff-empty__body">
           Register one with <code class="ff-mono">@admin.register(Model)</code>, then make
           sure the module is imported — see

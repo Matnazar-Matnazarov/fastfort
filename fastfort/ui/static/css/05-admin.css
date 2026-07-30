@@ -209,3 +209,26 @@ a.ff-stat:hover {
 .ff-breadcrumbs .ff-link:hover {
   color: var(--ff-accent);
 }
+
+/* --- Language switcher --------------------------------------------------- */
+
+.ff-select--sm {
+  min-height: var(--ff-control-height-sm);
+  padding-block: 0;
+  font-size: var(--ff-text-sm);
+}
+
+.ff-account__section {
+  padding: var(--ff-space-2);
+  border-bottom: 1px solid var(--ff-border);
+  margin-bottom: var(--ff-space-2);
+}
+
+/* On the sign-in page it sits below the panel, out of the way of the form but
+ * reachable before anyone has an account to store a preference against. */
+.ff-auth__language {
+  margin-top: var(--ff-space-5);
+  display: flex;
+  gap: var(--ff-space-2);
+  justify-content: center;
+}
