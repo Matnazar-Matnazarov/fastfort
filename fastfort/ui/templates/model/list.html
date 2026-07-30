@@ -19,7 +19,16 @@
     {% endif %}
   </div>
 
-  <form class="ff-filters ff-no-print" method="get" action="{{ list_url }}">
+  {# data-ff-live turns this into an in-place update when JavaScript is running.
+     Without it the form and its links still work as a plain GET, which is why
+     every control below is a real input and every sort header a real link. #}
+  <form
+    class="ff-filters ff-no-print"
+    method="get"
+    action="{{ list_url }}"
+    data-ff-live
+    data-ff-target="#ff-results"
+  >
     {% if admin.searchable() %}
       <div class="ff-search">
         <span class="ff-search__icon" aria-hidden="true">⌕</span>
@@ -35,17 +44,40 @@
     {% endif %}
 
     {% for filter in filters %}
-      <label class="ff-field">
-        <span class="ff-sr-only">{{ filter.label }}</span>
-        <select class="ff-select" name="{{ filter.name }}" aria-label="{{ filter.label }}">
-          <option value="">{{ filter.label }}: {{ _("any") }}</option>
-          {% for choice in filter.choices %}
-            <option value="{{ choice.value }}" {% if choice.selected %}selected{% endif %}>
-              {{ choice.label }}
-            </option>
-          {% endfor %}
-        </select>
-      </label>
+      {% if filter.kind == "range" %}
+        {# Two bounds rather than one value: "created this month" is the question
+           people actually ask of a date column. #}
+        <div class="ff-range" role="group" aria-label="{{ filter.label }}">
+          <span class="ff-range__label">{{ filter.label }}</span>
+          <input
+            class="ff-input ff-input--sm"
+            type="{{ filter.input_type }}"
+            name="{{ filter.from_name }}"
+            value="{{ filter.from_value }}"
+            aria-label="{{ filter.label }} — {{ _("from") }}"
+          />
+          <span class="ff-range__dash" aria-hidden="true">–</span>
+          <input
+            class="ff-input ff-input--sm"
+            type="{{ filter.input_type }}"
+            name="{{ filter.to_name }}"
+            value="{{ filter.to_value }}"
+            aria-label="{{ filter.label }} — {{ _("to") }}"
+          />
+        </div>
+      {% else %}
+        <label class="ff-field">
+          <span class="ff-sr-only">{{ filter.label }}</span>
+          <select class="ff-select" name="{{ filter.name }}" aria-label="{{ filter.label }}">
+            <option value="">{{ filter.label }}: {{ _("any") }}</option>
+            {% for choice in filter.choices %}
+              <option value="{{ choice.value }}" {% if choice.selected %}selected{% endif %}>
+                {{ choice.label }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+      {% endif %}
     {% endfor %}
 
     {# The ordering rides along in a hidden field, so applying a filter does not
@@ -55,99 +87,13 @@
     {% endif %}
 
     <button class="ff-btn" type="submit">{{ _("Apply") }}</button>
+    <span class="ff-busy ff-spinner" aria-hidden="true"></span>
     {% if query.search or query.filters %}
       <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">{{ _("Clear") }}</a>
     {% endif %}
   </form>
 
-  {% if page.items %}
-    <div class="ff-table-wrap ff-scroll ff-mt-4">
-      <table class="ff-table">
-        <thead>
-          <tr>
-            {% for column in columns %}
-              <th scope="col" {% if column.sort_state != "none" %}aria-sort="{{ column.sort_state }}"{% endif %}>
-                {% if column.sort_url %}
-                  <a
-                    class="ff-table__sort"
-                    href="{{ column.sort_url }}"
-                    aria-sort="{{ column.sort_state }}"
-                  >
-                    {{ column.label }}
-                    <span class="ff-table__arrow" aria-hidden="true">
-                      {%- if column.sort_state == "ascending" %}▲{% elif column.sort_state == "descending" %}▼{% else %}⇅{% endif -%}
-                    </span>
-                  </a>
-                {% else %}
-                  {{ column.label }}
-                {% endif %}
-              </th>
-            {% endfor %}
-            <th scope="col" class="ff-nowrap"><span class="ff-sr-only">{{ _("Actions") }}</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for row in rows %}
-            <tr>
-              {% for cell in row.cells %}
-                <td {% if cell.numeric %}class="ff-numeric"{% endif %}>
-                  {% if cell.boolean %}
-                    {{ cell.value|ff_bool }}
-                  {% elif cell.url %}
-                    <a class="ff-link" href="{{ cell.url }}">{{ cell.value|ff_display }}</a>
-                  {% else %}
-                    {{ cell.value|ff_display }}
-                  {% endif %}
-                </td>
-              {% endfor %}
-              <td class="ff-nowrap ff-no-print">
-                <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ row.edit_url }}">{{ _("Edit") }}</a>
-                <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ row.delete_url }}">{{ _("Delete") }}</a>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-
-    <nav class="ff-pagination ff-no-print" aria-label="{{ _("Pagination") }}">
-      {# One line, so the rendered text is a contiguous "1–25 of 400" rather
-         than being broken by template indentation. #}
-      <span class="ff-pagination__info">{{ "{:,}".format(page.start_index) }}–{{ "{:,}".format(page.end_index) }} of {{ "{:,}".format(page.total) }}</span>
-      {% if page.has_previous %}
-        <a class="ff-btn ff-btn--sm" href="{{ page_url(page.page - 1) }}">{{ _("Previous") }}</a>
-      {% else %}
-        <span class="ff-btn ff-btn--sm" aria-disabled="true">{{ _("Previous") }}</span>
-      {% endif %}
-      <span class="ff-muted">{{ _("Page {page} of {pages}", page=page.page, pages=page.pages) }}</span>
-      {% if page.has_next %}
-        <a class="ff-btn ff-btn--sm" href="{{ page_url(page.page + 1) }}">{{ _("Next") }}</a>
-      {% else %}
-        <span class="ff-btn ff-btn--sm" aria-disabled="true">{{ _("Next") }}</span>
-      {% endif %}
-    </nav>
-  {% else %}
-    <div class="ff-card ff-mt-4">
-      <div class="ff-empty">
-        <div class="ff-empty__icon" aria-hidden="true">◇</div>
-        {% if query.search or query.filters %}
-          <div class="ff-empty__title">{{ _("Nothing matched") }}</div>
-          <p class="ff-empty__body">
-            No {{ admin.title|lower }} match the current search and filters.
-          </p>
-          <a class="ff-btn" href="{{ list_url }}">{{ _("Clear search and filters") }}</a>
-        {% else %}
-          <div class="ff-empty__title">{{ _("Nothing here yet") }}</div>
-          <p class="ff-empty__body">
-            Nothing has been added to <code class="ff-mono">{{ admin.spec.key }}</code> yet.
-          </p>
-          {% if add_url %}
-            <a class="ff-btn ff-btn--primary" href="{{ add_url }}">
-              {{ _("Add the first {name}", name=admin.singular|lower) }}
-            </a>
-          {% endif %}
-        {% endif %}
-      </div>
-    </div>
-  {% endif %}
+  <div id="ff-results" aria-live="polite" aria-busy="false">
+    {% include "model/_results.html" %}
+  </div>
 {% endblock %}

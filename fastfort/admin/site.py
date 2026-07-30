@@ -311,7 +311,14 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 )
                 page_result = await adapter.list(query)
 
+            filter_controls = await _filter_controls(
+                spec, model_admin, params, adapter, settings.admin.autocomplete_limit
+            )
+
         columns = tuple(model_admin.columns())
+        # A live update asks for the results only. Both paths render the same
+        # fragment from the same context, so they cannot drift apart.
+        partial = request.headers.get("x-fastfort-partial") == "results"
         context = base_context(request, model_key) | {
             "page_title": model_admin.title,
             "breadcrumbs": ({"label": model_admin.title, "url": None},),
@@ -324,13 +331,13 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             "rows": _rows(
                 model_admin, spec, page_result.items, columns, f"{admin_url}/{model_key}"
             ),
-            "filters": _filter_controls(spec, model_admin, params),
+            "filters": filter_controls,
             "ordering_param": ",".join(sort.as_token() for sort in query.ordering),
             "page_url": lambda number: _with_params(
                 list_url(model_key), params, {"p": str(number)}
             ),
         }
-        return page(request, "model/list.html", context)
+        return page(request, "model/_results.html" if partial else "model/list.html", context)
 
     # -- create, change, delete ---------------------------------------------
 
@@ -853,14 +860,20 @@ def _rows(
     return rows
 
 
-def _filter_controls(
-    spec: ModelSpec, admin: ModelAdmin, params: dict[str, str]
+async def _filter_controls(
+    spec: ModelSpec,
+    admin: ModelAdmin,
+    params: dict[str, str],
+    adapter: Any,
+    relation_limit: int = 20,
 ) -> list[dict[str, Any]]:
-    """Dropdowns for the declared filters.
+    """Build a control for each declared filter.
 
-    Only fields with a known, small set of values get a control. A foreign key
-    would need its target's rows, which is a query per filter, so it waits for
-    the autocomplete widget.
+    Booleans and enumerations become a dropdown from what the spec already knows.
+    Dates become a pair of bounds, because "created this month" is the question
+    people actually ask of a date column. A relation becomes a dropdown of its
+    target's rows, capped: past the cap the control is dropped rather than
+    rendering a select with ten thousand options that nobody can use.
     """
     controls: list[dict[str, Any]] = []
 
@@ -869,17 +882,45 @@ def _filter_controls(
         if field is None:
             continue
 
+        if field.type in {FieldType.DATE, FieldType.DATETIME}:
+            controls.append(
+                {
+                    "kind": "range",
+                    "name": name,
+                    "label": field.label,
+                    "from_name": f"{name}__gte",
+                    "to_name": f"{name}__lte",
+                    "from_value": params.get(f"{name}__gte", ""),
+                    "to_value": params.get(f"{name}__lte", ""),
+                    "input_type": "date" if field.type is FieldType.DATE else "datetime-local",
+                }
+            )
+            continue
+
         options: tuple[tuple[str, str], ...]
         if field.type is FieldType.BOOLEAN:
             options = (("1", "Yes"), ("0", "No"))
         elif field.choices:
             options = tuple((str(choice.value), choice.label) for choice in field.choices)
+        elif field.is_relation and not field.type.is_multi_valued:
+            found = await adapter.related_choices(name, "", limit=relation_limit + 1)
+            if len(found) > relation_limit:
+                # Too many to choose from in a dropdown. Better no control than an
+                # unusable one; the search box still reaches these rows.
+                continue
+            options = tuple(
+                (str(choice.value), choice.label or str(choice.value)) for choice in found
+            )
         else:
+            continue
+
+        if not options:
             continue
 
         current = params.get(name, "")
         controls.append(
             {
+                "kind": "select",
                 "name": name,
                 "label": field.label,
                 "choices": [
