@@ -43,6 +43,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Create, change and delete views with a generated form per model, per-field
   validation messages, delete confirmation and flash messages
 
+- Password columns render as a new-password plus confirmation control, hashed on
+  save, detected from the spec without the project declaring anything
+- `05-admin.css`: a visual pass over the sidebar, filter bar, table, stat tiles
+  and forms, including a two-column form grid and a sticky action bar
+
 ### Changed
 
 - The `mysql` extra installs `aiomysql` instead of `asyncmy`. PYSEC-2026-286 is an

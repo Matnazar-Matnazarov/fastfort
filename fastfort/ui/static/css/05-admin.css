@@ -1,0 +1,211 @@
+/* Page-level refinements.
+ *
+ * Loaded after the components, so it tunes them in context rather than
+ * duplicating them. Everything here reads from tokens.
+ */
+
+/* --- Sidebar -------------------------------------------------------------
+ * An active item gets a bar on its leading edge as well as a tint. Colour alone
+ * fails for anyone who cannot distinguish it, and the bar reads instantly.
+ */
+
+.ff-nav-item {
+  position: relative;
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-nav-item[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: calc(var(--ff-space-3) * -1 - 1px);
+  inset-block: 20%;
+  width: 3px;
+  border-radius: var(--ff-radius-full);
+  background: var(--ff-accent);
+}
+
+.ff-nav-group {
+  margin-top: var(--ff-space-5);
+}
+
+.ff-nav-group__label {
+  margin-bottom: var(--ff-space-1);
+}
+
+.ff-brand {
+  border-bottom: 1px solid var(--ff-border);
+  margin-bottom: var(--ff-space-3);
+}
+
+/* --- Topbar -------------------------------------------------------------- */
+
+.ff-topbar {
+  /* Translucent, so content scrolling under it stays visible as texture rather
+   * than disappearing behind a solid slab. */
+  background: color-mix(in oklab, var(--ff-surface) 88%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+/* --- Page header --------------------------------------------------------- */
+
+.ff-page-header {
+  padding-bottom: var(--ff-space-5);
+  border-bottom: 1px solid var(--ff-border);
+  align-items: center;
+}
+
+.ff-page-header .ff-h1 {
+  font-size: var(--ff-text-2xl);
+  line-height: 1.15;
+}
+
+/* --- Filter bar ---------------------------------------------------------
+ * Grouped into a panel so it reads as one control strip rather than as loose
+ * inputs floating above the table.
+ */
+
+.ff-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ff-space-2);
+  padding: var(--ff-space-3);
+  margin-top: var(--ff-space-5);
+  background: var(--ff-surface);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-lg);
+}
+
+.ff-filters .ff-field {
+  flex: 0 0 auto;
+}
+
+/* --- Table --------------------------------------------------------------- */
+
+.ff-table thead th {
+  /* Slightly taller than a body row: the header should read as a header without
+   * needing a heavier rule under it. */
+  padding-block: var(--ff-space-3);
+  background: var(--ff-surface-sunken);
+}
+
+.ff-table tbody tr {
+  transition: background var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-table tbody td:first-child {
+  font-variant-numeric: tabular-nums;
+  color: var(--ff-text-muted);
+}
+
+/* Row actions stay quiet until the row is hovered, so a long table is not a wall
+ * of buttons. They remain reachable by keyboard at all times. */
+.ff-table tbody td:last-child .ff-btn {
+  opacity: 0.45;
+  transition: opacity var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-table tbody tr:hover td:last-child .ff-btn,
+.ff-table tbody td:last-child .ff-btn:focus-visible {
+  opacity: 1;
+}
+
+/* --- Stat tiles ---------------------------------------------------------- */
+
+.ff-stat {
+  position: relative;
+  overflow: hidden;
+}
+
+.ff-stat::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  height: 2px;
+  background: linear-gradient(
+    to right,
+    var(--ff-accent),
+    color-mix(in oklab, var(--ff-accent) 30%, transparent)
+  );
+  opacity: 0;
+  transition: opacity var(--ff-duration) var(--ff-ease);
+}
+
+a.ff-stat:hover::after {
+  opacity: 1;
+}
+
+a.ff-stat:hover {
+  transform: translateY(-1px);
+}
+
+.ff-stat {
+  transition:
+    border-color var(--ff-duration-fast) var(--ff-ease),
+    box-shadow var(--ff-duration-fast) var(--ff-ease),
+    transform var(--ff-duration-fast) var(--ff-ease);
+}
+
+/* --- Forms --------------------------------------------------------------
+ * Two columns on a wide screen, the way a desktop admin should use its space.
+ * Long controls span both, because a textarea squeezed into half a page is worse
+ * than a taller form.
+ */
+
+.ff-form-grid {
+  display: grid;
+  gap: var(--ff-space-5);
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+  align-items: start;
+}
+
+.ff-form-grid > .ff-field--wide {
+  grid-column: 1 / -1;
+}
+
+.ff-card__header--form {
+  background: var(--ff-surface-sunken);
+  border-radius: var(--ff-radius-lg) var(--ff-radius-lg) 0 0;
+}
+
+/* A sticky action bar, so Save is reachable without scrolling a long form. */
+.ff-form-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ff-space-2);
+  padding: var(--ff-space-4) 0;
+  margin-top: var(--ff-space-4);
+  background: linear-gradient(to top, var(--ff-bg) 60%, transparent);
+}
+
+/* --- Buttons ------------------------------------------------------------- */
+
+.ff-btn {
+  box-shadow: var(--ff-shadow-xs);
+}
+
+.ff-btn--ghost {
+  box-shadow: none;
+}
+
+.ff-btn--primary {
+  box-shadow: var(--ff-shadow-sm);
+}
+
+/* --- Breadcrumbs --------------------------------------------------------- */
+
+.ff-breadcrumbs {
+  font-size: var(--ff-text-sm);
+}
+
+.ff-breadcrumbs .ff-link {
+  text-decoration: none;
+  color: var(--ff-text-muted);
+}
+
+.ff-breadcrumbs .ff-link:hover {
+  color: var(--ff-accent);
+}
