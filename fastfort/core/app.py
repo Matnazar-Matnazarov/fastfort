@@ -104,6 +104,20 @@ class FastFort:
         """Register a model together with the admin object describing it."""
         return self.registry.register(model, admin, key=key)
 
+    def _attach_pending(self) -> int:
+        """Attach anything `@admin.register` buffered at import time.
+
+        Drained rather than read, so importing the same module twice cannot
+        register the same model twice.
+        """
+        from fastfort.admin.decorators import take_pending
+
+        attached = 0
+        for item in take_pending():
+            self.registry.register(item.model, item.admin, key=item.key)
+            attached += 1
+        return attached
+
     def include_admin(self, *module_paths: str) -> tuple[ModuleType, ...]:
         """Import modules so their registration decorators run.
 
@@ -124,6 +138,7 @@ class FastFort:
                         hint="Check the dotted path, and that the package is importable.",
                     ) from exc
                 raise
+        self._attach_pending()
         return tuple(modules)
 
     def autodiscover(self, *packages: str, module_name: str = "admin") -> tuple[str, ...]:
@@ -156,6 +171,7 @@ class FastFort:
                     importlib.import_module(info.name)
                     discovered.append(info.name)
 
+        self._attach_pending()
         return tuple(dict.fromkeys(discovered))
 
     # -- diagnostics --------------------------------------------------------
@@ -208,6 +224,10 @@ class FastFort:
                 "This FastFort instance is already mounted.",
                 hint="Create a separate FastFort instance per application.",
             )
+
+        # A project that imported its admin modules directly, without going
+        # through include_admin or autodiscover, still gets its registrations.
+        self._attach_pending()
 
         # Accessing the properties raises with the actionable message.
         _ = self.backend

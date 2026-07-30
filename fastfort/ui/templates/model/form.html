@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="ff-page-header">
+    <div class="ff-page-header__text">
+      <h1 class="ff-h1">{{ heading }}</h1>
+      {% if subheading %}
+        <p class="ff-muted ff-mt-2">{{ subheading }}</p>
+      {% endif %}
+    </div>
+    <div class="ff-page-header__actions">
+      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">Back to {{ admin.title|lower }}</a>
+      {% if delete_url %}
+        <a class="ff-btn ff-btn--ghost" href="{{ delete_url }}">Delete</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if form.non_field_errors %}
+    <div class="ff-alert ff-alert--danger" role="alert">
+      <div>
+        <div class="ff-alert__title">This could not be saved</div>
+        <ul class="ff-mt-2">
+          {% for message in form.non_field_errors %}
+            <li>{{ message }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  {% elif form.error_count %}
+    <div class="ff-alert ff-alert--danger" role="alert">
+      <div class="ff-alert__title">
+        {{ form.error_count }} field{{ "" if form.error_count == 1 else "s" }} need attention
+      </div>
+    </div>
+  {% endif %}
+
+  <form class="ff-mt-4" method="post" action="{{ action_url }}" novalidate>
+    <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+    {% if version_token %}
+      {# Carries the row's state at load time, so a save that would silently
+         overwrite someone else's edit can be detected instead. #}
+      <input type="hidden" name="_version" value="{{ version_token }}" />
+    {% endif %}
+
+    <div class="ff-card">
+      <div class="ff-card__body ff-stack">
+        {% for field in form.fields %}
+          <div class="ff-field" {% if field.errors %}data-invalid="true"{% endif %}>
+            <label class="ff-label" for="ff-{{ field.name }}">
+              {{ field.label }}
+              {% if field.required %}
+                <span class="ff-required" aria-hidden="true">*</span>
+                <span class="ff-sr-only">(required)</span>
+              {% endif %}
+            </label>
+
+            {% if field.widget == "readonly" %}
+              <div class="ff-readonly" id="ff-{{ field.name }}">{{ field.value|ff_display }}</div>
+
+            {% elif field.widget == "textarea" or field.widget == "json" %}
+              <textarea
+                class="ff-textarea {% if field.widget == 'json' %}ff-mono{% endif %}"
+                id="ff-{{ field.name }}"
+                name="{{ field.name }}"
+                rows="{{ 10 if field.widget == 'json' else 4 }}"
+                {% if field.required %}required{% endif %}
+                {% if field.errors %}aria-invalid="true"{% endif %}
+              >{{ field.raw }}</textarea>
+
+            {% elif field.widget == "checkbox" %}
+              <label class="ff-checkbox">
+                <input
+                  type="checkbox"
+                  id="ff-{{ field.name }}"
+                  name="{{ field.name }}"
+                  value="1"
+                  {% if field.value %}checked{% endif %}
+                />
+                <span>{{ field.spec.help_text or "Enabled" }}</span>
+              </label>
+
+            {% elif field.widget == "select" or field.widget == "relation" %}
+              <select
+                class="ff-select"
+                id="ff-{{ field.name }}"
+                name="{{ field.name }}"
+                {% if field.errors %}aria-invalid="true"{% endif %}
+              >
+                {% if not field.required %}
+                  <option value="">— none —</option>
+                {% endif %}
+                {% for choice in field.choices %}
+                  <option
+                    value="{{ choice.value }}"
+                    {% if field.raw == choice.value|string %}selected{% endif %}
+                  >{{ choice.label }}</option>
+                {% endfor %}
+              </select>
+
+            {% elif field.widget == "relations" %}
+              <select
+                class="ff-select"
+                id="ff-{{ field.name }}"
+                name="{{ field.name }}[]"
+                multiple
+                size="{{ [field.choices|length, 6]|min if field.choices else 3 }}"
+              >
+                {% for choice in field.choices %}
+                  <option
+                    value="{{ choice.value }}"
+                    {% if choice.value|string in field.selected %}selected{% endif %}
+                  >{{ choice.label }}</option>
+                {% endfor %}
+              </select>
+              <span class="ff-help">Hold Ctrl (or Cmd) to select more than one.</span>
+
+            {% else %}
+              <input
+                class="ff-input"
+                id="ff-{{ field.name }}"
+                name="{{ field.name }}"
+                type="{{ input_types[field.widget] }}"
+                value="{{ field.raw }}"
+                {% if field.widget == "decimal" %}step="{{ field.spec.decimal_places|step }}"{% endif %}
+                {% if field.spec.max_length %}maxlength="{{ field.spec.max_length }}"{% endif %}
+                {% if field.spec.placeholder %}placeholder="{{ field.spec.placeholder }}"{% endif %}
+                {% if field.required %}required{% endif %}
+                {% if field.errors %}aria-invalid="true"{% endif %}
+                {% if field.widget == "password" %}autocomplete="new-password"{% endif %}
+              />
+            {% endif %}
+
+            {% if field.spec.help_text and field.widget != "checkbox" %}
+              <span class="ff-help">{{ field.spec.help_text }}</span>
+            {% endif %}
+            {% for message in field.errors %}
+              <span class="ff-error" role="alert">{{ message }}</span>
+            {% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="ff-row ff-mt-4">
+      <button class="ff-btn ff-btn--primary" type="submit">{{ submit_label }}</button>
+      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">Cancel</a>
+    </div>
+  </form>
+{% endblock %}

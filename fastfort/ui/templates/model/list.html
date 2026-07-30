@@ -12,6 +12,11 @@
         {% endif %}
       </p>
     </div>
+    {% if add_url %}
+      <div class="ff-page-header__actions">
+        <a class="ff-btn ff-btn--primary" href="{{ add_url }}">Add {{ admin.singular|lower }}</a>
+      </div>
+    {% endif %}
   </div>
 
   <form class="ff-row ff-no-print" method="get" action="{{ list_url }}">
@@ -78,6 +83,7 @@
                 {% endif %}
               </th>
             {% endfor %}
+            <th scope="col" class="ff-nowrap"><span class="ff-sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -94,6 +100,10 @@
                   {% endif %}
                 </td>
               {% endfor %}
+              <td class="ff-nowrap ff-no-print">
+                <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ row.edit_url }}">Edit</a>
+                <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ row.delete_url }}">Delete</a>
+              </td>
             </tr>
           {% endfor %}
         </tbody>
@@ -129,8 +139,13 @@
         {% else %}
           <div class="ff-empty__title">No {{ admin.title|lower }} yet</div>
           <p class="ff-empty__body">
-            Once rows exist in <code class="ff-mono">{{ admin.spec.key }}</code>, they appear here.
+            Nothing has been added to <code class="ff-mono">{{ admin.spec.key }}</code> yet.
           </p>
+          {% if add_url %}
+            <a class="ff-btn ff-btn--primary" href="{{ add_url }}">
+              Add the first {{ admin.singular|lower }}
+            </a>
+          {% endif %}
         {% endif %}
       </div>
     </div>

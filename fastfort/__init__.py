@@ -6,6 +6,8 @@ may change between minor releases; see CONTRIBUTING.md for the stability policy.
 
 from __future__ import annotations
 
+from . import admin
+from ._version import SCHEMA_VERSION, __version__
 from .core.app import FastFort
 from .core.exceptions import (
     ConfigurationError,
@@ -24,12 +26,6 @@ from .core.settings import (
     UISettings,
 )
 
-__version__ = "0.1.0.dev0"
-
-#: Version of the database schema owned by FastFort. It moves independently of
-#: `__version__`; `fastfort db upgrade` migrates the database up to this number.
-SCHEMA_VERSION = 1
-
 __all__ = [
     "SCHEMA_VERSION",
     "AdminSettings",
@@ -46,4 +42,5 @@ __all__ = [
     "UISettings",
     "ValidationError",
     "__version__",
+    "admin",
 ]

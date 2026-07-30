@@ -66,6 +66,7 @@ class Renderer:
         )
         self.environment.filters["ff_display"] = display_value
         self.environment.filters["ff_bool"] = boolean_mark
+        self.environment.filters["step"] = decimal_step
         self.environment.globals["EMPTY"] = EMPTY
 
     def render(self, template: str, /, **context: Any) -> str:
@@ -109,3 +110,14 @@ def boolean_mark(value: Any) -> Markup:
     if value:
         return Markup('<span class="ff-bool ff-bool--on" title="Yes">&check;</span>')
     return Markup('<span class="ff-bool ff-bool--off" title="No">&times;</span>')
+
+
+def decimal_step(places: int | None) -> str:
+    """The `step` attribute for a numeric input.
+
+    Without it a browser rejects "19.50" on a field it assumes is an integer,
+    which reads as the form being broken rather than as a validation rule.
+    """
+    if not places or places <= 0:
+        return "1"
+    return f"0.{'0' * (places - 1)}1"

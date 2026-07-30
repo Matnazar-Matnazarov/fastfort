@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="ff-page-header">
+    <div class="ff-page-header__text">
+      <h1 class="ff-h1">Delete {{ admin.singular|lower }}</h1>
+      <p class="ff-muted ff-mt-2">This cannot be undone.</p>
+    </div>
+  </div>
+
+  <div class="ff-card">
+    <div class="ff-card__body ff-stack">
+      <p>
+        Delete <strong>{{ label }}</strong>?
+      </p>
+
+      {% if cascades %}
+        {# Naming what else disappears is the difference between a confirmation
+           and a trap. #}
+        <div class="ff-alert ff-alert--warning">
+          <div>
+            <div class="ff-alert__title">Related records will be deleted too</div>
+            <ul class="ff-mt-2">
+              {% for relation in cascades %}
+                <li>{{ relation }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+      {% endif %}
+
+      <form class="ff-row" method="post" action="{{ action_url }}">
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+        <button class="ff-btn ff-btn--danger" type="submit">
+          Yes, delete this {{ admin.singular|lower }}
+        </button>
+        <a class="ff-btn ff-btn--ghost" href="{{ cancel_url }}">Cancel</a>
+      </form>
+    </div>
+  </div>
+{% endblock %}

@@ -74,7 +74,7 @@ Issues = "https://github.com/Matnazar-Matnazarov/fastfort/issues"
 fastfort = "fastfort.cli.main:main"
 
 [tool.hatch.version]
-path = "fastfort/__init__.py"
+path = "fastfort/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["fastfort"]

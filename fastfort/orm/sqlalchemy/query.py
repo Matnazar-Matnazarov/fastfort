@@ -92,8 +92,16 @@ class QueryBuilder:
                 f"{self.spec.key} has a {len(columns)}-column primary key, "
                 f"but {len(values)} value(s) were supplied."
             )
+        # Coerced against the column type before comparing. PostgreSQL refuses
+        # `integer = character varying` outright, where SQLite and MySQL quietly
+        # cast -- so a key arriving from a URL as a string works on two databases
+        # and fails on the third unless it is converted here.
+        coerced = tuple(
+            self._coerce(self.spec.get(name), str(value), name)
+            for name, value in zip(self.spec.primary_key, values, strict=True)
+        )
         statement: sa.Select[Any] = sa.select(self.model).where(
-            sa.and_(*(column == value for column, value in zip(columns, values, strict=True)))
+            sa.and_(*(column == value for column, value in zip(columns, coerced, strict=True)))
         )
         return self._with_eager_loads(statement)
 

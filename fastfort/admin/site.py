@@ -10,19 +10,27 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
-from fastfort import __version__
+from fastfort._version import __version__
 from fastfort.auth.service import AdminAuth
-from fastfort.core.exceptions import RegistrationError, ValidationError
-from fastfort.spec import FieldType, ListQuery, SortSpec
+from fastfort.core.exceptions import (
+    AdapterError,
+    ObjectNotFound,
+    RegistrationError,
+    SecurityError,
+    ValidationError,
+)
+from fastfort.spec import Choice, FieldType, ListQuery, SortSpec
 from fastfort.ui.renderer import Renderer
 from fastfort.ui.theming import Theme
 
 from .auth_views import build_auth_router
+from .forms import Form
+from .messages import Message, Messages
 from .options import ModelAdmin
 from .security import make_guard
 
@@ -73,6 +81,11 @@ def build_admin_router(fort: FastFort) -> APIRouter:
     renderer = Renderer(settings)
     auth = AdminAuth(fort)
     fort.auth = auth
+    notices = Messages(settings)
+
+    #: How composite primary keys travel in a URL. A single-column key is just its
+    #: value; more than one is joined, which keeps one route shape for both.
+    key_separator = "~"
 
     #: ModelAdmin instances, built once. Instantiating validates the declarations
     #: against the spec, so a typo surfaces here rather than on a request.
@@ -108,6 +121,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             "nav": _navigation(fort, list_url),
             "breadcrumbs": (),
             "page_title": settings.project_name,
+            "messages": notices.read(request),
             "request": request,
         }
 
@@ -120,6 +134,34 @@ def build_admin_router(fort: FastFort) -> APIRouter:
     router = APIRouter(
         tags=["fastfort-admin"], dependencies=[Depends(_remember(make_guard(auth, settings), auth))]
     )
+
+    def page(request: Request, template: str, context: dict[str, Any]) -> HTMLResponse:
+        """Render a page, then drop the message cookie.
+
+        Cleared here rather than on read, so a banner appears exactly once: one
+        that survives a refresh makes people wonder whether they saved twice.
+        """
+        response = HTMLResponse(renderer.render(template, **context))
+        if context.get("messages"):
+            notices.clear(response)
+        return response
+
+    def redirect(to: str, *messages: Message) -> RedirectResponse:
+        """A 303 carrying feedback for the page that follows.
+
+        303 rather than 302 so the browser follows with GET and the form body
+        cannot be resubmitted by a refresh.
+        """
+        response = RedirectResponse(to, status_code=303)
+        notices.queue(response, *messages)
+        return response
+
+    async def verify_csrf(request: Request) -> None:
+        form = {name: str(value) for name, value in (await request.form()).items()}
+        auth.csrf.verify(
+            cookie=request.cookies.get(auth.csrf.cookie_name),
+            submitted=auth.csrf.token_from(form, dict(request.headers)),
+        )
 
     # -- assets -------------------------------------------------------------
 
@@ -167,7 +209,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             "dialect": fort.backend.dialect,
             "issues": fort.check(),
         }
-        return HTMLResponse(renderer.render("dashboard.html", **context))
+        return page(request, "dashboard.html", context)
 
     # -- list ---------------------------------------------------------------
 
@@ -205,7 +247,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 prefetch_related=tuple(model_admin.prefetch_related),
             )
             try:
-                page = await adapter.list(query)
+                page_result = await adapter.list(query)
             except ValidationError:
                 # A malformed filter value in the URL should not 500; showing the
                 # unfiltered list with the input cleared is the useful recovery.
@@ -215,25 +257,317 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                     page=1,
                     page_size=query.page_size,
                 )
-                page = await adapter.list(query)
+                page_result = await adapter.list(query)
 
         columns = tuple(model_admin.columns())
         context = base_context(request, model_key) | {
             "page_title": model_admin.title,
             "breadcrumbs": ({"label": model_admin.title, "url": None},),
             "admin": model_admin,
-            "page": page,
+            "page": page_result,
             "query": query,
             "list_url": list_url(model_key),
+            "add_url": f"{admin_url}/{model_key}/add",
             "columns": _column_headers(spec, columns, query, params, list_url(model_key)),
-            "rows": _rows(model_admin, spec, page.items, columns),
+            "rows": _rows(
+                model_admin, spec, page_result.items, columns, f"{admin_url}/{model_key}"
+            ),
             "filters": _filter_controls(spec, model_admin, params),
             "ordering_param": ",".join(sort.as_token() for sort in query.ordering),
             "page_url": lambda number: _with_params(
                 list_url(model_key), params, {"p": str(number)}
             ),
         }
-        return HTMLResponse(renderer.render("model/list.html", **context))
+        return page(request, "model/list.html", context)
+
+    # -- create, change, delete ---------------------------------------------
+
+    def object_url(model_key: str, key: tuple[Any, ...]) -> str:
+        joined = key_separator.join(str(part) for part in key)
+        return f"{admin_url}/{model_key}/{quote(joined, safe='')}/"
+
+    def parse_key(spec: ModelSpec, raw: str) -> tuple[Any, ...]:
+        parts = raw.split(key_separator) if len(spec.primary_key) > 1 else [raw]
+        if len(parts) != len(spec.primary_key):
+            raise HTTPException(status_code=404, detail="Malformed object key.")
+        return tuple(parts)
+
+    def form_relations(model_admin: ModelAdmin) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Relations a form has to have loaded before it can render.
+
+        Reading `product.category` on a lazily loaded attribute raises
+        MissingGreenlet under asyncio, so the eager loads cannot be left to the
+        admin's `select_related` -- a project that did not declare it would get a
+        500 on the edit page rather than a slow one.
+        """
+        to_one = tuple(
+            field.name
+            for field in model_admin.spec
+            if field.is_relation and not field.type.is_multi_valued
+        )
+        to_many = tuple(
+            field.name for field in model_admin.spec if field.type is FieldType.MANY_TO_MANY
+        )
+        return (
+            tuple(dict.fromkeys((*model_admin.select_related, *to_one))),
+            tuple(dict.fromkeys((*model_admin.prefetch_related, *to_many))),
+        )
+
+    async def relation_choices(
+        adapter: Any, model_admin: ModelAdmin
+    ) -> dict[str, tuple[Choice, ...]]:
+        """Options for every relation field on the form.
+
+        Bounded by `autocomplete_limit`: a dropdown over a million rows is not a
+        usable control, and building it would stall the page. Once the limit is
+        reached the field needs the autocomplete widget instead.
+        """
+        options: dict[str, tuple[Choice, ...]] = {}
+        for field_spec in model_admin.spec:
+            if not field_spec.is_relation or field_spec.type is FieldType.REVERSE_FK:
+                continue
+            found = await adapter.related_choices(
+                field_spec.name, "", limit=settings.admin.autocomplete_limit
+            )
+            options[field_spec.name] = tuple(
+                Choice(value=choice.value, label=choice.label or str(choice.value))
+                for choice in found
+            )
+        return options
+
+    def form_context(
+        request: Request,
+        model_key: str,
+        model_admin: ModelAdmin,
+        form: Form,
+        *,
+        instance: Any = None,
+        label: str = "",
+    ) -> dict[str, Any]:
+        editing = instance is not None
+        key = model_admin.spec.primary_key
+        pk = tuple(getattr(instance, name) for name in key) if editing else ()
+        return base_context(request, model_key) | {
+            "page_title": label if editing else f"Add {model_admin.singular.lower()}",
+            "breadcrumbs": (
+                {"label": model_admin.title, "url": list_url(model_key)},
+                {"label": label if editing else "Add", "url": None},
+            ),
+            "admin": model_admin,
+            "form": form,
+            "heading": label if editing else f"Add {model_admin.singular.lower()}",
+            "subheading": model_admin.spec.key if editing else None,
+            "list_url": list_url(model_key),
+            "action_url": object_url(model_key, pk) if editing else f"{admin_url}/{model_key}/add",
+            "delete_url": f"{object_url(model_key, pk)}delete" if editing else None,
+            "submit_label": "Save changes" if editing else f"Create {model_admin.singular.lower()}",
+            "version_token": None,
+            "input_types": INPUT_TYPES,
+        }
+
+    @router.get("/{model_key}/add", response_class=HTMLResponse, name="fastfort:add")
+    async def add_form(request: Request, model_key: str) -> Any:
+        model_admin = _require_admin(admin_for, model_key)
+        entry = fort.registry.entry_for_key(model_key)
+
+        async with fort.backend.unit_of_work() as uow:
+            adapter = fort.backend.adapter(entry.model, uow, key=model_key)
+            form = Form(
+                model_admin.spec,
+                model_admin,
+                relation_choices=await relation_choices(adapter, model_admin),
+            )
+        return page(request, "model/form.html", form_context(request, model_key, model_admin, form))
+
+    @router.post("/{model_key}/add", name="fastfort:add-submit")
+    async def add_submit(request: Request, model_key: str) -> Any:
+        model_admin = _require_admin(admin_for, model_key)
+        entry = fort.registry.entry_for_key(model_key)
+        submitted = await _form_data(request)
+
+        try:
+            await verify_csrf(request)
+        except SecurityError as exc:
+            return redirect(f"{admin_url}/{model_key}/add", notices.danger(exc.message))
+
+        async with fort.backend.unit_of_work() as uow:
+            adapter = fort.backend.adapter(entry.model, uow, key=model_key)
+            choices = await relation_choices(adapter, model_admin)
+            form = Form(model_admin.spec, model_admin, relation_choices=choices)
+            cleaned = form.bind(submitted)
+
+            if not form.is_valid:
+                await uow.rollback()
+                return page(
+                    request,
+                    "model/form.html",
+                    form_context(request, model_key, model_admin, form),
+                )
+
+            try:
+                created = await adapter.create(cleaned)
+            except (ValidationError, AdapterError) as exc:
+                await uow.rollback()
+                form.non_field_errors.append(exc.message)
+                return page(
+                    request,
+                    "model/form.html",
+                    form_context(request, model_key, model_admin, form),
+                )
+
+            label = adapter.label_for(created)
+            key = adapter.primary_key_of(created)
+
+        return redirect(
+            object_url(model_key, key),
+            notices.success(f"{model_admin.singular} \u201c{label}\u201d was created."),
+        )
+
+    @router.get("/{model_key}/{object_key}/", response_class=HTMLResponse, name="fastfort:change")
+    async def change_form(request: Request, model_key: str, object_key: str) -> Any:
+        model_admin = _require_admin(admin_for, model_key)
+        entry = fort.registry.entry_for_key(model_key)
+
+        eager, prefetch = form_relations(model_admin)
+        async with fort.backend.unit_of_work() as uow:
+            adapter = fort.backend.adapter(
+                entry.model,
+                uow,
+                key=model_key,
+                select_related=eager,
+                prefetch_related=prefetch,
+            )
+            instance = await _require_object(adapter, parse_key(model_admin.spec, object_key))
+            form = Form(
+                model_admin.spec,
+                model_admin,
+                instance=instance,
+                relation_choices=await relation_choices(adapter, model_admin),
+            )
+            label = adapter.label_for(instance)
+
+        return page(
+            request,
+            "model/form.html",
+            form_context(request, model_key, model_admin, form, instance=instance, label=label),
+        )
+
+    @router.post("/{model_key}/{object_key}/", name="fastfort:change-submit")
+    async def change_submit(request: Request, model_key: str, object_key: str) -> Any:
+        model_admin = _require_admin(admin_for, model_key)
+        entry = fort.registry.entry_for_key(model_key)
+        submitted = await _form_data(request)
+
+        try:
+            await verify_csrf(request)
+        except SecurityError as exc:
+            return redirect(f"{admin_url}/{model_key}/", notices.danger(exc.message))
+
+        eager, prefetch = form_relations(model_admin)
+        async with fort.backend.unit_of_work() as uow:
+            adapter = fort.backend.adapter(
+                entry.model,
+                uow,
+                key=model_key,
+                select_related=eager,
+                prefetch_related=prefetch,
+            )
+            instance = await _require_object(adapter, parse_key(model_admin.spec, object_key))
+            choices = await relation_choices(adapter, model_admin)
+            form = Form(model_admin.spec, model_admin, instance=instance, relation_choices=choices)
+            cleaned = form.bind(submitted)
+            label = adapter.label_for(instance)
+
+            if not form.is_valid:
+                await uow.rollback()
+                return page(
+                    request,
+                    "model/form.html",
+                    form_context(
+                        request, model_key, model_admin, form, instance=instance, label=label
+                    ),
+                )
+
+            try:
+                await adapter.update(instance, cleaned)
+            except (ValidationError, AdapterError) as exc:
+                await uow.rollback()
+                form.non_field_errors.append(exc.message)
+                return page(
+                    request,
+                    "model/form.html",
+                    form_context(
+                        request, model_key, model_admin, form, instance=instance, label=label
+                    ),
+                )
+
+            label = adapter.label_for(instance)
+            key = adapter.primary_key_of(instance)
+
+        return redirect(
+            object_url(model_key, key),
+            notices.success(f"{model_admin.singular} \u201c{label}\u201d was saved."),
+        )
+
+    @router.get(
+        "/{model_key}/{object_key}/delete", response_class=HTMLResponse, name="fastfort:delete"
+    )
+    async def delete_confirm(request: Request, model_key: str, object_key: str) -> Any:
+        model_admin = _require_admin(admin_for, model_key)
+        entry = fort.registry.entry_for_key(model_key)
+
+        async with fort.backend.unit_of_work() as uow:
+            adapter = fort.backend.adapter(entry.model, uow, key=model_key)
+            instance = await _require_object(adapter, parse_key(model_admin.spec, object_key))
+            label = adapter.label_for(instance)
+            key = adapter.primary_key_of(instance)
+
+        return page(
+            request,
+            "model/delete.html",
+            base_context(request, model_key)
+            | {
+                "page_title": f"Delete {label}",
+                "breadcrumbs": (
+                    {"label": model_admin.title, "url": list_url(model_key)},
+                    {"label": label, "url": object_url(model_key, key)},
+                    {"label": "Delete", "url": None},
+                ),
+                "admin": model_admin,
+                "label": label,
+                "cascades": _cascades(model_admin),
+                "action_url": f"{object_url(model_key, key)}delete",
+                "cancel_url": object_url(model_key, key),
+            },
+        )
+
+    @router.post("/{model_key}/{object_key}/delete", name="fastfort:delete-submit")
+    async def delete_submit(request: Request, model_key: str, object_key: str) -> Any:
+        model_admin = _require_admin(admin_for, model_key)
+        entry = fort.registry.entry_for_key(model_key)
+
+        try:
+            await verify_csrf(request)
+        except SecurityError as exc:
+            return redirect(list_url(model_key), notices.danger(exc.message))
+
+        async with fort.backend.unit_of_work() as uow:
+            adapter = fort.backend.adapter(entry.model, uow, key=model_key)
+            instance = await _require_object(adapter, parse_key(model_admin.spec, object_key))
+            label = adapter.label_for(instance)
+            try:
+                await adapter.delete(instance)
+            except AdapterError as exc:
+                await uow.rollback()
+                return redirect(
+                    object_url(model_key, adapter.primary_key_of(instance)),
+                    notices.danger(f"Could not delete this row: {exc.message}"),
+                )
+
+        return redirect(
+            list_url(model_key),
+            notices.success(f"{model_admin.singular} \u201c{label}\u201d was deleted."),
+        )
 
     public.include_router(build_auth_router(fort, auth, renderer))
     public.include_router(router)
@@ -243,6 +577,73 @@ def build_admin_router(fort: FastFort) -> APIRouter:
 # ---------------------------------------------------------------------------
 # Presentation helpers
 # ---------------------------------------------------------------------------
+
+
+#: HTML input types, keyed by widget name. Kept beside the widget map rather than
+#: in the template, so adding a widget touches one file.
+INPUT_TYPES = {
+    "text": "text",
+    "number": "number",
+    "decimal": "number",
+    "date": "date",
+    "datetime": "datetime-local",
+    "time": "time",
+    "email": "email",
+    "url": "url",
+    "password": "password",
+}
+
+
+def _require_admin(admin_for: Any, model_key: str) -> ModelAdmin:
+    """Resolve a model key, or 404. A stale bookmark is not a server error."""
+    try:
+        return admin_for(model_key)  # type: ignore[no-any-return]
+    except RegistrationError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"No admin is registered for {model_key!r}."
+        ) from exc
+
+
+async def _require_object(adapter: Any, key: tuple[Any, ...]) -> Any:
+    """Load a row, or 404.
+
+    Deliberately 404 and not 403 when a row exists but is filtered out of the
+    caller's queryset: confirming existence to someone who may not see it is an
+    information leak.
+    """
+    try:
+        instance = await adapter.get(key)
+    except (ValidationError, ObjectNotFound) as exc:
+        raise HTTPException(status_code=404, detail="No such object.") from exc
+    if instance is None:
+        raise HTTPException(status_code=404, detail="No such object.")
+    return instance
+
+
+async def _form_data(request: Request) -> dict[str, Any]:
+    """Read a submitted form, keeping repeated keys as lists.
+
+    A multi-select posts the same name several times, and a plain dict would keep
+    only the last value.
+    """
+    raw = await request.form()
+    data: dict[str, Any] = {}
+    for name in raw:
+        values = raw.getlist(name)
+        data[name] = [str(value) for value in values] if len(values) > 1 else str(values[0])
+    return data
+
+
+def _cascades(admin: ModelAdmin) -> tuple[str, ...]:
+    """Relations whose rows go with this one.
+
+    Naming them is the difference between a confirmation and a trap.
+    """
+    return tuple(
+        field.label
+        for field in admin.spec
+        if field.relation is not None and field.relation.cascade_delete
+    )
 
 
 def _remember(guard: Any, auth: AdminAuth) -> Any:
@@ -364,12 +765,18 @@ def _column_headers(
 
 
 def _rows(
-    admin: ModelAdmin, spec: ModelSpec, items: tuple[Any, ...], columns: tuple[str, ...]
+    admin: ModelAdmin,
+    spec: ModelSpec,
+    items: tuple[Any, ...],
+    columns: tuple[str, ...],
+    base: str,
 ) -> list[dict[str, Any]]:
     links = admin.link_columns()
     rows: list[dict[str, Any]] = []
 
     for obj in items:
+        key = quote("~".join(str(getattr(obj, name)) for name in spec.primary_key), safe="")
+        change_url = f"{base}/{key}/"
         cells = []
         for name in columns:
             field = spec.get(name)
@@ -378,13 +785,12 @@ def _rows(
                     "value": admin.cell(obj, name),
                     "boolean": field is not None and field.type is FieldType.BOOLEAN,
                     "numeric": field is not None and field.type in _NUMERIC_TYPES,
-                    # Detail views arrive in a later stage. The link columns are
-                    # already resolved, so only this value changes then.
-                    "url": None,
-                    "is_link": name in links,
+                    # The first column links to the row, which is how people
+                    # expect to open a record from a table.
+                    "url": change_url if name in links else None,
                 }
             )
-        rows.append({"cells": cells})
+        rows.append({"cells": cells, "edit_url": change_url, "delete_url": f"{change_url}delete"})
 
     return rows
 
