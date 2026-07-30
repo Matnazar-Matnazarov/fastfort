@@ -148,6 +148,9 @@ ignore = [
 # Django users already know. Appending "Error" would only hurt the developer
 # experience, so the deviation is deliberate.
 "fastfort/core/exceptions.py" = ["N818"]
+# LoginRequired is a control-flow signal named for what it means, the way
+# Starlette names HTTPException. "LoginRequiredError" reads worse.
+"fastfort/admin/security.py" = ["N818"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["fastfort"]

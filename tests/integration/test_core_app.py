@@ -214,17 +214,23 @@ def test_check_deploy_includes_settings_issues() -> None:
 async def test_mounting_with_an_empty_registry_still_serves_the_admin(
     fort: FastFort, client_for: Any
 ) -> None:
-    """An empty admin is a warning, not a failure; the site must still come up."""
+    """An empty admin is a warning, not a failure; the site must still come up.
+
+    The dashboard itself is behind the gate, so what "came up" means here is that
+    an anonymous request reaches the sign-in page instead of a 404 or a traceback.
+    """
     app = FastAPI()
     fort.mount(app)
+    client = await client_for(app)
 
-    response = await (await client_for(app)).get("/admin/")
+    gated = await client.get("/admin/")
+    assert gated.status_code == 303
+    assert gated.headers["location"].startswith("/admin/login")
 
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/html")
-    assert "Shop" in response.text
-    # An empty admin explains itself rather than showing a blank page.
-    assert "No models are registered" in response.text
+    login = await client.get("/admin/login")
+    assert login.status_code == 200
+    assert login.headers["content-type"].startswith("text/html")
+    assert "Shop" in login.text
 
 
 async def test_the_stylesheet_is_reachable_from_a_mounted_admin(
@@ -245,9 +251,12 @@ async def test_the_admin_honours_a_custom_url(fort: FastFort, client_for: Any) -
     fort.mount(app)
 
     client = await client_for(app)
-    assert (await client.get("/back-office/")).status_code == 200
+    assert (await client.get("/back-office/login")).status_code == 200
     assert (await client.get("/back-office/static/fastfort.css")).status_code == 200
     assert (await client.get("/admin/")).status_code == 404
+    # The gate redirects within the configured prefix, not to a hard-coded /admin.
+    gated = await client.get("/back-office/")
+    assert gated.headers["location"].startswith("/back-office/login")
 
 
 # ---------------------------------------------------------------------------

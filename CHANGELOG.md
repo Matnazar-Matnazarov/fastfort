@@ -34,6 +34,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `fastfort.admin`: `ModelAdmin`, and a server-rendered dashboard and list view
   with sorting, search, filters and pagination
 
+- `fastfort.auth`: Argon2id password hashing, a signed session cookie, signed
+  double-submit CSRF tokens, and per-address/per-identity lockout
+- Sign-in and sign-out pages, an account menu, and a gate in front of every admin
+  route, plus CSP and clickjacking headers on admin responses
+
 ### Changed
 
 - The `mysql` extra installs `aiomysql` instead of `asyncmy`. PYSEC-2026-286 is an

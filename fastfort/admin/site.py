@@ -12,16 +12,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
 from fastfort import __version__
+from fastfort.auth.service import AdminAuth
 from fastfort.core.exceptions import RegistrationError, ValidationError
 from fastfort.spec import FieldType, ListQuery, SortSpec
 from fastfort.ui.renderer import Renderer
 from fastfort.ui.theming import Theme
 
+from .auth_views import build_auth_router
 from .options import ModelAdmin
+from .security import make_guard
 
 if TYPE_CHECKING:
     from fastfort.core.app import FastFort
@@ -68,6 +71,8 @@ def build_admin_router(fort: FastFort) -> APIRouter:
     admin_url = settings.admin.url
     static_url = f"{admin_url}/static"
     renderer = Renderer(settings)
+    auth = AdminAuth(fort)
+    fort.auth = auth
 
     #: ModelAdmin instances, built once. Instantiating validates the declarations
     #: against the spec, so a typo surfaces here rather than on a request.
@@ -85,7 +90,14 @@ def build_admin_router(fort: FastFort) -> APIRouter:
 
     def base_context(request: Request, current_key: str | None) -> dict[str, Any]:
         theme = Theme.from_settings(settings.ui)
+        user = request.scope.get("fastfort_user")
         return {
+            "user": user,
+            "user_label": _user_label(fort, user),
+            "is_superuser": user is not None and fort.user_config.is_superuser(user),
+            "logout_url": f"{admin_url}/logout",
+            "csrf_field": auth.csrf.field_name,
+            "csrf_token": request.scope.get("fastfort_csrf", ""),
             "settings": settings,
             "theme": theme,
             "stylesheets": theme.stylesheets(static_url),
@@ -99,11 +111,19 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             "request": request,
         }
 
-    router = APIRouter(tags=["fastfort-admin"])
+    #: Static assets and the sign-in page stay reachable while signed out.
+    public = APIRouter(tags=["fastfort-admin"])
+
+    #: Everything else. The gate is a router-wide dependency rather than a call
+    #: inside each view, because a view that forgets to check looks exactly like
+    #: one that decided not to.
+    router = APIRouter(
+        tags=["fastfort-admin"], dependencies=[Depends(_remember(make_guard(auth, settings), auth))]
+    )
 
     # -- assets -------------------------------------------------------------
 
-    @router.get("/static/fastfort.css", include_in_schema=False)
+    @public.get("/static/fastfort.css", include_in_schema=False)
     async def stylesheet() -> Response:
         return Response(
             _bundled_css(),
@@ -113,7 +133,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             headers={"Cache-Control": "no-cache" if settings.debug else "public, max-age=86400"},
         )
 
-    @router.get("/static/js/fastfort.js", include_in_schema=False)
+    @public.get("/static/js/fastfort.js", include_in_schema=False)
     async def script() -> Response:
         return Response(
             _bundled_js(),
@@ -215,12 +235,47 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         }
         return HTMLResponse(renderer.render("model/list.html", **context))
 
-    return router
+    public.include_router(build_auth_router(fort, auth, renderer))
+    public.include_router(router)
+    return public
 
 
 # ---------------------------------------------------------------------------
 # Presentation helpers
 # ---------------------------------------------------------------------------
+
+
+def _remember(guard: Any, auth: AdminAuth) -> Any:
+    """Wrap the gate so the signed-in user and a CSRF token reach the templates.
+
+    Stored on the request scope rather than threaded through every view signature:
+    the shell needs them on every page, and a view that does not care should not
+    have to mention them.
+    """
+
+    async def dependency(request: Request) -> Any:
+        user = await guard(request)
+        request.scope["fastfort_user"] = user
+        request.scope["fastfort_csrf"] = auth.csrf.ensure(
+            request.cookies.get(auth.csrf.cookie_name)
+        )
+        return user
+
+    return dependency
+
+
+def _user_label(fort: FastFort, user: Any) -> str:
+    """How to name the signed-in person in the corner of the page."""
+    if user is None:
+        return ""
+    for attribute in ("full_name", "name", "display_name"):
+        value = getattr(user, attribute, None)
+        if isinstance(value, str) and value.strip():
+            return value
+    try:
+        return fort.user_config.identity_of(user)
+    except Exception:
+        return "Account"
 
 
 def _instantiate(admin: Any, spec: ModelSpec) -> ModelAdmin:

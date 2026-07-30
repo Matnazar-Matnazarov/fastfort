@@ -14,7 +14,8 @@ from typing import Any
 import httpx
 import pytest
 from fastapi import FastAPI
-from tests.orm.models import Category, Product, StockLevel
+from tests.conftest import sign_in
+from tests.orm.models import Category, Product, StaffUser, StockLevel
 
 from fastfort import FastFort, FastFortSettings
 from fastfort.admin import ModelAdmin
@@ -24,15 +25,6 @@ from fastfort.orm.sqlalchemy import SQLAlchemyBackend
 SECRET = "n7Qw2xLp9vRt4KjM8sYzB3cF6hVdA1gE"
 
 pytestmark = pytest.mark.usefixtures("seeded")
-
-
-class AdminUser:
-    id = 1
-    email = "admin@example.com"
-    hashed_password = ""
-    is_active = True
-    is_staff = True
-    is_superuser = True
 
 
 class ProductAdmin(ModelAdmin):
@@ -52,12 +44,23 @@ class CategoryAdmin(ModelAdmin):
 
 
 @pytest.fixture
-async def client(backend: SQLAlchemyBackend) -> AsyncIterator[httpx.AsyncClient]:
+async def client(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> AsyncIterator[httpx.AsyncClient]:
+    """A signed-in admin client.
+
+    Signing in for real rather than bypassing the gate: a fixture that forged a
+    session would let a regression in the gate pass unnoticed.
+    """
     fort = FastFort(
-        FastFortSettings(secret_key=SECRET, project_name="Test Shop"),  # type: ignore[arg-type]
+        FastFortSettings(  # type: ignore[call-arg]
+            secret_key=SECRET,
+            project_name="Test Shop",
+            security={"cookie_secure": False},  # type: ignore[arg-type]
+        ),
         backend=backend,
     )
-    fort.set_user_model(AdminUser)
+    fort.set_user_model(StaffUser)
     fort.register(Product, ProductAdmin, key="shop.product")
     fort.register(Category, CategoryAdmin, key="shop.category")
     fort.register(StockLevel, ModelAdmin, key="shop.stock_level")
@@ -68,6 +71,7 @@ async def client(backend: SQLAlchemyBackend) -> AsyncIterator[httpx.AsyncClient]
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://testserver"
     ) as opened:
+        await sign_in(opened)
         yield opened
 
 

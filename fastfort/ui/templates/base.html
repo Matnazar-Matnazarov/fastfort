@@ -110,6 +110,29 @@
           <span aria-hidden="true" data-ff-theme-icon>◐</span>
           <span class="ff-sr-only">Toggle light or dark theme</span>
         </button>
+
+        {% if user %}
+          {# A <details> element rather than a scripted dropdown: it opens, closes
+             on Escape and is keyboard reachable without any JavaScript. #}
+          <details class="ff-account" data-ff-account>
+            <summary>
+              <span class="ff-account__avatar" aria-hidden="true">{{ user_label[:1]|upper }}</span>
+              <span class="ff-collapsible ff-truncate">{{ user_label }}</span>
+            </summary>
+            <div class="ff-account__menu">
+              <div class="ff-account__identity">
+                <div class="ff-account__name ff-truncate">{{ user_label }}</div>
+                <div class="ff-account__meta">
+                  {% if is_superuser %}Superuser{% else %}Staff{% endif %}
+                </div>
+              </div>
+              <form method="post" action="{{ logout_url }}">
+                <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+                <button class="ff-btn ff-btn--ghost ff-w-full" type="submit">Sign out</button>
+              </form>
+            </div>
+          </details>
+        {% endif %}
       </header>
 
       <main class="ff-content" id="ff-main">

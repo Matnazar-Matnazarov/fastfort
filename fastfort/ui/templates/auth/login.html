@@ -1,0 +1,98 @@
+{#
+  The sign-in page.
+
+  Deliberately not built on base.html: the shell renders a sidebar full of model
+  links, and a page reached by an anonymous visitor must not enumerate what the
+  admin manages.
+#}
+<!doctype html>
+<html
+  lang="{{ settings.ui.language }}"
+  {% for name, value in theme.root_attributes().items() %}{{ name }}="{{ value }}" {% endfor %}
+>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="same-origin" />
+    <title>Sign in · {{ settings.project_name }}</title>
+    {% if theme.favicon_url %}
+      <link rel="icon" href="{{ theme.favicon_url }}" />
+    {% endif %}
+    {% for stylesheet in stylesheets %}
+      <link rel="stylesheet" href="{{ stylesheet }}" />
+    {% endfor %}
+  </head>
+
+  <body class="ff-auth">
+    <main class="ff-auth__panel">
+      <div class="ff-auth__brand">
+        {% if theme.logo_url %}
+          <img class="ff-brand__logo" src="{{ theme.logo_url }}" alt="{{ settings.project_name }}" />
+        {% else %}
+          <span class="ff-brand__mark" aria-hidden="true">{{ settings.project_name[:1]|upper }}</span>
+        {% endif %}
+        <span>{{ settings.project_name }}</span>
+      </div>
+
+      <h1 class="ff-h2">Sign in</h1>
+      <p class="ff-muted">Administration for {{ settings.project_name }}.</p>
+
+      {% if error %}
+        {# One message for every failure mode. Anything more specific tells a
+           stranger which addresses are registered. #}
+        <div class="ff-alert ff-alert--danger ff-mt-4" role="alert">
+          <div>
+            <div class="ff-alert__title">Could not sign you in</div>
+            <div>{{ error }}</div>
+            {% if error_hint %}
+              <div class="ff-muted ff-mt-2">{{ error_hint }}</div>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+
+      <form class="ff-stack ff-mt-6" method="post" action="{{ login_url }}" novalidate>
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+        <input type="hidden" name="next" value="{{ next_url }}" />
+
+        <label class="ff-field">
+          <span class="ff-label">{{ identity_label }}</span>
+          <input
+            class="ff-input"
+            type="{{ identity_type }}"
+            name="identity"
+            value="{{ identity }}"
+            autocomplete="username"
+            autocapitalize="none"
+            spellcheck="false"
+            required
+            autofocus
+          />
+        </label>
+
+        <label class="ff-field">
+          <span class="ff-label">Password</span>
+          <input
+            class="ff-input"
+            type="password"
+            name="password"
+            autocomplete="current-password"
+            required
+          />
+        </label>
+
+        <button class="ff-btn ff-btn--primary ff-w-full ff-mt-2" type="submit">Sign in</button>
+      </form>
+
+      {% if insecure_transport %}
+        <p class="ff-subtle ff-mt-6">
+          This page is being served over plain HTTP. Credentials are readable in
+          transit — use HTTPS before this reaches anyone else.
+        </p>
+      {% endif %}
+    </main>
+
+    <footer class="ff-auth__footer">FastFort {{ version }}</footer>
+  </body>
+</html>

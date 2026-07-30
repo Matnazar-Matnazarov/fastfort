@@ -102,3 +102,24 @@ class StockLevel(Base):
     warehouse: Mapped[str] = mapped_column(sa.String(40), primary_key=True)
     sku: Mapped[str] = mapped_column(sa.String(40), primary_key=True)
     quantity: Mapped[int] = mapped_column(default=0)
+
+
+class StaffUser(Base):
+    """The user model the admin tests sign in with.
+
+    A mapped model rather than a stand-in object, because authentication looks a
+    user up through the adapter and a plain class has no row to find.
+    """
+
+    __tablename__ = "staff_user"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(sa.String(255), unique=True)
+    full_name: Mapped[str | None] = mapped_column(sa.String(120), default=None)
+    hashed_password: Mapped[str] = mapped_column(sa.String(255), default="")
+    is_active: Mapped[bool] = mapped_column(default=True)
+    is_staff: Mapped[bool] = mapped_column(default=True)
+    is_superuser: Mapped[bool] = mapped_column(default=False)
+
+    def __str__(self) -> str:
+        return self.email
