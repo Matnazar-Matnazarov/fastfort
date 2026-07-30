@@ -8,13 +8,13 @@
         {% if page.total %}
           {{ "{:,}".format(page.total) }} {{ admin.title|lower if page.total != 1 else admin.singular|lower }}
         {% else %}
-          Nothing here yet
+          {{ _("Nothing here yet") }}
         {% endif %}
       </p>
     </div>
     {% if add_url %}
       <div class="ff-page-header__actions">
-        <a class="ff-btn ff-btn--primary" href="{{ add_url }}">Add {{ admin.singular|lower }}</a>
+        <a class="ff-btn ff-btn--primary" href="{{ add_url }}">{{ _("Add {name}", name=admin.singular|lower) }}</a>
       </div>
     {% endif %}
   </div>
@@ -28,8 +28,8 @@
           type="search"
           name="q"
           value="{{ query.search }}"
-          placeholder="Search {{ admin.title|lower }}…"
-          aria-label="Search {{ admin.title }}"
+          placeholder="{{ _("Search {name}…", name=admin.title|lower) }}"
+          aria-label="{{ _("Search") }}"
         />
       </div>
     {% endif %}
@@ -38,7 +38,7 @@
       <label class="ff-field">
         <span class="ff-sr-only">{{ filter.label }}</span>
         <select class="ff-select" name="{{ filter.name }}" aria-label="{{ filter.label }}">
-          <option value="">{{ filter.label }}: any</option>
+          <option value="">{{ filter.label }}: {{ _("any") }}</option>
           {% for choice in filter.choices %}
             <option value="{{ choice.value }}" {% if choice.selected %}selected{% endif %}>
               {{ choice.label }}
@@ -54,9 +54,9 @@
       <input type="hidden" name="o" value="{{ ordering_param }}" />
     {% endif %}
 
-    <button class="ff-btn" type="submit">Apply</button>
+    <button class="ff-btn" type="submit">{{ _("Apply") }}</button>
     {% if query.search or query.filters %}
-      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">Clear</a>
+      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">{{ _("Clear") }}</a>
     {% endif %}
   </form>
 
@@ -83,7 +83,7 @@
                 {% endif %}
               </th>
             {% endfor %}
-            <th scope="col" class="ff-nowrap"><span class="ff-sr-only">Actions</span></th>
+            <th scope="col" class="ff-nowrap"><span class="ff-sr-only">{{ _("Actions") }}</span></th>
           </tr>
         </thead>
         <tbody>
@@ -101,8 +101,8 @@
                 </td>
               {% endfor %}
               <td class="ff-nowrap ff-no-print">
-                <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ row.edit_url }}">Edit</a>
-                <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ row.delete_url }}">Delete</a>
+                <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ row.edit_url }}">{{ _("Edit") }}</a>
+                <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ row.delete_url }}">{{ _("Delete") }}</a>
               </td>
             </tr>
           {% endfor %}
@@ -110,20 +110,20 @@
       </table>
     </div>
 
-    <nav class="ff-pagination ff-no-print" aria-label="Pagination">
+    <nav class="ff-pagination ff-no-print" aria-label="{{ _("Pagination") }}">
       {# One line, so the rendered text is a contiguous "1–25 of 400" rather
          than being broken by template indentation. #}
       <span class="ff-pagination__info">{{ "{:,}".format(page.start_index) }}–{{ "{:,}".format(page.end_index) }} of {{ "{:,}".format(page.total) }}</span>
       {% if page.has_previous %}
-        <a class="ff-btn ff-btn--sm" href="{{ page_url(page.page - 1) }}">Previous</a>
+        <a class="ff-btn ff-btn--sm" href="{{ page_url(page.page - 1) }}">{{ _("Previous") }}</a>
       {% else %}
-        <span class="ff-btn ff-btn--sm" aria-disabled="true">Previous</span>
+        <span class="ff-btn ff-btn--sm" aria-disabled="true">{{ _("Previous") }}</span>
       {% endif %}
-      <span class="ff-muted">Page {{ page.page }} of {{ page.pages }}</span>
+      <span class="ff-muted">{{ _("Page {page} of {pages}", page=page.page, pages=page.pages) }}</span>
       {% if page.has_next %}
-        <a class="ff-btn ff-btn--sm" href="{{ page_url(page.page + 1) }}">Next</a>
+        <a class="ff-btn ff-btn--sm" href="{{ page_url(page.page + 1) }}">{{ _("Next") }}</a>
       {% else %}
-        <span class="ff-btn ff-btn--sm" aria-disabled="true">Next</span>
+        <span class="ff-btn ff-btn--sm" aria-disabled="true">{{ _("Next") }}</span>
       {% endif %}
     </nav>
   {% else %}
@@ -131,19 +131,19 @@
       <div class="ff-empty">
         <div class="ff-empty__icon" aria-hidden="true">◇</div>
         {% if query.search or query.filters %}
-          <div class="ff-empty__title">Nothing matched</div>
+          <div class="ff-empty__title">{{ _("Nothing matched") }}</div>
           <p class="ff-empty__body">
             No {{ admin.title|lower }} match the current search and filters.
           </p>
-          <a class="ff-btn" href="{{ list_url }}">Clear search and filters</a>
+          <a class="ff-btn" href="{{ list_url }}">{{ _("Clear search and filters") }}</a>
         {% else %}
-          <div class="ff-empty__title">No {{ admin.title|lower }} yet</div>
+          <div class="ff-empty__title">{{ _("Nothing here yet") }}</div>
           <p class="ff-empty__body">
             Nothing has been added to <code class="ff-mono">{{ admin.spec.key }}</code> yet.
           </p>
           {% if add_url %}
             <a class="ff-btn ff-btn--primary" href="{{ add_url }}">
-              Add the first {{ admin.singular|lower }}
+              {{ _("Add the first {name}", name=admin.singular|lower) }}
             </a>
           {% endif %}
         {% endif %}

@@ -87,6 +87,7 @@ first time someone opens that page.
 | 📝 **Audit log** | Who changed what and when, with an old → new diff |
 | 🗄 **Three databases** | SQLite · PostgreSQL · MySQL, with identical behaviour |
 | 🔌 **ORM-agnostic** | SQLAlchemy 2.0 (async and sync) and Tortoise ORM behind one adapter contract |
+| 🌍 **Three languages** | English, Uzbek and Russian, switchable per person, negotiated from the browser |
 | 📦 **No Node.js** | CSS and JavaScript ship pre-built inside the package |
 
 ---

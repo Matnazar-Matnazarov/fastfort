@@ -148,7 +148,10 @@ class UISettings(BaseModel):
     #: Extra stylesheet loaded after the built-in one, for per-project overrides.
     custom_css_url: str | None = None
 
-    language: str = "en"
+    #: None means "follow the browser". A project that wants its admin in one
+    #: language regardless of who opens it sets this; leaving it unset must not
+    #: silently pin everyone to English.
+    language: str | None = None
     timezone: str = "UTC"
 
     #: Rendered in the footer; useful for telling staging apart from production.

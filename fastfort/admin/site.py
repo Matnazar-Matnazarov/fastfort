@@ -24,6 +24,7 @@ from fastfort.core.exceptions import (
     SecurityError,
     ValidationError,
 )
+from fastfort.i18n import Translator, negotiate_language
 from fastfort.spec import Choice, FieldType, ListQuery, SortSpec
 from fastfort.ui.renderer import Renderer
 from fastfort.ui.theming import Theme
@@ -32,13 +33,17 @@ from .auth_views import build_auth_router
 from .forms import Form
 from .messages import Message, Messages
 from .options import ModelAdmin
-from .security import make_guard
+from .security import make_guard, safe_next_url
 
 if TYPE_CHECKING:
     from fastfort.core.app import FastFort
     from fastfort.spec import ModelSpec
 
 __all__ = ["build_admin_router"]
+
+#: Where a chosen language is remembered. A cookie rather than a column, so it
+#: works before anyone has signed in -- the login page needs a language too.
+LANGUAGE_COOKIE = "ff_language"
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "ui" / "static"
 
@@ -102,10 +107,30 @@ def build_admin_router(fort: FastFort) -> APIRouter:
     def list_url(key: str) -> str:
         return f"{admin_url}/{key}/"
 
+    def translator_for(request: Request) -> Translator:
+        """The language for this request.
+
+        An explicit choice wins over the project's configuration, which wins over
+        the browser. The browser comes last because a project that configured
+        Uzbek should not show English merely because a laptop was bought abroad.
+        """
+        return Translator(
+            negotiate_language(
+                chosen=request.cookies.get(LANGUAGE_COOKIE),
+                configured=settings.ui.language,
+                accept=request.headers.get("accept-language", ""),
+            )
+        )
+
     def base_context(request: Request, current_key: str | None) -> dict[str, Any]:
         theme = Theme.from_settings(settings.ui)
         user = request.scope.get("fastfort_user")
+        translator = translator_for(request)
         return {
+            "_": translator,
+            "language": translator.language,
+            "languages": translator.choices(),
+            "language_url": f"{admin_url}/language",
             "user": user,
             "user_label": _user_label(fort, user),
             "is_superuser": user is not None and fort.user_config.is_superuser(user),
@@ -175,6 +200,32 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             # release. During development auto-reload matters more than caching.
             headers={"Cache-Control": "no-cache" if settings.debug else "public, max-age=86400"},
         )
+
+    @public.post("/language", name="fastfort:language")
+    async def set_language(request: Request) -> Any:
+        """Remember a language choice and return to where the request came from.
+
+        Public, because the sign-in page needs a language too. It changes nothing
+        but a display preference, so a CSRF token would be ceremony without a
+        threat to answer.
+        """
+        form = await request.form()
+        chosen = negotiate_language(
+            chosen=str(form.get("language", "")), configured=settings.ui.language
+        )
+        target = safe_next_url(str(form.get("next", "")), fallback=f"{admin_url}/")
+
+        response = RedirectResponse(target, status_code=303)
+        response.set_cookie(
+            LANGUAGE_COOKIE,
+            chosen,
+            max_age=60 * 60 * 24 * 365,
+            path=settings.security.cookie_path,
+            samesite=settings.security.cookie_samesite,
+            secure=settings.security.cookie_secure,
+            httponly=False,
+        )
+        return response
 
     @public.get("/static/js/fastfort.js", include_in_schema=False)
     async def script() -> Response:

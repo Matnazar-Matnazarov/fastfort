@@ -27,6 +27,8 @@ from jinja2 import (
 )
 from markupsafe import Markup
 
+from fastfort.i18n import Translator
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -70,6 +72,8 @@ class Renderer:
         self.environment.globals["EMPTY"] = EMPTY
 
     def render(self, template: str, /, **context: Any) -> str:
+        # A translator is always present, so a template never has to guard for it.
+        context.setdefault("_", Translator())
         return self.environment.get_template(template).render(**context)
 
 

@@ -80,7 +80,11 @@ path = "fastfort/_version.py"
 packages = ["fastfort"]
 # Stylesheets, templates and JavaScript are data files, so they need naming
 # explicitly or the wheel ships a package with no interface.
-artifacts = ["fastfort/ui/static/**", "fastfort/ui/templates/**"]
+artifacts = [
+    "fastfort/ui/static/**",
+    "fastfort/ui/templates/**",
+    "fastfort/i18n/locale/**",
+]
 
 [tool.hatch.build.targets.sdist]
 include = ["/fastfort", "/tests", "/README.md", "/LICENSE", "/CHANGELOG.md"]

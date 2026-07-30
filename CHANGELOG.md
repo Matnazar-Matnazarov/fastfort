@@ -48,7 +48,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `05-admin.css`: a visual pass over the sidebar, filter bar, table, stat tiles
   and forms, including a two-column form grid and a sticky action bar
 
+- `fastfort.i18n`: English, Uzbek and Russian, with a language switcher on every
+  page including sign-in, and `Accept-Language` negotiation
+
 ### Changed
+- `UISettings.language` defaults to None, meaning "follow the browser". It
+  previously defaulted to "en", which matched before `Accept-Language` was ever
+  consulted and made browser negotiation dead code.
 
 - The `mysql` extra installs `aiomysql` instead of `asyncmy`. PYSEC-2026-286 is an
   unfixed SQL injection affecting every released version of `asyncmy` (0.2.11 is

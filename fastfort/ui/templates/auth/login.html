@@ -7,7 +7,7 @@
 #}
 <!doctype html>
 <html
-  lang="{{ settings.ui.language }}"
+  lang="{{ language }}"
   {% for name, value in theme.root_attributes().items() %}{{ name }}="{{ value }}" {% endfor %}
 >
   <head>
@@ -15,7 +15,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <meta name="referrer" content="same-origin" />
-    <title>Sign in · {{ settings.project_name }}</title>
+    <title>{{ _("Sign in") }} · {{ settings.project_name }}</title>
     {% if theme.favicon_url %}
       <link rel="icon" href="{{ theme.favicon_url }}" />
     {% endif %}
@@ -35,15 +35,15 @@
         <span>{{ settings.project_name }}</span>
       </div>
 
-      <h1 class="ff-h2">Sign in</h1>
-      <p class="ff-muted">Administration for {{ settings.project_name }}.</p>
+      <h1 class="ff-h2">{{ _("Sign in") }}</h1>
+      <p class="ff-muted">{{ _("Administration for {project}", project=settings.project_name) }}</p>
 
       {% if error %}
         {# One message for every failure mode. Anything more specific tells a
            stranger which addresses are registered. #}
         <div class="ff-alert ff-alert--danger ff-mt-4" role="alert">
           <div>
-            <div class="ff-alert__title">Could not sign you in</div>
+            <div class="ff-alert__title">{{ _("Could not sign you in") }}</div>
             <div>{{ error }}</div>
             {% if error_hint %}
               <div class="ff-muted ff-mt-2">{{ error_hint }}</div>
@@ -72,7 +72,7 @@
         </label>
 
         <label class="ff-field">
-          <span class="ff-label">Password</span>
+          <span class="ff-label">{{ _("Password") }}</span>
           <input
             class="ff-input"
             type="password"
@@ -82,16 +82,34 @@
           />
         </label>
 
-        <button class="ff-btn ff-btn--primary ff-w-full ff-mt-2" type="submit">Sign in</button>
+        <button class="ff-btn ff-btn--primary ff-w-full ff-mt-2" type="submit">{{ _("Sign in") }}</button>
       </form>
 
       {% if insecure_transport %}
         <p class="ff-subtle ff-mt-6">
-          This page is being served over plain HTTP. Credentials are readable in
-          transit — use HTTPS before this reaches anyone else.
+          {{ _("This page is being served over plain HTTP. Credentials are readable in transit — use HTTPS before this reaches anyone else.") }}
         </p>
       {% endif %}
     </main>
+
+    {% if languages|length > 1 %}
+      <form class="ff-auth__language" method="post" action="{{ language_url }}">
+        <label class="ff-sr-only" for="ff-login-language">{{ _("Language") }}</label>
+        <select
+          class="ff-select ff-select--sm"
+          id="ff-login-language"
+          name="language"
+          onchange="this.form.submit()"
+        >
+          {% for code, name in languages %}
+            <option value="{{ code }}" {% if code == language %}selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+        <noscript>
+          <button class="ff-btn ff-btn--sm" type="submit">{{ _("Apply") }}</button>
+        </noscript>
+      </form>
+    {% endif %}
 
     <footer class="ff-auth__footer">FastFort {{ version }}</footer>
   </body>
