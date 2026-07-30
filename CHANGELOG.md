@@ -51,6 +51,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `fastfort.i18n`: English, Uzbek and Russian, with a language switcher on every
   page including sign-in, and `Accept-Language` negotiation
 
+- Relation and date-range filters, alongside the existing boolean and enum ones
+- The list updates in place: searching, filtering, sorting and paging swap the
+  results without reloading the page, and still work with JavaScript disabled
+
 ### Changed
 - `UISettings.language` defaults to None, meaning "follow the browser". It
   previously defaulted to "en", which matched before `Accept-Language` was ever

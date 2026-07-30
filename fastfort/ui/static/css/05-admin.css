@@ -232,3 +232,64 @@ a.ff-stat:hover {
   gap: var(--ff-space-2);
   justify-content: center;
 }
+
+/* --- Range filter -------------------------------------------------------- */
+
+.ff-range {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+  padding-inline: var(--ff-space-2);
+}
+
+.ff-range__label {
+  font-size: var(--ff-text-sm);
+  color: var(--ff-text-muted);
+  white-space: nowrap;
+}
+
+.ff-range__dash {
+  color: var(--ff-text-subtle);
+}
+
+.ff-input--sm {
+  min-height: var(--ff-control-height-sm);
+  width: auto;
+  padding-block: 0;
+  font-size: var(--ff-text-sm);
+}
+
+/* --- Live updates -------------------------------------------------------
+ * The spinner is the only thing that appears during a live update. Replacing the
+ * table with a skeleton would make a fast update flash, which reads as a bug.
+ */
+
+.ff-spinner {
+  width: 1rem;
+  height: 1rem;
+  border: 2px solid var(--ff-border-strong);
+  border-top-color: var(--ff-accent);
+  border-radius: var(--ff-radius-full);
+  animation: ff-spin 0.6s linear infinite;
+}
+
+@keyframes ff-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ff-spinner {
+    animation: none;
+    border-top-color: var(--ff-border-strong);
+  }
+}
+
+/* Dim the outgoing results rather than removing them, so the page does not jump
+ * and the previous answer stays readable while the next one arrives. */
+[data-ff-loading="true"] {
+  opacity: 0.55;
+  transition: opacity var(--ff-duration) var(--ff-ease);
+  pointer-events: none;
+}
