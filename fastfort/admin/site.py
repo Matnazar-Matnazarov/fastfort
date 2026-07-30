@@ -49,6 +49,7 @@ CSS_SHEETS = (
     "02-base.css",
     "03-layout.css",
     "04-components.css",
+    "05-admin.css",
 )
 
 #: Types whose columns are right-aligned with tabular figures, so digits line up.
@@ -393,7 +394,12 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         async with fort.backend.unit_of_work() as uow:
             adapter = fort.backend.adapter(entry.model, uow, key=model_key)
             choices = await relation_choices(adapter, model_admin)
-            form = Form(model_admin.spec, model_admin, relation_choices=choices)
+            form = Form(
+                model_admin.spec,
+                model_admin,
+                relation_choices=choices,
+                auth_settings=settings.auth,
+            )
             cleaned = form.bind(submitted)
 
             if not form.is_valid:
@@ -443,6 +449,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 model_admin,
                 instance=instance,
                 relation_choices=await relation_choices(adapter, model_admin),
+                auth_settings=settings.auth,
             )
             label = adapter.label_for(instance)
 

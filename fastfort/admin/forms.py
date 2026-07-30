@@ -22,6 +22,7 @@ from dataclasses import field as dataclass_field
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any
 
+from fastfort.auth.passwords import hash_password, validate_password
 from fastfort.spec import Choice, FieldSpec, FieldType
 
 if TYPE_CHECKING:
@@ -59,6 +60,9 @@ _WIDGETS: dict[FieldType, str] = {
 #: degrades to a read-only row instead of blocking the whole form.
 READONLY_WIDGET = "readonly"
 
+#: Suffix of the confirmation input paired with a password control.
+CONFIRM_SUFFIX = "__confirm"
+
 
 def widget_for(spec: FieldSpec) -> str:
     """The control name for a field, honouring an explicit override."""
@@ -83,6 +87,8 @@ class FormField:
     choices: tuple[Choice, ...] = ()
     #: Multi-valued relations submit a list, so the template needs the selection.
     selected: tuple[str, ...] = ()
+    #: Replaces the spec's help text when the control needs its own explanation.
+    help_override: str | None = None
 
     @property
     def name(self) -> str:
@@ -100,6 +106,14 @@ class FormField:
     def editable(self) -> bool:
         return self.widget != READONLY_WIDGET
 
+    @property
+    def help_text(self) -> str | None:
+        return self.help_override or self.spec.help_text
+
+    @property
+    def confirm_name(self) -> str:
+        return f"{self.spec.name}{CONFIRM_SUFFIX}"
+
 
 class Form:
     """A model form derived from the spec and the admin's declarations."""
@@ -111,11 +125,14 @@ class Form:
         *,
         instance: Any = None,
         relation_choices: dict[str, tuple[Choice, ...]] | None = None,
+        auth_settings: Any = None,
     ) -> None:
         self.spec = spec
         self.admin = admin
         self.instance = instance
         self._relation_choices = relation_choices or {}
+        self._auth_settings = auth_settings
+        self._passwords = admin.password_field_names()
         self.non_field_errors: list[str] = []
         self.fields: list[FormField] = [
             self._build(field_spec) for field_spec in self._visible_specs()
@@ -144,6 +161,21 @@ class Form:
 
     def _build(self, spec: FieldSpec) -> FormField:
         writable = spec.name in self.admin.editable_field_names()
+        if spec.name in self._passwords and writable:
+            # A password column is never rendered as text. The control takes a new
+            # password plus a confirmation and hashes it; the stored hash is never
+            # sent to the browser.
+            return FormField(
+                spec=spec,
+                widget="password",
+                value=None,
+                raw="",
+                help_override=(
+                    "Leave blank to keep the current password."
+                    if self.instance is not None
+                    else None
+                ),
+            )
         widget = widget_for(spec) if writable else READONLY_WIDGET
         value = (
             getattr(self.instance, spec.name, None) if self.instance is not None else spec.default
@@ -183,6 +215,10 @@ class Form:
             if spec.name not in writable:
                 # Not an error: a read-only field's control is not rendered, so a
                 # value here was added by hand. Dropped without comment.
+                continue
+
+            if spec.name in self._passwords:
+                self._bind_password(form_field, data, cleaned)
                 continue
 
             if spec.type.is_multi_valued:
@@ -235,6 +271,59 @@ class Form:
             form_field.value = parsed
 
         return cleaned
+
+    def _bind_password(
+        self, form_field: FormField, data: dict[str, Any], cleaned: dict[str, Any]
+    ) -> None:
+        """Read a new password, or leave the stored one alone.
+
+        Blank means unchanged, which is the only sane default for an edit form:
+        anything else would either clear the password or force the person editing
+        an unrelated field to retype it.
+        """
+        spec = form_field.spec
+        entered = str(data.get(spec.name, ""))
+        confirm = str(data.get(form_field.confirm_name, ""))
+
+        if not entered and not confirm:
+            if self.instance is None:
+                # Always required when creating, whatever the column's default
+                # says. A `default=""` on a password column is a placeholder, not
+                # a password, and an account created without one is an account
+                # nobody can sign in to.
+                form_field.errors.append("Set a password for the new account.")
+            return
+
+        if entered != confirm:
+            form_field.errors.append("The two passwords do not match.")
+            return
+
+        if self._auth_settings is not None:
+            identity = self._identity_hint()
+            try:
+                validate_password(entered, self._auth_settings, identity=identity)
+            except Exception as exc:
+                problems = getattr(exc, "field_errors", {}).get("password") or [str(exc)]
+                form_field.errors.extend(problems)
+                return
+
+        # Hashed here rather than in the view, so no code path can store a
+        # plaintext password by forgetting to call something.
+        cleaned[spec.name] = hash_password(entered)
+
+    def _identity_hint(self) -> str:
+        """The email or username, so the policy can reject a password containing it."""
+        for candidate in ("email", "username", "login"):
+            field = self.spec.get(candidate)
+            if field is None:
+                continue
+            for form_field in self.fields:
+                if form_field.name == candidate and form_field.raw:
+                    return form_field.raw
+            value = getattr(self.instance, candidate, None) if self.instance else None
+            if isinstance(value, str):
+                return value
+        return ""
 
     def add_error(self, name: str, message: str) -> None:
         """Attach a message from outside the form, e.g. a unique-key violation."""

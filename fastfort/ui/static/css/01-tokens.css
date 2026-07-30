@@ -39,19 +39,19 @@
    * Four levels, not two: page, card, raised, sunken. A hint of the brand hue
    * at very low chroma keeps greys from looking dead next to the accent.
    */
-  --ff-bg: oklch(0.985 0.002 var(--ff-h));
+  --ff-bg: oklch(0.975 0.004 var(--ff-h));
   --ff-surface: oklch(1 0 0);
   --ff-surface-raised: oklch(1 0 0);
-  --ff-surface-sunken: oklch(0.965 0.004 var(--ff-h));
-  --ff-surface-hover: oklch(0.965 0.006 var(--ff-h));
+  --ff-surface-sunken: oklch(0.972 0.005 var(--ff-h));
+  --ff-surface-hover: oklch(0.968 0.008 var(--ff-h));
 
-  --ff-border: oklch(0.9 0.005 var(--ff-h));
-  --ff-border-strong: oklch(0.8 0.008 var(--ff-h));
+  --ff-border: oklch(0.925 0.005 var(--ff-h));
+  --ff-border-strong: oklch(0.86 0.009 var(--ff-h));
 
   /* --- Text ------------------------------------------------------------- */
-  --ff-text: oklch(0.25 0.01 var(--ff-h));
-  --ff-text-muted: oklch(0.5 0.012 var(--ff-h));
-  --ff-text-subtle: oklch(0.62 0.01 var(--ff-h));
+  --ff-text: oklch(0.22 0.014 var(--ff-h));
+  --ff-text-muted: oklch(0.52 0.014 var(--ff-h));
+  --ff-text-subtle: oklch(0.64 0.012 var(--ff-h));
   --ff-text-inverse: oklch(0.99 0 0);
 
   /* --- Status ----------------------------------------------------------

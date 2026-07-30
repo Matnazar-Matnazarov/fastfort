@@ -60,6 +60,12 @@ class ModelAdmin:
     #: Fields shown but never written. Merged into the spec's own allow-list.
     readonly_fields: ClassVar[Sequence[str]] = ()
 
+    #: Columns that store a password hash. Their control takes a new password and
+    #: a confirmation, hashes it, and leaves the stored value alone when both are
+    #: blank. Detected from the spec when not declared, because a text box that
+    #: expects someone to paste an Argon2 hash is not a usable control.
+    password_fields: ClassVar[Sequence[str]] = ()
+
     #: Overrides for the sidebar. Derived from the model name when unset.
     verbose_name: ClassVar[str | None] = None
     verbose_name_plural: ClassVar[str | None] = None
@@ -91,6 +97,7 @@ class ModelAdmin:
             "select_related",
             "prefetch_related",
             "readonly_fields",
+            "password_fields",
         ):
             for name in getattr(self, attribute):
                 if name not in known:
@@ -172,6 +179,23 @@ class ModelAdmin:
 
     def searchable(self) -> tuple[str, ...]:
         return tuple(self.search_fields)
+
+    def password_field_names(self) -> frozenset[str]:
+        """Fields to render as a password control.
+
+        Declared names win. Otherwise a field is treated as a password when the
+        adapter typed it that way, or when it is a sensitive column whose name
+        says so -- which is how a plain `String` column called `hashed_password`
+        is picked up without the project having to say anything.
+        """
+        if self.password_fields:
+            return frozenset(self.password_fields)
+        return frozenset(
+            field.name
+            for field in self.spec
+            if field.type is FieldType.PASSWORD
+            or (field.sensitive and "password" in field.name.lower())
+        )
 
     def editable_field_names(self) -> frozenset[str]:
         """Writable fields: the spec's allow-list minus anything marked read-only."""

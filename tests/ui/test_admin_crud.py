@@ -40,8 +40,9 @@ class ProductAdmin(admin.ModelAdmin):
 class UserAdmin(admin.ModelAdmin):
     list_display = ("id", "email", "is_staff")
     search_fields = ("email",)
-    # Read-only *and* sensitive: the value must not appear in either control.
-    readonly_fields = ("hashed_password",)
+    # `hashed_password` is deliberately not declared anywhere: it is detected as a
+    # password column from the spec, which is what a project should be able to
+    # rely on without saying anything.
     verbose_name_plural = "Users"
 
 
@@ -371,15 +372,13 @@ async def test_a_field_the_form_never_rendered_cannot_be_written(
 
 
 async def test_a_sensitive_value_is_never_rendered(client: httpx.AsyncClient) -> None:
-    """A password hash echoed into a page ends up in a cache or a screenshot.
-
-    `hashed_password` is both read-only and sensitive, so it must not appear in
-    the editable control or in the read-only one.
-    """
+    """A password hash echoed into a page ends up in a cache or a screenshot."""
     body = (await client.get("/admin/accounts.user/1/")).text
 
     assert "$argon2id$" not in body
-    assert "ff-readonly" in body
+    # The control is rendered, and it is a password box rather than a text one.
+    assert 'name="hashed_password"' in body
+    assert 'type="password"' in body
 
 
 async def test_a_hostile_value_is_escaped_into_the_form(client: httpx.AsyncClient) -> None:
@@ -410,3 +409,110 @@ async def test_a_forged_message_cookie_is_ignored(client: httpx.AsyncClient) -> 
 
     body = (await client.get("/admin/shop.product/")).text
     assert "ff-messages" not in body
+
+
+# ---------------------------------------------------------------------------
+# Password fields
+# ---------------------------------------------------------------------------
+
+
+async def test_a_password_column_renders_a_password_control(client: httpx.AsyncClient) -> None:
+    """A text box expecting a pasted Argon2 hash is not a usable control.
+
+    Nothing declares `hashed_password` as a password field; it is detected from
+    the spec, because the adapter marked it sensitive and the name says so.
+    """
+    body = (await client.get("/admin/accounts.user/add")).text
+
+    assert 'name="hashed_password"' in body
+    assert 'name="hashed_password__confirm"' in body
+    assert 'type="password"' in body
+
+
+async def test_a_new_account_needs_a_password(client: httpx.AsyncClient) -> None:
+    response = await submit(client, "/admin/accounts.user/add", email="a@example.com")
+    assert "Set a password for the new account." in response.text
+
+
+async def test_a_weak_password_is_refused(client: httpx.AsyncClient) -> None:
+    response = await submit(
+        client,
+        "/admin/accounts.user/add",
+        email="a@example.com",
+        hashed_password="short",
+        hashed_password__confirm="short",
+    )
+    assert "at least 10 characters" in response.text
+
+
+async def test_a_mismatched_confirmation_is_refused(client: httpx.AsyncClient) -> None:
+    response = await submit(
+        client,
+        "/admin/accounts.user/add",
+        email="a@example.com",
+        hashed_password="a-good-passphrase-2026",
+        hashed_password__confirm="something-else-entirely",
+    )
+    assert "The two passwords do not match." in response.text
+
+
+async def test_a_password_is_stored_hashed_and_works(
+    client: httpx.AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Hashing happens inside the form, so no view can store plaintext by
+    forgetting to call something."""
+    from fastfort.auth import verify_password
+
+    response = await submit(
+        client,
+        "/admin/accounts.user/add",
+        email="fresh@example.com",
+        hashed_password="a-good-passphrase-2026",
+        hashed_password__confirm="a-good-passphrase-2026",
+        is_active="1",
+        is_staff="1",
+    )
+    assert "was created" in response.text
+    assert "a-good-passphrase-2026" not in response.text
+
+    async with session_factory() as session:
+        created = (
+            await session.execute(
+                sa.select(StaffUser).where(StaffUser.email == "fresh@example.com")
+            )
+        ).scalar_one()
+
+    assert created.hashed_password.startswith("$argon2id$")
+    assert verify_password("a-good-passphrase-2026", created.hashed_password)
+
+
+async def test_leaving_a_password_blank_keeps_the_current_one(
+    client: httpx.AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Otherwise editing an unrelated field would clear the password, or force
+    the person to retype it."""
+    async with session_factory() as session:
+        before = (
+            (await session.execute(sa.select(StaffUser).where(StaffUser.id == 1)))
+            .scalar_one()
+            .hashed_password
+        )
+
+    await submit(client, "/admin/accounts.user/1/", email="admin@example.com", is_staff="1")
+
+    async with session_factory() as session:
+        after = (
+            (await session.execute(sa.select(StaffUser).where(StaffUser.id == 1)))
+            .scalar_one()
+            .hashed_password
+        )
+
+    assert after == before
+
+
+async def test_a_password_column_is_never_prefilled(client: httpx.AsyncClient) -> None:
+    body = (await client.get("/admin/accounts.user/1/")).text
+
+    assert "$argon2id$" not in body
+    # The control is present but empty, with an explanation of what blank means.
+    assert "Leave blank to keep the current password." in body

@@ -44,9 +44,14 @@
     {% endif %}
 
     <div class="ff-card">
-      <div class="ff-card__body ff-stack">
+      <div class="ff-card__body ff-form-grid">
         {% for field in form.fields %}
-          <div class="ff-field" {% if field.errors %}data-invalid="true"{% endif %}>
+          {# Long controls span both columns: a textarea squeezed into half a
+             page is worse than a taller form. #}
+          <div
+            class="ff-field{% if field.widget in ('textarea', 'json', 'relations') %} ff-field--wide{% endif %}"
+            {% if field.errors %}data-invalid="true"{% endif %}
+          >
             <label class="ff-label" for="ff-{{ field.name }}">
               {{ field.label }}
               {% if field.required %}
@@ -77,8 +82,28 @@
                   value="1"
                   {% if field.value %}checked{% endif %}
                 />
-                <span>{{ field.spec.help_text or "Enabled" }}</span>
+                <span>{{ field.help_text or "Enabled" }}</span>
               </label>
+
+            {% elif field.widget == "password" %}
+              {# Two boxes, both empty. The stored hash is never sent to the
+                 browser, so there is nothing to prefill and nothing to leak. #}
+              <input
+                class="ff-input"
+                id="ff-{{ field.name }}"
+                name="{{ field.name }}"
+                type="password"
+                autocomplete="new-password"
+                {% if field.errors %}aria-invalid="true"{% endif %}
+              />
+              <input
+                class="ff-input ff-mt-2"
+                name="{{ field.confirm_name }}"
+                type="password"
+                autocomplete="new-password"
+                placeholder="Confirm {{ field.label|lower }}"
+                aria-label="Confirm {{ field.label|lower }}"
+              />
 
             {% elif field.widget == "select" or field.widget == "relation" %}
               <select
@@ -131,8 +156,8 @@
               />
             {% endif %}
 
-            {% if field.spec.help_text and field.widget != "checkbox" %}
-              <span class="ff-help">{{ field.spec.help_text }}</span>
+            {% if field.help_text and field.widget != "checkbox" %}
+              <span class="ff-help">{{ field.help_text }}</span>
             {% endif %}
             {% for message in field.errors %}
               <span class="ff-error" role="alert">{{ message }}</span>
@@ -142,7 +167,7 @@
       </div>
     </div>
 
-    <div class="ff-row ff-mt-4">
+    <div class="ff-form-actions">
       <button class="ff-btn ff-btn--primary" type="submit">{{ submit_label }}</button>
       <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">Cancel</a>
     </div>
