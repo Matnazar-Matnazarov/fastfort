@@ -136,7 +136,20 @@
       </header>
 
       <main class="ff-content" id="ff-main">
-        <div class="ff-container">{% block content %}{% endblock %}</div>
+        <div class="ff-container">
+          {% if messages %}
+            {# role="status" so a screen reader announces the outcome of a save
+               without the person having to go looking for it. #}
+            <div class="ff-messages ff-no-print" role="status" aria-live="polite">
+              {% for message in messages %}
+                <div class="ff-alert ff-alert--{{ message.level }}">
+                  <span>{{ message.text }}</span>
+                </div>
+              {% endfor %}
+            </div>
+          {% endif %}
+          {% block content %}{% endblock %}
+        </div>
       </main>
     </div>
   </body>

@@ -39,6 +39,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Sign-in and sign-out pages, an account menu, and a gate in front of every admin
   route, plus CSP and clickjacking headers on admin responses
 
+- `@admin.register` as a decorator, so an `admin.py` never imports the application
+- Create, change and delete views with a generated form per model, per-field
+  validation messages, delete confirmation and flash messages
+
 ### Changed
 
 - The `mysql` extra installs `aiomysql` instead of `asyncmy`. PYSEC-2026-286 is an

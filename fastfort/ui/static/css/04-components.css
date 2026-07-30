@@ -582,3 +582,68 @@ a.ff-stat:hover {
   font-size: var(--ff-text-xs);
   color: var(--ff-text-subtle);
 }
+
+/* --- Form extras ---------------------------------------------------------- */
+
+.ff-required {
+  color: var(--ff-danger);
+  margin-inline-start: 0.125rem;
+}
+
+/* A read-only value must not look like an empty input someone forgot to fill. */
+.ff-readonly {
+  min-height: var(--ff-control-height);
+  padding: var(--ff-space-2) var(--ff-space-3);
+  border: 1px dashed var(--ff-border);
+  border-radius: var(--ff-radius);
+  background: var(--ff-surface-sunken);
+  color: var(--ff-text-muted);
+}
+
+.ff-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+  min-height: var(--ff-control-height);
+  cursor: pointer;
+}
+
+.ff-checkbox input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--ff-accent);
+  cursor: pointer;
+}
+
+/* Invalid fields get a red edge as well as a message, so the eye finds them in a
+ * long form without reading every label. */
+.ff-field[data-invalid="true"] .ff-input,
+.ff-field[data-invalid="true"] .ff-select,
+.ff-field[data-invalid="true"] .ff-textarea {
+  border-color: var(--ff-danger);
+}
+
+.ff-field[data-invalid="true"] .ff-input:focus-visible,
+.ff-field[data-invalid="true"] .ff-select:focus-visible,
+.ff-field[data-invalid="true"] .ff-textarea:focus-visible {
+  box-shadow: 0 0 0 3px var(--ff-danger-subtle);
+}
+
+/* --- Flash messages ------------------------------------------------------ */
+
+.ff-messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ff-space-2);
+  margin-bottom: var(--ff-space-5);
+}
+
+.ff-alert--success {
+  background: var(--ff-success-subtle);
+  border-color: var(--ff-success);
+}
+
+.ff-alert--info {
+  background: var(--ff-info-subtle);
+  border-color: var(--ff-info);
+}

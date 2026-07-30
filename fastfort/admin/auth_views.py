@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from fastfort import __version__
+from fastfort._version import __version__
 from fastfort.core.exceptions import SecurityError
 from fastfort.core.hooks import Hook
 from fastfort.spec import FieldType

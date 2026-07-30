@@ -64,9 +64,15 @@ class ProductAdmin(admin.ModelAdmin):
     list_filter = ("is_active", "category")
     search_fields = ("name", "description")
     ordering = ("-created_at",)
+    select_related = ("category",)
 ```
 
-Open `http://127.0.0.1:8000/admin` and you are done.
+Open `http://127.0.0.1:8000/admin`, sign in, and you have a list, a search box,
+filters, sortable columns, pagination and working create, edit and delete pages.
+
+Field names are checked against the model when the admin is built, so a typo in
+`list_display` is a start-up error naming every problem at once -- not a 500 the
+first time someone opens that page.
 
 ---
 

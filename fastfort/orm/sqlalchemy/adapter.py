@@ -7,6 +7,7 @@ that fails halfway therefore leaves nothing behind.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
@@ -230,7 +231,7 @@ class SQLAlchemyAdapter:
     async def _resolve(self, target: type[Any], value: Any) -> Any:
         if isinstance(value, target):
             return value
-        found: Any = await self.session.get(target, value)
+        found: Any = await self.session.get(target, _coerce_key(target, value))
         if found is None:
             raise ValidationError(f"No {target.__name__} with key {value!r}.")
         return found
@@ -288,3 +289,36 @@ def _display(obj: Any) -> str:
         if isinstance(value, str) and value:
             return value
     return ""
+
+
+def _coerce_key(target: type[Any], value: Any) -> Any:
+    """Convert a submitted identity to the target's primary key type.
+
+    A form posts strings. PostgreSQL's driver refuses "1" for an integer column
+    outright, where SQLite and MySQL cast it -- so without this a relation
+    dropdown works on two databases and fails on the third.
+    """
+    if not isinstance(value, str):
+        return value
+
+    mapper = sa.inspect(target, raiseerr=False)
+    if mapper is None or len(mapper.primary_key) != 1:
+        return value
+
+    python_type: type[Any] | None
+    try:
+        python_type = mapper.primary_key[0].type.python_type
+    except NotImplementedError:
+        return value
+
+    if python_type is int:
+        try:
+            return int(value)
+        except ValueError:
+            return value
+    if python_type is uuid.UUID:
+        try:
+            return uuid.UUID(value)
+        except ValueError:
+            return value
+    return value
