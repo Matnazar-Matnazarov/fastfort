@@ -44,6 +44,9 @@ class FastFort:
         self._backend = backend
         self._user_config: UserModelConfig | None = None
         self._mounted_on: FastAPI | None = None
+        #: Set by the admin router when it is built. Exposed so a project can
+        #: reach `fort.auth.set_password(user, ...)` from a CLI or a seed script.
+        self.auth: Any = None
 
     def __repr__(self) -> str:
         state = "mounted" if self._mounted_on is not None else "not mounted"
@@ -215,7 +218,19 @@ class FastFort:
             listed = "\n".join(f"  - {issue}" for issue in blocking)
             raise ImproperlyConfigured(f"FastFort cannot be mounted:\n{listed}")
 
+        from fastfort.admin.security import LoginRequired, SecurityHeadersMiddleware
+
         app.include_router(self._build_router(), prefix=self.settings.admin.url)
+
+        # The gate raises; this turns it into the redirect. Registered on the app
+        # because exception handlers are not a router-level concern in Starlette.
+        async def _login_required(_: Any, exc: Exception) -> Any:
+            assert isinstance(exc, LoginRequired)
+            return exc.to_response()
+
+        app.add_exception_handler(LoginRequired, _login_required)
+        app.add_middleware(SecurityHeadersMiddleware, settings=self.settings)
+
         self._mounted_on = app
 
     def _build_router(self) -> Any:

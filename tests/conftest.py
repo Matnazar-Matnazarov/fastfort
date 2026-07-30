@@ -30,7 +30,7 @@ import httpx
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from tests.orm.models import Base, Category, Product, Status, StockLevel, Tag
+from tests.orm.models import Base, Category, Product, StaffUser, Status, StockLevel, Tag
 
 from fastfort.orm.sqlalchemy import SQLAlchemyBackend
 
@@ -227,3 +227,50 @@ async def seeded(session_factory: async_sessionmaker[AsyncSession]) -> None:
             ]
         )
         await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Signing in
+# ---------------------------------------------------------------------------
+
+#: Used by every suite that needs an authenticated admin session.
+ADMIN_EMAIL = "admin@example.com"
+ADMIN_PASSWORD = "correct-horse-battery"
+
+
+@pytest.fixture
+async def staff_user(session_factory: async_sessionmaker[AsyncSession]) -> StaffUser:
+    """A superuser who can sign in, with a real Argon2 hash."""
+    from fastfort.auth import hash_password
+
+    async with session_factory() as session:
+        user = StaffUser(
+            email=ADMIN_EMAIL,
+            full_name="Site Owner",
+            hashed_password=hash_password(ADMIN_PASSWORD),
+            is_staff=True,
+            is_superuser=True,
+        )
+        session.add(user)
+        await session.commit()
+        return user
+
+
+async def sign_in(client: httpx.AsyncClient, *, admin_url: str = "/admin") -> None:
+    """Drive the real sign-in form, so tests exercise the gate rather than skip it."""
+    import re
+
+    body = (await client.get(f"{admin_url}/login")).text
+    match = re.search(r'name="_csrf" value="([^"]+)"', body)
+    assert match, "the login form must carry a CSRF token"
+
+    response = await client.post(
+        f"{admin_url}/login",
+        data={
+            "identity": ADMIN_EMAIL,
+            "password": ADMIN_PASSWORD,
+            "_csrf": match.group(1),
+            "next": f"{admin_url}/",
+        },
+    )
+    assert response.status_code == 303, response.text

@@ -62,6 +62,10 @@ class AuthSettings(BaseModel):
 
     #: Short-lived on purpose: a leaked access token expires before it is useful.
     access_token_ttl: Annotated[int, Field(ge=60, le=86_400)] = 900
+
+    #: How long an admin browser session stays valid. Separate from the API token
+    #: lifetimes: a person's working day is not an API client's refresh window.
+    session_ttl: Annotated[int, Field(ge=300, le=2_592_000)] = 1_209_600
     refresh_token_ttl: Annotated[int, Field(ge=300, le=31_536_000)] = 1_209_600
 
     #: Each refresh issues a new token and retires the old one. Replaying a

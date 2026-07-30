@@ -473,3 +473,112 @@ a.ff-stat:hover {
 .ff-flex-1 { flex: 1 1 auto; }
 .ff-text-center { text-align: center; }
 .ff-nowrap { white-space: nowrap; }
+
+/* --- Sign-in page --------------------------------------------------------
+ * Its own layout, not the shell: a page an anonymous visitor can reach must not
+ * render a sidebar listing every model the admin manages.
+ */
+
+.ff-auth {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  place-items: center;
+  min-height: 100dvh;
+  padding: var(--ff-space-6);
+  background: var(--ff-surface-sunken);
+}
+
+.ff-auth__panel {
+  width: 100%;
+  max-width: 24rem;
+  padding: var(--ff-space-8);
+  background: var(--ff-surface);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-lg);
+  box-shadow: var(--ff-shadow);
+}
+
+.ff-auth__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-3);
+  margin-bottom: var(--ff-space-6);
+  font-weight: var(--ff-weight-semibold);
+}
+
+.ff-auth__footer {
+  padding: var(--ff-space-4);
+  font-size: var(--ff-text-xs);
+  color: var(--ff-text-subtle);
+}
+
+/* --- Account menu -------------------------------------------------------
+ * A <details> element, so it opens, closes on Escape and traps nothing --
+ * behaviour a hand-rolled dropdown has to reimplement and usually gets wrong.
+ */
+
+.ff-account {
+  position: relative;
+}
+
+.ff-account > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+  min-height: var(--ff-control-height-sm);
+  padding: var(--ff-space-1) var(--ff-space-2);
+  border-radius: var(--ff-radius);
+  color: var(--ff-text-muted);
+  font-size: var(--ff-text-sm);
+  cursor: pointer;
+  list-style: none;
+}
+
+.ff-account > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ff-account > summary:hover {
+  background: var(--ff-surface-hover);
+  color: var(--ff-text);
+}
+
+.ff-account__avatar {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--ff-radius-full);
+  background: var(--ff-accent-muted);
+  color: var(--ff-accent);
+  font-size: var(--ff-text-xs);
+  font-weight: var(--ff-weight-semibold);
+}
+
+.ff-account__menu {
+  position: absolute;
+  inset-inline-end: 0;
+  top: calc(100% + var(--ff-space-2));
+  z-index: var(--ff-z-dropdown);
+  min-width: 13rem;
+  padding: var(--ff-space-2);
+  background: var(--ff-surface-raised);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-md);
+  box-shadow: var(--ff-shadow-lg);
+}
+
+.ff-account__identity {
+  padding: var(--ff-space-2);
+  border-bottom: 1px solid var(--ff-border);
+  margin-bottom: var(--ff-space-2);
+}
+
+.ff-account__name {
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-account__meta {
+  font-size: var(--ff-text-xs);
+  color: var(--ff-text-subtle);
+}
