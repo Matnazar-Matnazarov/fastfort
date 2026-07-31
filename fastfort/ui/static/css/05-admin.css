@@ -293,3 +293,273 @@ a.ff-stat:hover {
   transition: opacity var(--ff-duration) var(--ff-ease);
   pointer-events: none;
 }
+
+/* ===========================================================================
+ * Visual pass.
+ *
+ * The interface worked but read as a wireframe: everything the same weight,
+ * borders competing with content, and no clear hierarchy between the page, the
+ * panel and the row. This section tunes rhythm, weight and depth. Every value
+ * still comes from a token, so the single-hue rebranding holds.
+ * ======================================================================== */
+
+/* --- Shell ---------------------------------------------------------------- */
+
+.ff-sidebar {
+  padding: var(--ff-space-4) var(--ff-space-3);
+  background: var(--ff-surface-sunken);
+}
+
+.ff-brand {
+  height: auto;
+  padding: 0 var(--ff-space-2) var(--ff-space-4);
+  font-size: var(--ff-text-base);
+}
+
+.ff-brand__mark {
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--ff-radius-md);
+  box-shadow: var(--ff-shadow-sm);
+}
+
+.ff-nav-item {
+  min-height: 2.25rem;
+  padding-block: var(--ff-space-2);
+  font-size: var(--ff-text-base);
+  font-weight: var(--ff-weight-normal);
+}
+
+.ff-nav-item[aria-current="page"] {
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  font-weight: var(--ff-weight-medium);
+  box-shadow: var(--ff-shadow-xs);
+}
+
+.ff-topbar {
+  padding-inline: var(--ff-space-6);
+  border-bottom-color: var(--ff-border);
+}
+
+.ff-content {
+  padding: var(--ff-space-8) var(--ff-space-6) var(--ff-space-16);
+}
+
+/* --- Page header ---------------------------------------------------------
+ * No rule under it: the panel below already draws the line, and two horizontal
+ * strokes a few pixels apart is what made the page look like a wireframe.
+ */
+
+.ff-page-header {
+  padding-bottom: 0;
+  border-bottom: 0;
+  margin-bottom: var(--ff-space-5);
+  gap: var(--ff-space-3);
+}
+
+.ff-page-header .ff-h1 {
+  font-size: 1.625rem;
+  font-weight: var(--ff-weight-semibold);
+  letter-spacing: -0.021em;
+}
+
+.ff-page-header .ff-muted {
+  font-size: var(--ff-text-base);
+  margin-top: var(--ff-space-1);
+}
+
+/* --- One panel per page --------------------------------------------------
+ * The filter bar and the table are one surface, not two floating boxes with a
+ * gap between them. That gap is the single thing that read as unfinished.
+ */
+
+.ff-filters {
+  margin-top: 0;
+  margin-bottom: 0;
+  padding: var(--ff-space-3) var(--ff-space-4);
+  border-radius: var(--ff-radius-lg) var(--ff-radius-lg) 0 0;
+  border-bottom: 0;
+  background: var(--ff-surface);
+  gap: var(--ff-space-3);
+}
+
+.ff-filters + #ff-results .ff-table-wrap,
+#ff-results > .ff-table-wrap {
+  margin-top: 0;
+  border-radius: 0 0 var(--ff-radius-lg) var(--ff-radius-lg);
+  border-top: 0;
+}
+
+.ff-filters .ff-input,
+.ff-filters .ff-select {
+  background: var(--ff-surface-sunken);
+  border-color: transparent;
+}
+
+.ff-filters .ff-input:hover,
+.ff-filters .ff-select:hover {
+  border-color: var(--ff-border-strong);
+}
+
+.ff-filters .ff-input:focus-visible,
+.ff-filters .ff-select:focus-visible {
+  background: var(--ff-surface);
+}
+
+.ff-search {
+  flex: 1 1 16rem;
+  max-width: 22rem;
+}
+
+/* --- Table ---------------------------------------------------------------- */
+
+.ff-table-wrap {
+  box-shadow: var(--ff-shadow-xs);
+}
+
+.ff-table thead th {
+  background: var(--ff-surface);
+  border-bottom-color: var(--ff-border-strong);
+  padding-block: var(--ff-space-3);
+}
+
+.ff-table tbody td {
+  /* Taller rows: an admin table is read, not just scanned, and cramped rows are
+   * the difference between a spreadsheet and an interface. */
+  padding-block: var(--ff-space-4);
+  border-bottom-color: var(--ff-border);
+}
+
+.ff-table tbody tr:hover {
+  background: var(--ff-accent-subtle);
+}
+
+/* The first column is an identifier, so it recedes. The link column carries the
+ * weight instead, because that is what people aim at. */
+.ff-table tbody td:first-child {
+  font-size: var(--ff-text-sm);
+  color: var(--ff-text-subtle);
+}
+
+.ff-table .ff-link {
+  color: var(--ff-text);
+  font-weight: var(--ff-weight-medium);
+  text-decoration: none;
+}
+
+.ff-table .ff-link:hover {
+  color: var(--ff-accent);
+  text-decoration: underline;
+}
+
+.ff-table__sort {
+  font-weight: inherit;
+}
+
+.ff-pagination {
+  padding: var(--ff-space-4) var(--ff-space-1) 0;
+}
+
+/* --- Cards and tiles ------------------------------------------------------ */
+
+.ff-stat {
+  gap: var(--ff-space-2);
+  padding: var(--ff-space-5) var(--ff-space-6);
+}
+
+.ff-stat__value {
+  font-size: 2rem;
+  line-height: 1.1;
+}
+
+.ff-stat__meta {
+  font-size: var(--ff-text-base);
+  font-weight: var(--ff-weight-medium);
+  color: var(--ff-text);
+}
+
+.ff-stat__label {
+  order: -1;
+  font-size: var(--ff-text-xs);
+  color: var(--ff-text-subtle);
+}
+
+.ff-card {
+  box-shadow: var(--ff-shadow-xs);
+}
+
+.ff-card__body {
+  padding: var(--ff-space-6);
+}
+
+/* --- Controls ------------------------------------------------------------- */
+
+.ff-btn {
+  border-radius: var(--ff-radius-md);
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-btn--primary {
+  border-color: transparent;
+}
+
+.ff-input,
+.ff-select,
+.ff-textarea {
+  border-radius: var(--ff-radius-md);
+  border-color: var(--ff-border-strong);
+}
+
+.ff-label {
+  font-size: var(--ff-text-sm);
+  color: var(--ff-text-muted);
+  font-weight: var(--ff-weight-medium);
+}
+
+/* --- Account menu --------------------------------------------------------
+ * The language control was cramped into the dropdown as an unlabelled select.
+ * Given room and a label it reads as a setting rather than as a stray widget.
+ */
+
+.ff-account > summary {
+  min-height: var(--ff-control-height);
+  padding-inline: var(--ff-space-2) var(--ff-space-3);
+  border-radius: var(--ff-radius-full);
+  font-size: var(--ff-text-base);
+}
+
+.ff-account__menu {
+  min-width: 15rem;
+  padding: var(--ff-space-3);
+  border-radius: var(--ff-radius-lg);
+}
+
+.ff-account__identity {
+  padding: var(--ff-space-1) var(--ff-space-2) var(--ff-space-3);
+}
+
+.ff-account__section {
+  padding: var(--ff-space-2) var(--ff-space-2) var(--ff-space-3);
+}
+
+.ff-account__section .ff-select {
+  width: 100%;
+}
+
+.ff-account__meta {
+  display: block;
+  margin-bottom: var(--ff-space-1);
+}
+
+/* --- Empty states --------------------------------------------------------- */
+
+.ff-empty {
+  padding-block: var(--ff-space-12);
+}
+
+.ff-empty__icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  font-size: var(--ff-text-lg);
+}

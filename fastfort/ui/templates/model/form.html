@@ -9,7 +9,7 @@
       {% endif %}
     </div>
     <div class="ff-page-header__actions">
-      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">{{ _("Back to {name}", name=admin.title|lower) }}</a>
+      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">{{ _("Back to {name}", name=_(admin.title)|lower) }}</a>
       {% if delete_url %}
         <a class="ff-btn ff-btn--ghost" href="{{ delete_url }}">{{ _("Delete") }}</a>
       {% endif %}
@@ -54,7 +54,7 @@
             {% if field.errors %}data-invalid="true"{% endif %}
           >
             <label class="ff-label" for="ff-{{ field.name }}">
-              {{ field.label }}
+              {{ _(field.label) }}
               {% if field.required %}
                 <span class="ff-required" aria-hidden="true">*</span>
                 <span class="ff-sr-only">{{ _("(required)") }}</span>
@@ -102,8 +102,8 @@
                 name="{{ field.confirm_name }}"
                 type="password"
                 autocomplete="new-password"
-                placeholder="{{ _("Confirm {name}", name=field.label|lower) }}"
-                aria-label="{{ _("Confirm {name}", name=field.label|lower) }}"
+                placeholder="{{ _("Confirm {name}", name=_(field.label)|lower) }}"
+                aria-label="{{ _("Confirm {name}", name=_(field.label)|lower) }}"
               />
 
             {% elif field.widget == "select" or field.widget == "relation" %}

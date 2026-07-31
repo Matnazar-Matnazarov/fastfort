@@ -3,10 +3,10 @@
 {% block content %}
   <div class="ff-page-header">
     <div class="ff-page-header__text">
-      <h1 class="ff-h1">{{ admin.title }}</h1>
+      <h1 class="ff-h1">{{ _(admin.title) }}</h1>
       <p class="ff-muted ff-mt-2">
         {% if page.total %}
-          {{ "{:,}".format(page.total) }} {{ admin.title|lower if page.total != 1 else admin.singular|lower }}
+          {{ "{:,}".format(page.total) }} {{ (_(admin.title) if page.total != 1 else _(admin.singular))|lower }}
         {% else %}
           {{ _("Nothing here yet") }}
         {% endif %}
@@ -14,7 +14,7 @@
     </div>
     {% if add_url %}
       <div class="ff-page-header__actions">
-        <a class="ff-btn ff-btn--primary" href="{{ add_url }}">{{ _("Add {name}", name=admin.singular|lower) }}</a>
+        <a class="ff-btn ff-btn--primary" href="{{ add_url }}">{{ _("Add {name}", name=_(admin.singular)) }}</a>
       </div>
     {% endif %}
   </div>
@@ -37,7 +37,7 @@
           type="search"
           name="q"
           value="{{ query.search }}"
-          placeholder="{{ _("Search {name}…", name=admin.title|lower) }}"
+          placeholder="{{ _("Search {name}…", name=_(admin.title)|lower) }}"
           aria-label="{{ _("Search") }}"
         />
       </div>

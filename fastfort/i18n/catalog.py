@@ -18,6 +18,7 @@ __all__ = [
     "LANGUAGES",
     "Translator",
     "available_languages",
+    "clear_catalog_cache",
     "negotiate_language",
 ]
 
@@ -35,14 +36,12 @@ LANGUAGES: dict[str, str] = {
 }
 
 
-@lru_cache(maxsize=len(LANGUAGES))
-def _catalog(language: str) -> dict[str, str]:
-    """Load one catalogue, or an empty one.
+def _read(path: Path) -> dict[str, str]:
+    """Read one catalogue file, or nothing.
 
     A missing or malformed file is not an error: every string falls back to its
     English source, so the admin stays usable rather than failing to render.
     """
-    path = CATALOG_DIR / f"{language}.json"
     if not path.is_file():
         return {}
     try:
@@ -54,11 +53,31 @@ def _catalog(language: str) -> dict[str, str]:
     return {str(key): str(value) for key, value in loaded.items() if value}
 
 
+@lru_cache(maxsize=64)
+def _catalog(language: str, project_dir: str | None = None) -> dict[str, str]:
+    """The strings for one language, with a project's own taking precedence.
+
+    Model and field names come from the project, not from here, so a project has
+    to be able to translate them -- otherwise the chrome appears in Uzbek while
+    every column header stays in English, which reads as broken rather than as
+    untranslated.
+    """
+    merged = _read(CATALOG_DIR / f"{language}.json")
+    if project_dir:
+        merged |= _read(Path(project_dir) / f"{language}.json")
+    return merged
+
+
 def available_languages() -> tuple[str, ...]:
     """Languages with a catalogue on disk, plus the source language."""
     found = [DEFAULT_LANGUAGE]
     found.extend(code for code in LANGUAGES if code != DEFAULT_LANGUAGE and _catalog(code))
     return tuple(found)
+
+
+def clear_catalog_cache() -> None:
+    """Forget loaded catalogues. Used by tests and by a development reload."""
+    _catalog.cache_clear()
 
 
 def negotiate_language(
@@ -92,6 +111,8 @@ class Translator:
     """Translates source strings into one language."""
 
     language: str = DEFAULT_LANGUAGE
+    #: A project's own catalogue directory, searched before ours.
+    project_dir: str | None = None
 
     def __call__(self, text: str, /, **placeholders: Any) -> str:
         """Translate `text`, filling any `{named}` placeholders.
@@ -99,7 +120,9 @@ class Translator:
         A placeholder that a translation forgot, or invented, must not take the
         page down -- the untranslated source is rendered instead.
         """
-        translated = _catalog(self.language).get(text, text)
+        if not text:
+            return text
+        translated = _catalog(self.language, self.project_dir).get(text, text)
         if not placeholders:
             return translated
         try:

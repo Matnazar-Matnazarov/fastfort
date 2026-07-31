@@ -152,6 +152,12 @@ class UISettings(BaseModel):
     #: language regardless of who opens it sets this; leaving it unset must not
     #: silently pin everyone to English.
     language: str | None = None
+
+    #: A directory of `<language>.json` files whose entries take precedence over
+    #: FastFort's own. This is where a project translates its model and field
+    #: names, which FastFort cannot know.
+    locale_dir: str | None = None
+
     timezone: str = "UTC"
 
     #: Rendered in the footer; useful for telling staging apart from production.

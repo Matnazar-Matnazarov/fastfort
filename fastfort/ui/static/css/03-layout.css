@@ -74,12 +74,13 @@
   margin-top: var(--ff-space-4);
 }
 
+/* Sentence case, not SHOUTING. Uppercase reads as dated, and it mangles scripts
+ * where casing carries meaning or does not exist. */
 .ff-nav-group__label {
   padding: var(--ff-space-1) var(--ff-space-2);
   font-size: var(--ff-text-xs);
   font-weight: var(--ff-weight-semibold);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
   color: var(--ff-text-subtle);
 }
 
