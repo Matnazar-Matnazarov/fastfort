@@ -222,3 +222,5 @@ package_plan/*
 # Local scratch application used to exercise FastFort the way a consumer
 # project would. Deliberately untracked: it is a sandbox, not a deliverable.
 test_api/
+# Its SQLite file is written into the repository root, not into test_api/.
+test_api.db
