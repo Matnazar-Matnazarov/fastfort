@@ -17,6 +17,7 @@ from .catalog import (
     LANGUAGES,
     Translator,
     available_languages,
+    clear_catalog_cache,
     negotiate_language,
 )
 
@@ -25,5 +26,6 @@ __all__ = [
     "LANGUAGES",
     "Translator",
     "available_languages",
+    "clear_catalog_cache",
     "negotiate_language",
 ]

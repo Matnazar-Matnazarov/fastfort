@@ -78,7 +78,7 @@
         {% if query.search or query.filters %}
           <div class="ff-empty__title">{{ _("Nothing matched") }}</div>
           <p class="ff-empty__body">
-            No {{ admin.title|lower }} match the current search and filters.
+            {{ _("Nothing matches the current search and filters.") }}
           </p>
           <a class="ff-btn" href="{{ list_url }}">{{ _("Clear search and filters") }}</a>
         {% else %}
@@ -88,7 +88,7 @@
           </p>
           {% if add_url %}
             <a class="ff-btn ff-btn--primary" href="{{ add_url }}">
-              {{ _("Add the first {name}", name=admin.singular|lower) }}
+              {{ _("Add the first {name}", name=_(admin.singular)|lower) }}
             </a>
           {% endif %}
         {% endif %}

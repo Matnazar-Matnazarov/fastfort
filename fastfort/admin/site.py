@@ -119,7 +119,8 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 chosen=request.cookies.get(LANGUAGE_COOKIE),
                 configured=settings.ui.language,
                 accept=request.headers.get("accept-language", ""),
-            )
+            ),
+            project_dir=settings.ui.locale_dir,
         )
 
     def base_context(request: Request, current_key: str | None) -> dict[str, Any]:
@@ -312,10 +313,16 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 page_result = await adapter.list(query)
 
             filter_controls = await _filter_controls(
-                spec, model_admin, params, adapter, settings.admin.autocomplete_limit
+                spec,
+                model_admin,
+                params,
+                adapter,
+                settings.admin.autocomplete_limit,
+                translator_for(request),
             )
 
         columns = tuple(model_admin.columns())
+        context_translator = translator_for(request)
         # A live update asks for the results only. Both paths render the same
         # fragment from the same context, so they cannot drift apart.
         partial = request.headers.get("x-fastfort-partial") == "results"
@@ -327,7 +334,9 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             "query": query,
             "list_url": list_url(model_key),
             "add_url": f"{admin_url}/{model_key}/add",
-            "columns": _column_headers(spec, columns, query, params, list_url(model_key)),
+            "columns": _column_headers(
+                spec, columns, query, params, list_url(model_key), context_translator
+            ),
             "rows": _rows(
                 model_admin, spec, page_result.items, columns, f"{admin_url}/{model_key}"
             ),
@@ -803,13 +812,17 @@ def _column_headers(
     query: ListQuery,
     params: dict[str, str],
     base: str,
+    translate: Translator,
 ) -> list[dict[str, Any]]:
     active = {sort.field: sort for sort in query.ordering}
     headers: list[dict[str, Any]] = []
 
     for name in columns:
         field = spec.get(name)
-        label = field.label if field else name.replace("_", " ").title()
+        # Translated here rather than in the template: a column header comes from
+        # the project's model, so leaving it untranslated is what makes an admin
+        # appear half in one language and half in another.
+        label = translate(field.label if field else name.replace("_", " ").capitalize())
         sortable = name in spec.sortable_fields
 
         state = "none"
@@ -866,6 +879,7 @@ async def _filter_controls(
     params: dict[str, str],
     adapter: Any,
     relation_limit: int = 20,
+    translate: Translator | None = None,
 ) -> list[dict[str, Any]]:
     """Build a control for each declared filter.
 
@@ -876,6 +890,7 @@ async def _filter_controls(
     rendering a select with ten thousand options that nobody can use.
     """
     controls: list[dict[str, Any]] = []
+    label_of = translate or Translator()
 
     for name in admin.list_filter:
         field = spec.get(name)
@@ -887,7 +902,7 @@ async def _filter_controls(
                 {
                     "kind": "range",
                     "name": name,
-                    "label": field.label,
+                    "label": label_of(field.label),
                     "from_name": f"{name}__gte",
                     "to_name": f"{name}__lte",
                     "from_value": params.get(f"{name}__gte", ""),
@@ -899,9 +914,9 @@ async def _filter_controls(
 
         options: tuple[tuple[str, str], ...]
         if field.type is FieldType.BOOLEAN:
-            options = (("1", "Yes"), ("0", "No"))
+            options = (("1", label_of("Yes")), ("0", label_of("No")))
         elif field.choices:
-            options = tuple((str(choice.value), choice.label) for choice in field.choices)
+            options = tuple((str(choice.value), label_of(choice.label)) for choice in field.choices)
         elif field.is_relation and not field.type.is_multi_valued:
             found = await adapter.related_choices(name, "", limit=relation_limit + 1)
             if len(found) > relation_limit:
@@ -922,7 +937,7 @@ async def _filter_controls(
             {
                 "kind": "select",
                 "name": name,
-                "label": field.label,
+                "label": label_of(field.label),
                 "choices": [
                     {"value": value, "label": label, "selected": current == value}
                     for value, label in options

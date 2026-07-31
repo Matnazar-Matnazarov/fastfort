@@ -15,7 +15,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
     <meta name="referrer" content="same-origin" />
-    <title>{{ _("Sign in") }} · {{ settings.project_name }}</title>
+    <title>{{ _("Sign in") }} · {{ _(settings.project_name) }}</title>
     {% if theme.favicon_url %}
       <link rel="icon" href="{{ theme.favicon_url }}" />
     {% endif %}
@@ -28,15 +28,15 @@
     <main class="ff-auth__panel">
       <div class="ff-auth__brand">
         {% if theme.logo_url %}
-          <img class="ff-brand__logo" src="{{ theme.logo_url }}" alt="{{ settings.project_name }}" />
+          <img class="ff-brand__logo" src="{{ theme.logo_url }}" alt="{{ _(settings.project_name) }}" />
         {% else %}
-          <span class="ff-brand__mark" aria-hidden="true">{{ settings.project_name[:1]|upper }}</span>
+          <span class="ff-brand__mark" aria-hidden="true">{{ _(settings.project_name)[:1]|upper }}</span>
         {% endif %}
-        <span>{{ settings.project_name }}</span>
+        <span>{{ _(settings.project_name) }}</span>
       </div>
 
       <h1 class="ff-h2">{{ _("Sign in") }}</h1>
-      <p class="ff-muted">{{ _("Administration for {project}", project=settings.project_name) }}</p>
+      <p class="ff-muted">{{ _("Administration for {project}", project=_(settings.project_name)) }}</p>
 
       {% if error %}
         {# One message for every failure mode. Anything more specific tells a

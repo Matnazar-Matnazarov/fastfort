@@ -58,7 +58,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A `fastfort` command: `createsuperuser`, `check`, `registered-models`,
   `generate-secret` and `version`
 
+- `UISettings.locale_dir`: a project supplies its own catalogues, so it can
+  translate its model and field names
+
 ### Changed
+- Model names, field labels, filter labels and column headers now go through the
+  translator. They previously stayed English while the chrome was translated,
+  which read as broken rather than as untranslated.
+- Table headers, sidebar section labels and stat-tile labels are sentence case
+  rather than uppercase, which reads as dated and mangles scripts where casing
+  carries meaning or does not exist.
 - `UISettings.language` defaults to None, meaning "follow the browser". It
   previously defaulted to "en", which matched before `Accept-Language` was ever
   consulted and made browser negotiation dead code.

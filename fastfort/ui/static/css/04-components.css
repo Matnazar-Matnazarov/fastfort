@@ -223,10 +223,8 @@ a.ff-stat:hover {
 }
 
 .ff-stat__label {
-  font-size: var(--ff-text-xs);
+  font-size: var(--ff-text-sm);
   font-weight: var(--ff-weight-medium);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   color: var(--ff-text-subtle);
 }
 
@@ -266,10 +264,8 @@ a.ff-stat:hover {
   padding: var(--ff-space-3) var(--ff-space-4);
   background: var(--ff-surface-sunken);
   border-bottom: 1px solid var(--ff-border);
-  font-size: var(--ff-text-xs);
-  font-weight: var(--ff-weight-semibold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: var(--ff-text-sm);
+  font-weight: var(--ff-weight-medium);
   color: var(--ff-text-muted);
   white-space: nowrap;
 }

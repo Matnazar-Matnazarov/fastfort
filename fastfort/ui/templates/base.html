@@ -16,7 +16,7 @@
     {# An admin must never be indexed, and never leak its URLs through a referer. #}
     <meta name="robots" content="noindex, nofollow" />
     <meta name="referrer" content="same-origin" />
-    <title>{% block title %}{{ page_title }}{% endblock %} · {{ settings.project_name }}</title>
+    <title>{% block title %}{{ page_title }}{% endblock %} · {{ _(settings.project_name) }}</title>
     {% if theme.favicon_url %}
       <link rel="icon" href="{{ theme.favicon_url }}" />
     {% endif %}
@@ -35,11 +35,11 @@
       <aside class="ff-sidebar ff-scroll" id="ff-sidebar">
         <a class="ff-brand" href="{{ admin_url }}/">
           {% if theme.logo_url %}
-            <img class="ff-brand__logo" src="{{ theme.logo_url }}" alt="{{ settings.project_name }}" />
+            <img class="ff-brand__logo" src="{{ theme.logo_url }}" alt="{{ _(settings.project_name) }}" />
           {% else %}
-            <span class="ff-brand__mark" aria-hidden="true">{{ settings.project_name[:1]|upper }}</span>
+            <span class="ff-brand__mark" aria-hidden="true">{{ _(settings.project_name)[:1]|upper }}</span>
           {% endif %}
-          <span class="ff-collapsible ff-truncate">{{ settings.project_name }}</span>
+          <span class="ff-collapsible ff-truncate">{{ _(settings.project_name) }}</span>
         </a>
 
         <nav aria-label="{{ _("Models") }}">
@@ -53,14 +53,14 @@
 
           {% for group in nav %}
             <div class="ff-nav-group">
-              <div class="ff-nav-group__label ff-collapsible">{{ group.label }}</div>
+              <div class="ff-nav-group__label ff-collapsible">{{ _(group.label) }}</div>
               {% for item in group.entries %}
                 <a
                   class="ff-nav-item"
                   href="{{ item.url }}"
                   {% if item.key == current_key %}aria-current="page"{% endif %}
                 >
-                  <span class="ff-collapsible ff-truncate">{{ item.title }}</span>
+                  <span class="ff-collapsible ff-truncate">{{ _(item.title) }}</span>
                 </a>
               {% endfor %}
             </div>
@@ -92,9 +92,9 @@
           {% for crumb in breadcrumbs %}
             <span class="ff-breadcrumbs__sep" aria-hidden="true">/</span>
             {% if crumb.url %}
-              <a class="ff-link" href="{{ crumb.url }}">{{ crumb.label }}</a>
+              <a class="ff-link" href="{{ crumb.url }}">{{ _(crumb.label) }}</a>
             {% else %}
-              <span class="ff-breadcrumbs__current ff-truncate">{{ crumb.label }}</span>
+              <span class="ff-breadcrumbs__current ff-truncate">{{ _(crumb.label) }}</span>
             {% endif %}
           {% endfor %}
         </nav>

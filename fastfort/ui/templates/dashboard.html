@@ -3,7 +3,7 @@
 {% block content %}
   <div class="ff-page-header">
     <div class="ff-page-header__text">
-      <h1 class="ff-h1">{{ settings.project_name }}</h1>
+      <h1 class="ff-h1">{{ _(settings.project_name) }}</h1>
       <p class="ff-muted ff-mt-2">
         {% if models %}
           {{ _("{count} model registered", count=models|length) if models|length == 1
@@ -35,9 +35,9 @@
     <div class="ff-grid ff-mt-6">
       {% for model in models %}
         <a class="ff-stat" href="{{ model.url }}">
-          <span class="ff-stat__label">{{ model.group }}</span>
+          <span class="ff-stat__label">{{ _(model.group) }}</span>
           <span class="ff-stat__value">{{ model.count }}</span>
-          <span class="ff-stat__meta">{{ model.title }}</span>
+          <span class="ff-stat__meta">{{ _(model.title) }}</span>
         </a>
       {% endfor %}
     </div>
