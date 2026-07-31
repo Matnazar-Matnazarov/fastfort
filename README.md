@@ -67,6 +67,15 @@ class ProductAdmin(admin.ModelAdmin):
     select_related = ("category",)
 ```
 
+Create the first account and start the server:
+
+```bash
+uv run fastfort generate-secret --export      # a signing key
+FF_PASSWORD=... uv run fastfort createsuperuser \
+    --identity you@example.com --password-env FF_PASSWORD --no-input
+uv run uvicorn main:app
+```
+
 Open `http://127.0.0.1:8000/admin`, sign in, and you have a list, a search box,
 filters, sortable columns, pagination and working create, edit and delete pages.
 
@@ -88,6 +97,7 @@ first time someone opens that page.
 | 🗄 **Three databases** | SQLite · PostgreSQL · MySQL, with identical behaviour |
 | 🔌 **ORM-agnostic** | SQLAlchemy 2.0 (async and sync) and Tortoise ORM behind one adapter contract |
 | 🌍 **Three languages** | English, Uzbek and Russian, switchable per person, negotiated from the browser |
+| ⌨️ **A CLI that matters** | `createsuperuser` so a fresh install has a way in, and `check --deploy` that exits non-zero |
 | 📦 **No Node.js** | CSS and JavaScript ship pre-built inside the package |
 
 ---
