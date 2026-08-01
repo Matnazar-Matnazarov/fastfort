@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from fastfort.core.exceptions import ConfigurationError
 from fastfort.spec import FieldType, SortSpec
+from fastfort.ui.icons import icon_names, is_icon
 
 if TYPE_CHECKING:
     from fastfort.spec import ModelSpec
@@ -69,6 +70,9 @@ class ModelAdmin:
     #: Overrides for the sidebar. Derived from the model name when unset.
     verbose_name: ClassVar[str | None] = None
     verbose_name_plural: ClassVar[str | None] = None
+
+    #: A name from `fastfort.ui.icons`, drawn beside the sidebar entry. Checked at
+    #: declaration time, so a typo is an error rather than a silently blank slot.
     icon: ClassVar[str | None] = None
 
     def __init__(self, spec: ModelSpec) -> None:
@@ -118,6 +122,10 @@ class ModelAdmin:
                     f"list_filter names {name!r}; free-text and multi-valued fields "
                     "cannot be offered as a filter"
                 )
+
+        if self.icon is not None and not is_icon(self.icon):
+            available = ", ".join(icon_names())
+            problems.append(f"icon names {self.icon!r}, which is not one of: {available}")
 
         if problems:
             listed = "\n".join(f"  - {problem}" for problem in problems)
