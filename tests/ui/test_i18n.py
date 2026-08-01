@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -57,8 +58,6 @@ def test_a_catalogue_is_valid_json_of_strings(code: str) -> None:
 def test_a_translation_keeps_its_placeholders(code: str) -> None:
     """A translation that drops `{count}` renders a sentence missing its number;
     one that invents a placeholder raises at render time."""
-    import re
-
     loaded = json.loads((LOCALE_DIR / f"{code}.json").read_text(encoding="utf-8"))
     pattern = re.compile(r"\{(\w+)\}")
 
@@ -231,3 +230,56 @@ async def test_the_switcher_offers_every_available_language(
     body = await page(client, "/admin/login")
     for name in ("English", "O'zbekcha", "Русский"):
         assert name in body, name
+
+
+async def test_the_switcher_is_not_a_native_select(client: httpx.AsyncClient) -> None:
+    """A <select> opens the operating system's own popup: unstyleable, unlike
+    anything else on the page, and on a phone it takes over the whole screen for
+    three options."""
+    body = await page(client, "/admin/login")
+
+    assert not re.search(r'<select[^>]*name="language"', body)
+    assert len(re.findall(r'<button\b[^>]*?name="language"', body, re.DOTALL)) == 3
+
+
+async def test_each_language_carries_its_flag_and_its_code(client: httpx.AsyncClient) -> None:
+    """The code is not decoration: several platforms draw a regional-indicator
+    pair as two letters rather than a flag, and one that fails to render must not
+    take the meaning of the row with it."""
+    body = await page(client, "/admin/login")
+
+    for flag, code in (("\U0001f1ec\U0001f1e7", "EN"), ("\U0001f1fa\U0001f1ff", "UZ")):
+        assert flag in body, code
+        assert f'class="ff-menu-item__code" aria-hidden="true">{code}<' in body, code
+
+
+async def test_the_current_language_is_marked(client: httpx.AsyncClient) -> None:
+    await client.post("/admin/language", data={"language": "uz", "next": "/admin/login"})
+    body = await page(client, "/admin/login")
+
+    marked = re.findall(
+        r'name="language"\s+value="(\w+)"[^>]*lang="\w+"\s+aria-current="true"', body
+    )
+    assert marked == ["uz"]
+
+
+async def test_choosing_a_language_returns_to_the_same_page(client: httpx.AsyncClient) -> None:
+    """The point of the switcher is to read the page you are on in another
+    language, not to be sent back to the dashboard."""
+    await sign_in(client)
+    response = await client.post(
+        "/admin/language", data={"language": "ru", "next": "/admin/shop.product/"}
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/admin/shop.product/"
+
+
+async def test_switching_language_keeps_the_query_string(client: httpx.AsyncClient) -> None:
+    """Switching from a filtered, sorted, paginated list and landing on page one
+    of an unfiltered one loses real work."""
+    await sign_in(client)
+    # `page` unescapes, so the `&amp;` the template writes arrives as `&`.
+    body = await page(client, "/admin/shop.product/?q=widget&o=-id")
+
+    assert 'name="next" value="/admin/shop.product/?q=widget&o=-id"' in body

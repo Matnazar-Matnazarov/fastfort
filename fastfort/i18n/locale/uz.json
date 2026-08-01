@@ -4,7 +4,11 @@
   "Skip to content": "Asosiy qismga o'tish",
   "Open navigation": "Menyuni ochish",
   "Toggle light or dark theme": "Yorug' yoki qorong'i mavzuni almashtirish",
-  "Toggle theme": "Mavzuni almashtirish",
+  "Appearance": "Ko'rinish",
+  "Theme": "Mavzu",
+  "Light": "Yorug'",
+  "Dark": "Qorong'i",
+  "System": "Tizim",
   "Models": "Modellar",
   "Breadcrumb": "Yo'l ko'rsatkich",
   "Language": "Til",
@@ -87,6 +91,5 @@
   "Status": "Holati",
   "ID": "ID",
   "Accounts": "Hisoblar",
-  "Shop": "Do'kon",
-  "Dark mode": "Qorong'i rejim"
+  "Shop": "Do'kon"
 }

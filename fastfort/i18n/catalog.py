@@ -16,6 +16,8 @@ from typing import Any
 __all__ = [
     "DEFAULT_LANGUAGE",
     "LANGUAGES",
+    "LANGUAGE_FLAGS",
+    "LanguageChoice",
     "Translator",
     "available_languages",
     "clear_catalog_cache",
@@ -34,6 +36,30 @@ LANGUAGES: dict[str, str] = {
     "uz": "O'zbekcha",
     "ru": "Русский",
 }
+
+#: Regional-indicator pairs, shown beside the name in the switcher. Decoration
+#: only: several platforms draw them as two letters instead of a flag, and a flag
+#: is a country rather than a language in any case. The name and the code carry
+#: the meaning, so a switcher stays readable wherever these fail to render.
+LANGUAGE_FLAGS: dict[str, str] = {
+    "en": "\U0001f1ec\U0001f1e7",
+    "uz": "\U0001f1fa\U0001f1ff",
+    "ru": "\U0001f1f7\U0001f1fa",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class LanguageChoice:
+    """One row in a language switcher."""
+
+    code: str
+    name: str
+    flag: str
+
+    @property
+    def short(self) -> str:
+        """The code as a badge, e.g. ``EN``."""
+        return self.code.upper()
 
 
 def _read(path: Path) -> dict[str, str]:
@@ -141,6 +167,14 @@ class Translator:
     def is_default(self) -> bool:
         return self.language == DEFAULT_LANGUAGE
 
-    def choices(self) -> tuple[tuple[str, str], ...]:
-        """Every offered language as (code, native name), for a switcher."""
-        return tuple((code, LANGUAGES.get(code, code)) for code in available_languages())
+    @property
+    def choice(self) -> LanguageChoice:
+        """This translator's own language, for a switcher's summary."""
+        return LanguageChoice(self.language, self.label, LANGUAGE_FLAGS.get(self.language, ""))
+
+    def choices(self) -> tuple[LanguageChoice, ...]:
+        """Every offered language, for a switcher."""
+        return tuple(
+            LanguageChoice(code, LANGUAGES.get(code, code), LANGUAGE_FLAGS.get(code, ""))
+            for code in available_languages()
+        )

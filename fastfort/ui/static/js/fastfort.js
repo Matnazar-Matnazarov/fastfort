@@ -36,51 +36,78 @@
 
   const root = document.documentElement;
 
+  /* Marks the document as scripted, so controls that only work with JavaScript
+   * are hidden from anyone who does not have it rather than sitting there doing
+   * nothing when clicked. */
+  root.dataset.ffJs = "1";
+
   // --- Theme ---------------------------------------------------------------
+
+  /* Three modes, not two. A light/dark switch can only ever say one of them, so
+   * touching it pins the admin and there is no way back to following the
+   * operating system -- a setting nobody chose and cannot undo. "system" is the
+   * absence of the attribute, which is what the stylesheet's media query keys
+   * off; writing data-ff-theme="system" would match neither branch. */
+  const MODES = new Set(["light", "dark", "system"]);
 
   const systemPrefersDark = () =>
     window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
 
-  const currentTheme = () =>
-    root.dataset.ffTheme || (systemPrefersDark() ? "dark" : "light");
+  const storedMode = () => {
+    const value = read(STORE.theme);
+    return MODES.has(value) ? value : null;
+  };
 
-  const applyTheme = (theme) => {
-    root.dataset.ffTheme = theme;
-    write(STORE.theme, theme);
-    for (const icon of document.querySelectorAll("[data-ff-theme-icon]")) {
-      icon.textContent = theme === "dark" ? "☀" : "☾";
-    }
-    // The switch in the account menu and the button in the topbar are two views
-    // of one setting, so whichever is used, both have to end up showing it.
-    for (const box of document.querySelectorAll("[data-ff-theme-switch]")) {
-      box.checked = theme === "dark";
+  /* Falls back to whatever the server rendered, so a page opened for the first
+   * time reflects the project's configured theme rather than assuming light. */
+  let mode = storedMode() ?? (MODES.has(root.dataset.ffTheme) ? root.dataset.ffTheme : "system");
+
+  const effectiveTheme = () =>
+    mode === "system" ? (systemPrefersDark() ? "dark" : "light") : mode;
+
+  const syncThemeControls = () => {
+    for (const button of document.querySelectorAll("[data-ff-theme-set]")) {
+      button.setAttribute("aria-pressed", String(button.dataset.ffThemeSet === mode));
     }
   };
 
-  const stored = read(STORE.theme);
-  if (stored === "light" || stored === "dark") {
-    applyTheme(stored);
-  } else {
-    // Reflect the effective theme in the icon without pinning the attribute,
-    // so a later change of OS preference still takes effect.
-    for (const icon of document.querySelectorAll("[data-ff-theme-icon]")) {
-      icon.textContent = currentTheme() === "dark" ? "☀" : "☾";
-    }
-    for (const box of document.querySelectorAll("[data-ff-theme-switch]")) {
-      box.checked = currentTheme() === "dark";
-    }
-  }
+  const applyTheme = (next) => {
+    if (!MODES.has(next)) return;
+    mode = next;
+    if (next === "system") delete root.dataset.ffTheme;
+    else root.dataset.ffTheme = next;
+    write(STORE.theme, next);
+    syncThemeControls();
+  };
+
+  applyTheme(mode);
 
   document.addEventListener("click", (event) => {
+    const option = event.target.closest("[data-ff-theme-set]");
+    if (option) {
+      applyTheme(option.dataset.ffThemeSet);
+      return;
+    }
+    // The quick toggle flips between the two visible states. Cycling through
+    // three from one button would leave people unable to predict what a click
+    // does, so the third lives in the account menu where it is labelled.
     if (event.target.closest("[data-ff-theme-toggle]")) {
-      applyTheme(currentTheme() === "dark" ? "light" : "dark");
+      applyTheme(effectiveTheme() === "dark" ? "light" : "dark");
     }
   });
 
-  document.addEventListener("change", (event) => {
-    if (event.target.matches("[data-ff-theme-switch]")) {
-      applyTheme(event.target.checked ? "dark" : "light");
+  // --- Menus ---------------------------------------------------------------
+
+  /* <details> closes on its own summary but not on a click elsewhere, which
+   * leaves a menu hanging open behind whatever the person went on to do. */
+  const closeMenus = (except) => {
+    for (const menu of document.querySelectorAll("details[data-ff-account][open]")) {
+      if (menu !== except) menu.open = false;
     }
+  };
+
+  document.addEventListener("click", (event) => {
+    closeMenus(event.target.closest("details[data-ff-account]"));
   });
 
   // --- Sidebar -------------------------------------------------------------
@@ -125,6 +152,7 @@
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       setDrawer(false);
+      closeMenus();
       return;
     }
 

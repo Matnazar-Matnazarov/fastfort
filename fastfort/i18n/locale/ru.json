@@ -4,7 +4,11 @@
   "Skip to content": "Перейти к содержимому",
   "Open navigation": "Открыть меню",
   "Toggle light or dark theme": "Переключить светлую или тёмную тему",
-  "Toggle theme": "Переключить тему",
+  "Appearance": "Оформление",
+  "Theme": "Тема",
+  "Light": "Светлая",
+  "Dark": "Тёмная",
+  "System": "Системная",
   "Models": "Модели",
   "Breadcrumb": "Навигационная цепочка",
   "Language": "Язык",
@@ -87,6 +91,5 @@
   "Status": "Статус",
   "ID": "ID",
   "Accounts": "Аккаунты",
-  "Shop": "Магазин",
-  "Dark mode": "Тёмная тема"
+  "Shop": "Магазин"
 }

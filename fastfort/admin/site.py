@@ -33,17 +33,13 @@ from .auth_views import build_auth_router
 from .forms import Form
 from .messages import Message, Messages
 from .options import ModelAdmin
-from .security import make_guard, safe_next_url
+from .security import LANGUAGE_COOKIE, make_guard, safe_next_url
 
 if TYPE_CHECKING:
     from fastfort.core.app import FastFort
     from fastfort.spec import ModelSpec
 
 __all__ = ["build_admin_router"]
-
-#: Where a chosen language is remembered. A cookie rather than a column, so it
-#: works before anyone has signed in -- the login page needs a language too.
-LANGUAGE_COOKIE = "ff_language"
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "ui" / "static"
 
@@ -131,9 +127,11 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             "_": translator,
             "language": translator.language,
             "languages": translator.choices(),
+            "current_language": translator.choice,
             "language_url": f"{admin_url}/language",
             "user": user,
             "user_label": _user_label(fort, user),
+            "user_identity": _user_identity(fort, user),
             "is_superuser": user is not None and fort.user_config.is_superuser(user),
             "logout_url": f"{admin_url}/logout",
             "csrf_field": auth.csrf.field_name,
@@ -150,6 +148,10 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             "page_title": settings.project_name,
             "messages": notices.read(request),
             "request": request,
+            # Where a language change should return to. The query string is part
+            # of it: switching language from a filtered, sorted, paginated list
+            # and landing on page one of an unfiltered list is a loss of work.
+            "current_path": _current_path(request),
         }
 
     #: Static assets and the sign-in page stay reachable while signed out.
@@ -747,10 +749,27 @@ def _user_label(fort: FastFort, user: Any) -> str:
         value = getattr(user, attribute, None)
         if isinstance(value, str) and value.strip():
             return value
+    return _user_identity(fort, user) or "Account"
+
+
+def _user_identity(fort: FastFort, user: Any) -> str:
+    """What they signed in with, shown under their name in the account card.
+
+    Empty when it is unavailable, so the card renders one line rather than a line
+    and a gap.
+    """
+    if user is None:
+        return ""
     try:
         return fort.user_config.identity_of(user)
     except Exception:
-        return "Account"
+        return ""
+
+
+def _current_path(request: Request) -> str:
+    """This request's path with its query string, for a round trip back to it."""
+    query = request.url.query
+    return f"{request.url.path}?{query}" if query else request.url.path
 
 
 def _instantiate(admin: Any, spec: ModelSpec) -> ModelAdmin:
@@ -776,6 +795,10 @@ def _navigation(fort: FastFort, list_url: Any) -> list[dict[str, Any]]:
                     "key": entry.key,
                     "title": _title_of(entry.admin, entry.key),
                     "url": list_url(entry.key),
+                    # Read off the class rather than an instance: the sidebar is
+                    # built on every page and instantiating a ModelAdmin needs the
+                    # spec, which needs a round trip to the database.
+                    "icon": getattr(entry.admin, "icon", None),
                 }
                 for entry in entries
             ],

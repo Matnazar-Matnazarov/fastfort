@@ -1,0 +1,36 @@
+{#
+  The language switcher.
+
+  A form of submit buttons rather than a <select>. A native select opens the
+  operating system's own popup, which cannot be styled, looks nothing like the
+  rest of the admin, and on a phone takes over the whole screen for three
+  options. Buttons are one click instead of two, they carry the flag and the
+  code, and they still work with JavaScript off -- each one posts the choice and
+  the server sends the same page back in that language.
+
+  Included by the shell's account menu and by the sign-in page, so both switch
+  language the same way.
+#}
+<form class="ff-menu__group" method="post" action="{{ language_url }}">
+  {# Carries the query string too: switching language from a filtered, sorted
+     page and landing on an unfiltered one loses real work. #}
+  <input type="hidden" name="next" value="{{ current_path }}" />
+  <p class="ff-menu__label">{{ _("Language") }}</p>
+  {% for choice in languages %}
+    <button
+      class="ff-menu-item"
+      type="submit"
+      name="language"
+      value="{{ choice.code }}"
+      {# So a screen reader pronounces each name in its own language rather than
+         reading "Русский" with an English voice. #}
+      lang="{{ choice.code }}"
+      {% if choice.code == language %}aria-current="true"{% endif %}
+    >
+      <span class="ff-menu-item__lead" aria-hidden="true">{{ choice.flag }}</span>
+      <span class="ff-menu-item__label ff-truncate">{{ choice.name }}</span>
+      <span class="ff-menu-item__mark" aria-hidden="true">{{ ff_icon("check", size=14) }}</span>
+      <span class="ff-menu-item__code" aria-hidden="true">{{ choice.short }}</span>
+    </button>
+  {% endfor %}
+</form>

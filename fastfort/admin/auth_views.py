@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -26,6 +27,7 @@ from fastfort.spec import FieldType
 from fastfort.ui.theming import Theme
 
 from .security import (
+    LANGUAGE_COOKIE,
     clear_session_cookie,
     safe_next_url,
     set_csrf_cookie,
@@ -63,10 +65,14 @@ def build_auth_router(fort: FastFort, auth: AdminAuth, renderer: Renderer) -> AP
         identity_field = _identity_field(fort)
         translator = Translator(
             negotiate_language(
-                chosen=request.cookies.get("ff_language"),
+                chosen=request.cookies.get(LANGUAGE_COOKIE),
                 configured=settings.ui.language,
                 accept=request.headers.get("accept-language", ""),
-            )
+            ),
+            # The same project catalogue the rest of the admin uses. Without it
+            # the sign-in page is the one screen that ignores a project's own
+            # translations, which reads as the language switcher being broken.
+            project_dir=settings.ui.locale_dir,
         )
         body = renderer.render(
             "auth/login.html",
@@ -75,7 +81,11 @@ def build_auth_router(fort: FastFort, auth: AdminAuth, renderer: Renderer) -> AP
             _=translator,
             language=translator.language,
             languages=translator.choices(),
+            current_language=translator.choice,
             language_url=f"{admin_url}/language",
+            # Switching language must land back on the sign-in page, keeping the
+            # `?next=` that says where the person was headed.
+            current_path=f"{login_url}?next={quote(next_url, safe='/')}" if next_url else login_url,
             stylesheets=theme.stylesheets(static_url),
             version=__version__,
             login_url=login_url,

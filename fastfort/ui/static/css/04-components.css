@@ -814,20 +814,25 @@ a.ff-stat:hover {
   color: var(--ff-text-subtle);
 }
 
-.ff-auth__language {
+/* The language switcher on this page is one centred control under a centred
+ * card, so its menu opens centred rather than aligned to an edge. */
+.ff-account--center {
   margin-top: var(--ff-space-5);
-  display: flex;
-  gap: var(--ff-space-2);
-  justify-content: center;
 }
 
-.ff-auth__language .ff-select {
-  width: auto;
-  min-width: 9rem;
+.ff-account--center > summary {
+  justify-content: center;
+  font-size: var(--ff-text-sm);
+}
+
+.ff-account--center .ff-menu {
+  inset-inline-start: 50%;
+  translate: -50% 0;
+  min-width: 13rem;
 }
 
 /* ===========================================================================
- * Account menu
+ * Account card and its menu
  *
  * A <details> element, so it opens, closes on Escape and is keyboard reachable
  * without any JavaScript -- behaviour a hand-rolled dropdown has to reimplement
@@ -841,10 +846,9 @@ a.ff-stat:hover {
 .ff-account > summary {
   display: flex;
   align-items: center;
-  gap: var(--ff-space-2);
-  height: var(--ff-control-height);
-  padding-inline: var(--ff-space-2) var(--ff-space-3);
-  border-radius: var(--ff-radius-full);
+  gap: var(--ff-space-3);
+  padding: var(--ff-space-2);
+  border-radius: var(--ff-radius);
   color: var(--ff-text-muted);
   font-size: var(--ff-text-base);
   cursor: pointer;
@@ -856,7 +860,8 @@ a.ff-stat:hover {
   display: none;
 }
 
-.ff-account > summary:hover {
+.ff-account > summary:hover,
+.ff-account[open] > summary {
   background: var(--ff-surface-hover);
   color: var(--ff-text);
 }
@@ -864,8 +869,9 @@ a.ff-stat:hover {
 .ff-account__avatar {
   display: grid;
   place-items: center;
-  width: 1.75rem;
-  height: 1.75rem;
+  flex: 0 0 auto;
+  width: 1.875rem;
+  height: 1.875rem;
   border-radius: var(--ff-radius-full);
   background: var(--ff-primary);
   color: var(--ff-primary-text);
@@ -873,27 +879,19 @@ a.ff-stat:hover {
   font-weight: var(--ff-weight-semibold);
 }
 
-.ff-account__menu {
-  position: absolute;
-  inset-inline-end: 0;
-  top: calc(100% + var(--ff-space-2));
-  z-index: var(--ff-z-dropdown);
-  min-width: 15rem;
-  padding: var(--ff-space-2);
-  background: var(--ff-surface-raised);
-  border: 1px solid var(--ff-border);
-  border-radius: var(--ff-radius-lg);
-  box-shadow: var(--ff-shadow-lg);
-}
-
-.ff-account__identity {
-  padding: var(--ff-space-2);
-  border-bottom: 1px solid var(--ff-border);
-  margin-bottom: var(--ff-space-2);
+/* Two lines: the name, and what they signed in with. One line of "admin" tells
+ * nobody which of two accounts they are using. */
+.ff-account__who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+  line-height: var(--ff-leading-tight);
 }
 
 .ff-account__name {
   font-weight: var(--ff-weight-medium);
+  color: var(--ff-text);
 }
 
 .ff-account__meta {
@@ -902,15 +900,243 @@ a.ff-stat:hover {
   color: var(--ff-text-subtle);
 }
 
-.ff-account__section {
-  padding: var(--ff-space-2);
-  border-bottom: 1px solid var(--ff-border);
-  margin-bottom: var(--ff-space-2);
+.ff-account__chevron {
+  flex: 0 0 auto;
+  color: var(--ff-text-subtle);
 }
 
-.ff-account__section .ff-select {
+/* ===========================================================================
+ * Menu
+ *
+ * The panel an account card or a switcher opens. Rows are real buttons and
+ * links, so everything in here is reachable by keyboard and submits without
+ * JavaScript.
+ * ======================================================================== */
+
+.ff-menu {
+  position: absolute;
+  z-index: var(--ff-z-dropdown);
+  /* Anchored to the bottom of the card, opening upward: the card sits at the
+   * foot of the sidebar, and there is no room below it. */
+  bottom: calc(100% + var(--ff-space-2));
+  inset-inline-start: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(20rem, calc(100vw - var(--ff-space-6)));
+  padding: var(--ff-space-1);
+  background: var(--ff-surface-raised);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-lg);
+  box-shadow: var(--ff-shadow-lg);
+}
+
+.ff-menu__group {
+  padding-bottom: var(--ff-space-1);
+  margin-bottom: var(--ff-space-1);
+  border-bottom: 1px solid var(--ff-border);
+}
+
+.ff-menu__label {
+  padding: var(--ff-space-2) var(--ff-space-2) var(--ff-space-1);
+  font-size: var(--ff-text-xs);
+  font-weight: var(--ff-weight-medium);
+  color: var(--ff-text-subtle);
+}
+
+.ff-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-3);
   width: 100%;
-  margin-top: var(--ff-space-2);
+  padding: var(--ff-space-2);
+  border: 0;
+  border-radius: var(--ff-radius-sm);
+  background: none;
+  color: var(--ff-text-muted);
+  font: inherit;
+  font-size: var(--ff-text-base);
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background var(--ff-duration-fast) var(--ff-ease),
+    color var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-menu-item:hover {
+  background: var(--ff-surface-hover);
+  color: var(--ff-text);
+}
+
+.ff-menu-item:focus-visible {
+  outline: 2px solid var(--ff-accent);
+  outline-offset: -2px;
+}
+
+.ff-menu-item[aria-current="true"] {
+  color: var(--ff-text);
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-menu-item--danger:hover {
+  background: var(--ff-danger-subtle);
+  color: var(--ff-danger);
+}
+
+/* A fixed slot for the flag or the icon, so the labels line up down the menu
+ * whichever one a row happens to carry. */
+.ff-menu-item__lead {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.25rem;
+  font-size: var(--ff-text-md);
+  line-height: 1;
+}
+
+.ff-menu-item__label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Always in the layout, only sometimes visible: hiding it outright would shift
+ * every other row sideways as the selection moves. */
+.ff-menu-item__mark {
+  flex: 0 0 auto;
+  color: var(--ff-accent);
+  visibility: hidden;
+}
+
+.ff-menu-item[aria-current="true"] .ff-menu-item__mark {
+  visibility: visible;
+}
+
+/* The code carries the meaning where the flag does not render, which on several
+ * platforms is always. */
+.ff-menu-item__code {
+  flex: 0 0 auto;
+  padding-inline: var(--ff-space-2);
+  border-radius: var(--ff-radius-sm);
+  background: var(--ff-surface-sunken);
+  font-size: var(--ff-text-xs);
+  font-weight: var(--ff-weight-medium);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  color: var(--ff-text-subtle);
+}
+
+.ff-menu-item[aria-current="true"] .ff-menu-item__code {
+  background: var(--ff-accent-subtle);
+  color: var(--ff-accent);
+}
+
+.ff-menu > :last-child .ff-menu-item,
+.ff-menu > form:last-child {
+  margin-bottom: 0;
+}
+
+.ff-menu > form:last-child,
+.ff-menu > :last-child.ff-menu__group {
+  border-bottom: 0;
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+
+/* ===========================================================================
+ * Segmented control
+ *
+ * For a small set of mutually exclusive options where all of them are worth
+ * showing at once -- a dropdown hides two thirds of a three-way choice behind a
+ * click, and a switch cannot express three states at all.
+ * ======================================================================== */
+
+.ff-segment {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--ff-radius);
+  background: var(--ff-surface-sunken);
+}
+
+.ff-segment__option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ff-space-1);
+  flex: 1 1 0;
+  min-width: 0;
+  padding: var(--ff-space-1) var(--ff-space-2);
+  border: 0;
+  border-radius: calc(var(--ff-radius) - 2px);
+  background: none;
+  color: var(--ff-text-muted);
+  font: inherit;
+  font-size: var(--ff-text-xs);
+  cursor: pointer;
+  transition:
+    background var(--ff-duration-fast) var(--ff-ease),
+    color var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-segment__option:hover {
+  color: var(--ff-text);
+}
+
+/* `aria-pressed` rather than a class, so the state a screen reader announces
+ * and the state that is drawn cannot drift apart. */
+.ff-segment__option[aria-pressed="true"] {
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  font-weight: var(--ff-weight-medium);
+  box-shadow: var(--ff-shadow-xs);
+}
+
+.ff-segment__option:focus-visible {
+  outline: 2px solid var(--ff-accent);
+  outline-offset: -2px;
+}
+
+/* ===========================================================================
+ * Theme quick toggle
+ *
+ * Which of the two icons shows is decided here rather than by script, so the
+ * button is correct on the first paint instead of flickering once JavaScript has
+ * run. The selectors mirror the stylesheet's own light/dark branches: the
+ * attribute pins a theme, its absence means follow the system.
+ * ======================================================================== */
+
+.ff-theme-icon--in-dark {
+  display: none;
+}
+
+:root[data-ff-theme="dark"] .ff-theme-icon--in-dark {
+  display: block;
+}
+
+:root[data-ff-theme="dark"] .ff-theme-icon--in-light {
+  display: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ff-theme="light"]) .ff-theme-icon--in-dark {
+    display: block;
+  }
+
+  :root:not([data-ff-theme="light"]) .ff-theme-icon--in-light {
+    display: none;
+  }
+}
+
+/* ===========================================================================
+ * Environment badge
+ *
+ * In the header rather than the footer. Which of two open windows is production
+ * has to be answerable without scrolling.
+ * ======================================================================== */
+
+.ff-env {
+  flex: 0 0 auto;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 /* ===========================================================================

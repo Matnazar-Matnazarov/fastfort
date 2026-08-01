@@ -25,6 +25,8 @@
   </head>
 
   <body class="ff-auth">
+    {{ ff_sprite() }}
+
     <main class="ff-auth__panel">
       <div class="ff-auth__brand">
         {% if theme.logo_url %}
@@ -93,22 +95,19 @@
     </main>
 
     {% if languages|length > 1 %}
-      <form class="ff-auth__language" method="post" action="{{ language_url }}">
-        <label class="ff-sr-only" for="ff-login-language">{{ _("Language") }}</label>
-        <select
-          class="ff-select ff-select--sm"
-          id="ff-login-language"
-          name="language"
-          onchange="this.form.submit()"
-        >
-          {% for code, name in languages %}
-            <option value="{{ code }}" {% if code == language %}selected{% endif %}>{{ name }}</option>
-          {% endfor %}
-        </select>
-        <noscript>
-          <button class="ff-btn ff-btn--sm" type="submit">{{ _("Apply") }}</button>
-        </noscript>
-      </form>
+      {# A dropdown rather than the rows laid out flat: this page is a single
+         centred card, and three permanent rows below it would compete with the
+         one thing there is to do here. #}
+      <details class="ff-account ff-account--center" data-ff-account>
+        <summary>
+          <span aria-hidden="true">{{ ff_icon("globe", size=15) }}</span>
+          <span>{{ current_language.name }}</span>
+          <span class="ff-account__chevron" aria-hidden="true">{{ ff_icon("chevron-down", size=14) }}</span>
+        </summary>
+        <div class="ff-menu">
+          {% include "_language.html" %}
+        </div>
+      </details>
     {% endif %}
 
     <footer class="ff-auth__footer">FastFort {{ version }}</footer>

@@ -27,12 +27,16 @@
   </head>
 
   <body>
+    {# Every icon on the page, once. Inline rather than a second request: an
+       external <use> target blocks the first paint of every icon that needs it. #}
+    {{ ff_sprite() }}
+
     {# First tab stop on every page: keyboard users should not have to walk the
        whole sidebar to reach the table. #}
     <a class="ff-skip-link" href="#ff-main">{{ _("Skip to content") }}</a>
 
     <div class="ff-app" id="ff-app" data-collapsed="false">
-      <aside class="ff-sidebar ff-scroll" id="ff-sidebar">
+      <aside class="ff-sidebar" id="ff-sidebar">
         <a class="ff-brand" href="{{ admin_url }}/">
           {% if theme.logo_url %}
             <img class="ff-brand__logo" src="{{ theme.logo_url }}" alt="{{ _(settings.project_name) }}" />
@@ -42,24 +46,34 @@
           <span class="ff-collapsible ff-truncate">{{ _(settings.project_name) }}</span>
         </a>
 
-        <nav aria-label="{{ _("Models") }}">
+        {# The nav scrolls, not the sidebar: the account menu at the foot opens
+           upward out of its own box, and an overflow on the sidebar would clip
+           it. #}
+        <nav class="ff-nav ff-scroll" aria-label="{{ _("Models") }}">
           <a
             class="ff-nav-item"
             href="{{ admin_url }}/"
             {% if current_key is none %}aria-current="page"{% endif %}
           >
+            <span class="ff-nav-item__icon">{{ ff_icon("dashboard") }}</span>
             <span class="ff-collapsible">{{ _("Dashboard") }}</span>
           </a>
 
           {% for group in nav %}
             <div class="ff-nav-group">
-              <div class="ff-nav-group__label ff-collapsible">{{ _(group.label) }}</div>
+              {# Not `ff-collapsible`: collapsed it becomes the rule between the
+                 groups rather than disappearing, so the grouping survives. #}
+              <div class="ff-nav-group__label">{{ _(group.label) }}</div>
               {% for item in group.entries %}
                 <a
                   class="ff-nav-item"
                   href="{{ item.url }}"
                   {% if item.key == current_key %}aria-current="page"{% endif %}
+                  title="{{ _(item.title) }}"
                 >
+                  {# `list` when a model declared nothing, so every row lines up
+                     on the same left edge whether or not it chose an icon. #}
+                  <span class="ff-nav-item__icon">{{ ff_icon(item.icon or "list") }}</span>
                   <span class="ff-collapsible ff-truncate">{{ _(item.title) }}</span>
                 </a>
               {% endfor %}
@@ -67,11 +81,11 @@
           {% endfor %}
         </nav>
 
-        <div class="ff-sidebar__footer ff-collapsible">
-          {% if theme.environment_label %}
-            <span class="ff-badge ff-badge--warning">{{ theme.environment_label }}</span>
+        <div class="ff-sidebar__footer">
+          {% if user %}
+            {% include "_account.html" %}
           {% endif %}
-          <div class="ff-mt-2">FastFort {{ version }}</div>
+          <div class="ff-sidebar__version ff-collapsible">FastFort {{ version }}</div>
         </div>
       </aside>
 
@@ -83,7 +97,7 @@
           aria-controls="ff-sidebar"
           aria-expanded="false"
         >
-          <span aria-hidden="true">☰</span>
+          {{ ff_icon("menu", size=18) }}
           <span class="ff-sr-only">{{ _("Open navigation") }}</span>
         </button>
 
@@ -101,76 +115,30 @@
 
         <span class="ff-topbar__spacer"></span>
 
+        {% if theme.environment_label %}
+          {# In the header rather than the footer: which of two open windows is
+             production has to be answerable without scrolling. #}
+          <span class="ff-badge ff-badge--{{ theme.environment_tone }} ff-env">
+            {{ _(theme.environment_label) }}
+          </span>
+        {% endif %}
+
+        {% block topbar_actions %}{% endblock %}
+
+        {# A one-click swap between light and dark. Which icon shows is decided by
+           CSS from the theme attribute, so it is right on the first paint rather
+           than after a script has run. The three-way choice, including "follow
+           the system", lives in the account menu. #}
         <button
-          class="ff-btn ff-btn--ghost ff-btn--icon ff-btn--sm"
+          class="ff-btn ff-btn--ghost ff-btn--icon ff-btn--sm ff-js-only"
           type="button"
           data-ff-theme-toggle
-          title="{{ _("Toggle theme") }}"
+          title="{{ _("Toggle light or dark theme") }}"
         >
-          <span aria-hidden="true" data-ff-theme-icon>◐</span>
+          <span class="ff-theme-icon ff-theme-icon--in-light">{{ ff_icon("moon", size=18) }}</span>
+          <span class="ff-theme-icon ff-theme-icon--in-dark">{{ ff_icon("sun", size=18) }}</span>
           <span class="ff-sr-only">{{ _("Toggle light or dark theme") }}</span>
         </button>
-
-        {% if user %}
-          {# A <details> element rather than a scripted dropdown: it opens, closes
-             on Escape and is keyboard reachable without any JavaScript. #}
-          <details class="ff-account" data-ff-account>
-            <summary>
-              <span class="ff-account__avatar" aria-hidden="true">{{ user_label[:1]|upper }}</span>
-              <span class="ff-collapsible ff-truncate">{{ user_label }}</span>
-            </summary>
-            <div class="ff-account__menu">
-              <div class="ff-account__identity">
-                <div class="ff-account__name ff-truncate">{{ user_label }}</div>
-                <div class="ff-account__meta">
-                  {% if is_superuser %}{{ _("Superuser") }}{% else %}{{ _("Staff") }}{% endif %}
-                </div>
-              </div>
-              {# A labelled row rather than a bare icon: someone opening this
-                 menu is looking for settings, and an unlabelled glyph in the
-                 topbar is not discoverable. The topbar button stays for people
-                 who already know where it is. #}
-              <div class="ff-account__section">
-                <label class="ff-switch" for="ff-theme-switch">
-                  <input type="checkbox" id="ff-theme-switch" data-ff-theme-switch />
-                  <span class="ff-switch__track"></span>
-                  <span>{{ _("Dark mode") }}</span>
-                </label>
-              </div>
-
-              {% if languages|length > 1 %}
-                {# A form rather than links, so the choice is a POST that sets a
-                   cookie and returns to the same page. #}
-                <form class="ff-account__section" method="post" action="{{ language_url }}">
-                  <input type="hidden" name="next" value="{{ request.url.path }}" />
-                  <label class="ff-account__meta" for="ff-language">{{ _("Language") }}</label>
-                  <select
-                    class="ff-select ff-select--sm"
-                    id="ff-language"
-                    name="language"
-                    onchange="this.form.submit()"
-                  >
-                    {% for code, name in languages %}
-                      <option value="{{ code }}" {% if code == language %}selected{% endif %}>
-                        {{ name }}
-                      </option>
-                    {% endfor %}
-                  </select>
-                  <noscript>
-                    <button class="ff-btn ff-btn--sm ff-w-full ff-mt-2" type="submit">
-                      {{ _("Apply") }}
-                    </button>
-                  </noscript>
-                </form>
-              {% endif %}
-
-              <form method="post" action="{{ logout_url }}">
-                <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
-                <button class="ff-btn ff-btn--ghost ff-w-full" type="submit">{{ _("Sign out") }}</button>
-              </form>
-            </div>
-          </details>
-        {% endif %}
       </header>
 
       <main class="ff-content" id="ff-main">

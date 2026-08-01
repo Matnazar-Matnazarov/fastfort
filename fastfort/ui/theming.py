@@ -49,6 +49,7 @@ class Theme:
     favicon_url: str | None
     custom_css_url: str | None
     environment_label: str | None
+    environment_tone: str
 
     @classmethod
     def from_settings(cls, settings: UISettings) -> Theme:
@@ -61,6 +62,7 @@ class Theme:
             favicon_url=settings.favicon_url,
             custom_css_url=settings.custom_css_url,
             environment_label=settings.environment_label,
+            environment_tone=settings.environment_tone,
         )
 
     def root_attributes(self) -> dict[str, str]:

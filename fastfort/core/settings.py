@@ -160,8 +160,12 @@ class UISettings(BaseModel):
 
     timezone: str = "UTC"
 
-    #: Rendered in the footer; useful for telling staging apart from production.
+    #: Rendered in the header; useful for telling staging apart from production.
     environment_label: str | None = None
+
+    #: How loudly to draw that label. "danger" for production, so the difference
+    #: between the two windows someone has open is visible without reading.
+    environment_tone: Literal["info", "warning", "danger"] = "warning"
 
 
 class SecuritySettings(BaseModel):

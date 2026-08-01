@@ -1,0 +1,55 @@
+{#
+  The account card at the foot of the sidebar, and the menu it opens.
+
+  A <details> element rather than a scripted dropdown: it opens, closes on
+  Escape, and is keyboard reachable with no JavaScript at all -- behaviour a
+  hand-rolled dropdown has to reimplement and usually gets wrong.
+#}
+<details class="ff-account" data-ff-account>
+  <summary>
+    <span class="ff-account__avatar" aria-hidden="true">{{ user_label[:1]|upper }}</span>
+    <span class="ff-account__who ff-collapsible">
+      <span class="ff-account__name ff-truncate">{{ user_label }}</span>
+      {% if user_identity and user_identity != user_label %}
+        <span class="ff-account__meta ff-truncate">{{ user_identity }}</span>
+      {% else %}
+        <span class="ff-account__meta">
+          {% if is_superuser %}{{ _("Superuser") }}{% else %}{{ _("Staff") }}{% endif %}
+        </span>
+      {% endif %}
+    </span>
+    <span class="ff-account__chevron ff-collapsible" aria-hidden="true">{{ ff_icon("expand", size=14) }}</span>
+  </summary>
+
+  <div class="ff-menu">
+    <div class="ff-menu__group">
+      <p class="ff-menu__label">{{ _("Appearance") }}</p>
+      {# Three states, not two. A switch can only say light or dark, so choosing
+         either one pins the admin and it stops following the system -- which is
+         a setting nobody asked for and cannot get back to. #}
+      <div class="ff-segment ff-js-only" role="group" aria-label="{{ _("Theme") }}">
+        <button class="ff-segment__option" type="button" data-ff-theme-set="light" aria-pressed="false">
+          {{ ff_icon("sun", size=14) }}<span>{{ _("Light") }}</span>
+        </button>
+        <button class="ff-segment__option" type="button" data-ff-theme-set="dark" aria-pressed="false">
+          {{ ff_icon("moon", size=14) }}<span>{{ _("Dark") }}</span>
+        </button>
+        <button class="ff-segment__option" type="button" data-ff-theme-set="system" aria-pressed="false">
+          {{ ff_icon("monitor", size=14) }}<span>{{ _("System") }}</span>
+        </button>
+      </div>
+    </div>
+
+    {% if languages|length > 1 %}
+      {% include "_language.html" %}
+    {% endif %}
+
+    <form method="post" action="{{ logout_url }}">
+      <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+      <button class="ff-menu-item ff-menu-item--danger" type="submit">
+        <span class="ff-menu-item__lead" aria-hidden="true">{{ ff_icon("logout", size=15) }}</span>
+        <span class="ff-menu-item__label">{{ _("Sign out") }}</span>
+      </button>
+    </form>
+  </div>
+</details>
