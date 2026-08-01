@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from fastfort.core.settings import FastFortSettings
 
 __all__ = [
+    "LANGUAGE_COOKIE",
     "LoginRequired",
     "SecurityHeadersMiddleware",
     "clear_session_cookie",
@@ -27,6 +28,12 @@ __all__ = [
     "set_csrf_cookie",
     "set_session_cookie",
 ]
+
+#: Where a chosen language is remembered. A cookie rather than a column, so it
+#: works before anyone has signed in -- the sign-in page needs a language too.
+#: Named here because both the shell and the sign-in page read it, and a second
+#: literal spelling of it is a bug waiting to happen.
+LANGUAGE_COOKIE = "ff_language"
 
 
 class LoginRequired(Exception):

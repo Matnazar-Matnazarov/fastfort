@@ -31,12 +31,20 @@
   background: var(--ff-surface);
   border-inline-end: 1px solid var(--ff-border);
   /* Sticky, not fixed: a long model list scrolls inside the sidebar while the
-   * brand stays put. */
+   * brand and the account card stay put. */
   position: sticky;
   top: 0;
   height: 100dvh;
-  overflow-y: auto;
   z-index: var(--ff-z-sidebar);
+}
+
+/* The nav scrolls rather than the sidebar. An overflow on the sidebar itself
+ * would clip the account menu, which opens upward out of the footer. */
+.ff-nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .ff-brand {
@@ -111,6 +119,21 @@
   font-weight: var(--ff-weight-medium);
 }
 
+/* A fixed slot, so labels line up on one left edge whether or not a model
+ * declared an icon -- and so a collapsed sidebar leaves the icons centred. */
+.ff-nav-item__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.125rem;
+  color: var(--ff-text-subtle);
+}
+
+.ff-nav-item:hover .ff-nav-item__icon,
+.ff-nav-item[aria-current="page"] .ff-nav-item__icon {
+  color: inherit;
+}
+
 .ff-nav-item__count {
   margin-inline-start: auto;
   font-size: var(--ff-text-xs);
@@ -119,9 +142,14 @@
 }
 
 .ff-sidebar__footer {
-  margin-top: auto;
-  padding-top: var(--ff-space-4);
+  flex: 0 0 auto;
+  padding-top: var(--ff-space-3);
+  margin-top: var(--ff-space-2);
   border-top: 1px solid var(--ff-border);
+}
+
+.ff-sidebar__version {
+  padding: var(--ff-space-2) var(--ff-space-2) 0;
   font-size: var(--ff-text-xs);
   color: var(--ff-text-subtle);
 }
@@ -129,6 +157,27 @@
 /* Collapsed: labels are hidden but remain in the accessibility tree. */
 .ff-app[data-collapsed="true"] .ff-collapsible {
   display: none;
+}
+
+/* With the labels gone the icons carry the whole rail, so they centre rather
+ * than sitting against a left edge that no longer has anything to align to. */
+.ff-app[data-collapsed="true"] .ff-nav-item,
+.ff-app[data-collapsed="true"] .ff-brand,
+.ff-app[data-collapsed="true"] .ff-account > summary {
+  justify-content: center;
+  padding-inline: var(--ff-space-2);
+}
+
+/* The group label becomes the rule that separates the groups: collapsed, the
+ * words would not fit, but the grouping still has to be visible. It stays in the
+ * accessibility tree, where it is still the name of what follows. */
+.ff-app[data-collapsed="true"] .ff-nav-group__label {
+  height: 1px;
+  overflow: hidden;
+  padding: 0;
+  margin: var(--ff-space-3) var(--ff-space-2);
+  background: var(--ff-border);
+  color: transparent;
 }
 
 /* --- Topbar --------------------------------------------------------------- */
@@ -250,8 +299,25 @@
     transform: translateX(0);
   }
 
+  /* The drawer is always full width, so the collapsed rail's rules have nothing
+   * to do here and would only shrink a sidebar that is already an overlay. */
   .ff-app[data-collapsed="true"] .ff-collapsible {
     display: revert;
+  }
+
+  .ff-app[data-collapsed="true"] .ff-nav-item,
+  .ff-app[data-collapsed="true"] .ff-brand,
+  .ff-app[data-collapsed="true"] .ff-account > summary {
+    justify-content: flex-start;
+    padding-inline: var(--ff-space-3);
+  }
+
+  .ff-app[data-collapsed="true"] .ff-nav-group__label {
+    height: auto;
+    padding: var(--ff-space-1) var(--ff-space-2);
+    margin: 0;
+    background: none;
+    color: var(--ff-text-subtle);
   }
 
   .ff-scrim {

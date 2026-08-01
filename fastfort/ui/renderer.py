@@ -28,6 +28,7 @@ from jinja2 import (
 from markupsafe import Markup
 
 from fastfort.i18n import Translator
+from fastfort.ui.icons import ICONS
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -70,6 +71,8 @@ class Renderer:
         self.environment.filters["ff_bool"] = boolean_mark
         self.environment.filters["step"] = decimal_step
         self.environment.globals["EMPTY"] = EMPTY
+        self.environment.globals["ff_icon"] = icon
+        self.environment.globals["ff_sprite"] = sprite
 
     def render(self, template: str, /, **context: Any) -> str:
         # A translator is always present, so a template never has to guard for it.
@@ -114,6 +117,46 @@ def boolean_mark(value: Any) -> Markup:
     if value:
         return Markup('<span class="ff-bool ff-bool--on" title="Yes">&check;</span>')
     return Markup('<span class="ff-bool ff-bool--off" title="No">&times;</span>')
+
+
+def icon(name: str | None, *, size: int = 16) -> Markup:
+    """One icon, referencing a symbol in the sprite.
+
+    An unknown name renders nothing rather than raising: an icon is decoration,
+    and a mistyped `ModelAdmin.icon` should not be able to take a page down. The
+    name is checked against the registry before it reaches the output, so it can
+    never carry markup of its own.
+    """
+    if not name or name not in ICONS:
+        return Markup("")
+    # Trusted markup: the only two values interpolated are a key that was just
+    # checked against the registry and an int. Nothing from a request, and
+    # nothing from the database, can reach this string.
+    return Markup(  # noqa: S704
+        f'<svg class="ff-icon" width="{int(size)}" height="{int(size)}" '
+        f'aria-hidden="true" focusable="false"><use href="#ff-i-{name}"/></svg>'
+    )
+
+
+def sprite() -> Markup:
+    """Every symbol, emitted once per page.
+
+    Inline rather than a separate file: `<use>` pointing at an external document
+    costs a request that blocks the first paint of every icon, and browsers have
+    a long history of getting it wrong. Inline, it is about 1 KB compressed and
+    it cannot fail.
+    """
+    symbols = "".join(
+        f'<symbol id="ff-i-{name}" viewBox="0 0 24 24">{markup}</symbol>'
+        for name, markup in ICONS.items()
+    )
+    # Trusted markup: every part of this comes from the icon registry, which is a
+    # constant in this package. No request data passes through it.
+    return Markup(  # noqa: S704
+        '<svg class="ff-sprite" aria-hidden="true" fill="none" stroke="currentColor" '
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        f"{symbols}</svg>"
+    )
 
 
 def decimal_step(places: int | None) -> str:

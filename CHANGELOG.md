@@ -61,7 +61,36 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `UISettings.locale_dir`: a project supplies its own catalogues, so it can
   translate its model and field names
 
+- `fastfort.ui.icons`: a hand-drawn SVG icon set, inlined once per page as a
+  sprite. No font, no CDN, no second request. `ModelAdmin.icon` names one and is
+  validated against the set at declaration time, so a typo is a start-up error
+  rather than a blank slot in the sidebar
+- `UISettings.environment_tone`: how loudly to draw `environment_label`, which
+  now appears in the header rather than the sidebar footer
+
 ### Changed
+
+- The language switcher is a menu of buttons carrying a flag, the language's own
+  name and its code, instead of a native `<select>`. A select opens the operating
+  system's own popup: unstyleable, unlike anything else on the page, and on a
+  phone it takes over the whole screen to offer three options. Each row is a
+  submit button, so it still works with JavaScript disabled.
+- Switching language returns to the same page including its query string. It
+  previously dropped the query, so changing language from a filtered, sorted,
+  paginated list landed on page one of an unfiltered one.
+- The theme control offers Light, Dark and **System** rather than a two-state
+  switch. A switch can only say one of two things, so touching it pinned the
+  admin and left no way back to following the operating system.
+- Which icon the theme toggle shows is decided in CSS from the theme attribute
+  rather than by script, so it is correct on the first paint.
+- The account card moved from the top-right corner to the foot of the sidebar,
+  and now shows the identity signed in with rather than only a name.
+- The sign-in page reads the project's own catalogue directory. It was the one
+  screen that ignored `UISettings.locale_dir`.
+- Sidebar entries take an icon, and the group label becomes the rule between
+  groups when the sidebar is collapsed rather than disappearing with the labels.
+- Controls that cannot work without JavaScript are hidden until the script has
+  run, instead of sitting on the page doing nothing when clicked.
 - Every control is drawn rather than left native: select, checkbox and a new
   switch. A native select beside a styled input changes shape per platform and is
   the clearest sign an interface was not finished.

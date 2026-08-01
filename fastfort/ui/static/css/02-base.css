@@ -124,6 +124,37 @@ body {
   border: 0;
 }
 
+/* --- Icons ----------------------------------------------------------------
+ * One inline sprite per page; each icon is a <use> pointing into it. They take
+ * their colour from the text around them, so no icon needs a rule of its own and
+ * none of them has to be re-drawn for dark mode.
+ */
+
+.ff-icon {
+  display: block;
+  flex: 0 0 auto;
+}
+
+/* The sprite itself is a definition, not a picture. Removed from layout without
+ * `display: none`, which in some browsers stops the symbols resolving. */
+.ff-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* --- Progressive enhancement ----------------------------------------------
+ * The admin navigates, searches, filters, sorts and saves with JavaScript off.
+ * The few controls that genuinely cannot -- the theme switcher writes to local
+ * storage -- are hidden until the script has run, rather than sitting there
+ * doing nothing when clicked. The attribute is set by fastfort.js.
+ */
+
+:root:not([data-ff-js]) .ff-js-only {
+  display: none;
+}
+
 /* A skip link is invisible until focused, then lands on top of everything. */
 .ff-skip-link {
   position: absolute;

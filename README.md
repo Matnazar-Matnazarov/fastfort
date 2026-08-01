@@ -65,6 +65,7 @@ class ProductAdmin(admin.ModelAdmin):
     search_fields = ("name", "description")
     ordering = ("-created_at",)
     select_related = ("category",)
+    icon = "box"  # drawn beside the sidebar entry
 ```
 
 Create the first account and start the server:
@@ -96,7 +97,7 @@ first time someone opens that page.
 | 📝 **Audit log** | Who changed what and when, with an old → new diff |
 | 🗄 **Three databases** | SQLite · PostgreSQL · MySQL, with identical behaviour |
 | 🔌 **ORM-agnostic** | SQLAlchemy 2.0 (async and sync) and Tortoise ORM behind one adapter contract |
-| 🌍 **Three languages** | English, Uzbek and Russian, switchable per person, negotiated from the browser |
+| 🌍 **Three languages** | English, Uzbek and Russian, switchable per person from any page, negotiated from the browser |
 | ⌨️ **A CLI that matters** | `createsuperuser` so a fresh install has a way in, and `check --deploy` that exits non-zero |
 | 📦 **No Node.js** | CSS and JavaScript ship pre-built inside the package |
 
