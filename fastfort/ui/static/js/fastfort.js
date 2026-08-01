@@ -50,6 +50,11 @@
     for (const icon of document.querySelectorAll("[data-ff-theme-icon]")) {
       icon.textContent = theme === "dark" ? "☀" : "☾";
     }
+    // The switch in the account menu and the button in the topbar are two views
+    // of one setting, so whichever is used, both have to end up showing it.
+    for (const box of document.querySelectorAll("[data-ff-theme-switch]")) {
+      box.checked = theme === "dark";
+    }
   };
 
   const stored = read(STORE.theme);
@@ -61,11 +66,20 @@
     for (const icon of document.querySelectorAll("[data-ff-theme-icon]")) {
       icon.textContent = currentTheme() === "dark" ? "☀" : "☾";
     }
+    for (const box of document.querySelectorAll("[data-ff-theme-switch]")) {
+      box.checked = currentTheme() === "dark";
+    }
   }
 
   document.addEventListener("click", (event) => {
     if (event.target.closest("[data-ff-theme-toggle]")) {
       applyTheme(currentTheme() === "dark" ? "light" : "dark");
+    }
+  });
+
+  document.addEventListener("change", (event) => {
+    if (event.target.matches("[data-ff-theme-switch]")) {
+      applyTheme(event.target.checked ? "dark" : "light");
     }
   });
 
