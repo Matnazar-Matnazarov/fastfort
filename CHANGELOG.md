@@ -62,6 +62,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   translate its model and field names
 
 ### Changed
+- Every control is drawn rather than left native: select, checkbox and a new
+  switch. A native select beside a styled input changes shape per platform and is
+  the clearest sign an interface was not finished.
+- The primary action is neutral (near-black, inverted in dark mode) rather than
+  the brand colour, so a page has one focal point. The brand hue now means one
+  thing: the focus ring, links and the active navigation item.
+- Radius derives from a single `--ff-radius-base`, so a project can round the
+  whole interface by changing one number.
 - Model names, field labels, filter labels and column headers now go through the
   translator. They previously stayed English while the chrome was translated,
   which read as broken rather than as untranslated.

@@ -126,6 +126,18 @@
                   {% if is_superuser %}{{ _("Superuser") }}{% else %}{{ _("Staff") }}{% endif %}
                 </div>
               </div>
+              {# A labelled row rather than a bare icon: someone opening this
+                 menu is looking for settings, and an unlabelled glyph in the
+                 topbar is not discoverable. The topbar button stays for people
+                 who already know where it is. #}
+              <div class="ff-account__section">
+                <label class="ff-switch" for="ff-theme-switch">
+                  <input type="checkbox" id="ff-theme-switch" data-ff-theme-switch />
+                  <span class="ff-switch__track"></span>
+                  <span>{{ _("Dark mode") }}</span>
+                </label>
+              </div>
+
               {% if languages|length > 1 %}
                 {# A form rather than links, so the choice is a POST that sets a
                    cookie and returns to the same page. #}
@@ -133,7 +145,7 @@
                   <input type="hidden" name="next" value="{{ request.url.path }}" />
                   <label class="ff-account__meta" for="ff-language">{{ _("Language") }}</label>
                   <select
-                    class="ff-select ff-select--sm ff-mt-2"
+                    class="ff-select ff-select--sm"
                     id="ff-language"
                     name="language"
                     onchange="this.form.submit()"

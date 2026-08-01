@@ -1,86 +1,102 @@
 /* Components.
  *
- * Semantic class names rather than utility stacks, so a template reads as markup
- * and a project can restyle a component by naming it.
+ * Every control the admin renders is styled here, including the ones a browser
+ * would otherwise draw itself. A native select next to a styled input is the
+ * single most obvious tell that an interface was not finished, and it changes
+ * shape between operating systems, so nothing is left native.
+ *
+ * Semantic class names rather than utility stacks: a template reads as markup,
+ * and a project restyles a component by naming it.
  */
 
-/* --- Button --------------------------------------------------------------- */
+/* ===========================================================================
+ * Button
+ * ======================================================================== */
 
 .ff-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--ff-space-2);
-  min-height: var(--ff-control-height);
+  height: var(--ff-control-height);
   padding-inline: var(--ff-space-4);
-  border: 1px solid var(--ff-border-strong);
-  border-radius: var(--ff-radius);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-md);
   background: var(--ff-surface);
   color: var(--ff-text);
   font-size: var(--ff-text-base);
   font-weight: var(--ff-weight-medium);
+  line-height: 1;
   white-space: nowrap;
   cursor: pointer;
+  user-select: none;
+  box-shadow: var(--ff-shadow-xs);
   transition:
     background var(--ff-duration-fast) var(--ff-ease),
     border-color var(--ff-duration-fast) var(--ff-ease),
-    color var(--ff-duration-fast) var(--ff-ease);
+    color var(--ff-duration-fast) var(--ff-ease),
+    box-shadow var(--ff-duration-fast) var(--ff-ease);
 }
 
 .ff-btn:hover {
   background: var(--ff-surface-hover);
-  border-color: var(--ff-text-subtle);
 }
 
 .ff-btn:active {
-  background: var(--ff-surface-sunken);
+  /* A one-pixel drop reads as a press without moving anything around it. */
+  transform: translateY(0.5px);
 }
 
 /* `:disabled` and `[aria-disabled]` together: a disabled link has no :disabled. */
 .ff-btn:disabled,
 .ff-btn[aria-disabled="true"] {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
+  box-shadow: none;
 }
 
+/* The one loud element on a page. Near-black rather than the brand colour, so a
+ * page has a single focal point instead of three equally blue things. */
 .ff-btn--primary {
-  background: var(--ff-accent);
-  border-color: var(--ff-accent);
-  color: var(--ff-accent-text);
+  background: var(--ff-primary);
+  border-color: var(--ff-primary);
+  color: var(--ff-primary-text);
+  box-shadow: var(--ff-shadow-sm);
 }
 
 .ff-btn--primary:hover {
-  background: var(--ff-accent-hover);
-  border-color: var(--ff-accent-hover);
-}
-
-.ff-btn--primary:active {
-  background: var(--ff-accent-active);
+  background: var(--ff-primary-hover);
+  border-color: var(--ff-primary-hover);
 }
 
 .ff-btn--danger {
   background: var(--ff-danger);
   border-color: var(--ff-danger);
-  color: var(--ff-text-inverse);
+  color: oklch(0.99 0 0);
+}
+
+.ff-btn--danger:hover {
+  filter: brightness(1.08);
 }
 
 .ff-btn--ghost {
   background: transparent;
   border-color: transparent;
   color: var(--ff-text-muted);
+  box-shadow: none;
 }
 
 .ff-btn--ghost:hover {
   background: var(--ff-surface-hover);
-  border-color: transparent;
   color: var(--ff-text);
 }
 
 .ff-btn--sm {
-  min-height: var(--ff-control-height-sm);
+  height: var(--ff-control-height-sm);
   padding-inline: var(--ff-space-3);
   font-size: var(--ff-text-sm);
+  gap: var(--ff-space-1);
 }
 
 /* Square, for icon-only controls. The label lives in .ff-sr-only. */
@@ -93,22 +109,31 @@
   width: var(--ff-control-height-sm);
 }
 
-/* --- Input ---------------------------------------------------------------- */
+/* ===========================================================================
+ * Text input, textarea
+ * ======================================================================== */
 
 .ff-input,
-.ff-select,
 .ff-textarea {
   width: 100%;
   min-height: var(--ff-control-height);
-  padding: var(--ff-space-2) var(--ff-space-3);
-  border: 1px solid var(--ff-border-strong);
-  border-radius: var(--ff-radius);
+  padding: 0 var(--ff-space-3);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-md);
   background: var(--ff-surface);
   color: var(--ff-text);
   font-size: var(--ff-text-base);
+  box-shadow: var(--ff-shadow-xs);
   transition:
     border-color var(--ff-duration-fast) var(--ff-ease),
     box-shadow var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-textarea {
+  padding-block: var(--ff-space-2);
+  min-height: calc(var(--ff-control-height) * 3);
+  line-height: var(--ff-leading);
+  resize: vertical;
 }
 
 .ff-input::placeholder,
@@ -116,21 +141,198 @@
   color: var(--ff-text-subtle);
 }
 
-/* A ring on focus rather than only the outline, so the field itself reads as
- * active and not merely outlined. */
+/* A ring rather than only an outline: the field itself reads as active, which is
+ * what makes a long form navigable by keyboard. */
 .ff-input:focus-visible,
-.ff-select:focus-visible,
-.ff-textarea:focus-visible {
+.ff-textarea:focus-visible,
+.ff-select:focus-visible {
   outline: none;
   border-color: var(--ff-accent);
   box-shadow: 0 0 0 3px var(--ff-accent-muted);
 }
 
-.ff-textarea {
-  min-height: calc(var(--ff-control-height) * 3);
-  line-height: var(--ff-leading);
-  resize: vertical;
+.ff-input:disabled,
+.ff-textarea:disabled {
+  background: var(--ff-surface-sunken);
+  color: var(--ff-text-subtle);
+  cursor: not-allowed;
 }
+
+/* Chrome's autofill paints its own yellow. An inset shadow the size of the field
+ * is the only way to override it without disabling autofill. */
+.ff-input:-webkit-autofill {
+  -webkit-text-fill-color: var(--ff-text);
+  box-shadow: inset 0 0 0 100px var(--ff-surface);
+}
+
+/* ===========================================================================
+ * Select
+ *
+ * `appearance: none` plus our own chevron, because the native control is a
+ * different shape and height on every platform -- next to a styled input it is
+ * the thing that makes an interface look unfinished. The arrow is an inline SVG
+ * data URI, which the content security policy allows under `img-src data:`.
+ * ======================================================================== */
+
+.ff-select {
+  appearance: none;
+  width: 100%;
+  height: var(--ff-control-height);
+  padding: 0 var(--ff-space-8) 0 var(--ff-space-3);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-md);
+  background-color: var(--ff-surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2371717a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--ff-space-3) center;
+  background-size: 1rem;
+  color: var(--ff-text);
+  font-size: var(--ff-text-base);
+  cursor: pointer;
+  box-shadow: var(--ff-shadow-xs);
+  transition:
+    border-color var(--ff-duration-fast) var(--ff-ease),
+    box-shadow var(--ff-duration-fast) var(--ff-ease);
+}
+
+[dir="rtl"] .ff-select {
+  padding: 0 var(--ff-space-3) 0 var(--ff-space-8);
+  background-position: left var(--ff-space-3) center;
+}
+
+.ff-select:hover {
+  border-color: var(--ff-border-strong);
+}
+
+/* A multiple select has no single value, so the chevron would be a lie. */
+.ff-select[multiple] {
+  height: auto;
+  padding: var(--ff-space-2);
+  background-image: none;
+  cursor: default;
+}
+
+.ff-select[multiple] option {
+  padding: var(--ff-space-1) var(--ff-space-2);
+  border-radius: var(--ff-radius-sm);
+}
+
+.ff-select--sm {
+  height: var(--ff-control-height-sm);
+  font-size: var(--ff-text-sm);
+  padding-inline-end: var(--ff-space-6);
+  background-size: 0.875rem;
+}
+
+/* ===========================================================================
+ * Checkbox
+ *
+ * Drawn rather than native, for the same reason as the select, and because the
+ * native box cannot take the brand colour on every platform.
+ * ======================================================================== */
+
+.ff-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ff-space-3);
+  min-height: var(--ff-control-height);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ff-checkbox input[type="checkbox"] {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: 0;
+  border: 1px solid var(--ff-border-strong);
+  border-radius: var(--ff-radius-sm);
+  background: var(--ff-surface);
+  cursor: pointer;
+  transition:
+    background var(--ff-duration-fast) var(--ff-ease),
+    border-color var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-checkbox input[type="checkbox"]:hover {
+  border-color: var(--ff-accent);
+}
+
+.ff-checkbox input[type="checkbox"]:checked {
+  background-color: var(--ff-primary);
+  border-color: var(--ff-primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 8 3.5 3.5L13 5'/%3E%3C/svg%3E");
+  background-size: 0.875rem;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.ff-checkbox input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ff-accent-muted);
+}
+
+/* ===========================================================================
+ * Switch
+ *
+ * For a setting that takes effect immediately, where a checkbox would imply
+ * there is a Save button somewhere.
+ * ======================================================================== */
+
+.ff-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ff-space-3);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ff-switch__track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 2.25rem;
+  height: 1.25rem;
+  border-radius: var(--ff-radius-full);
+  background: var(--ff-border-strong);
+  transition: background var(--ff-duration) var(--ff-ease);
+}
+
+.ff-switch__track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  inset-inline-start: 2px;
+  width: 1rem;
+  height: 1rem;
+  border-radius: var(--ff-radius-full);
+  background: oklch(1 0 0);
+  box-shadow: var(--ff-shadow-sm);
+  transition: translate var(--ff-duration) var(--ff-ease);
+}
+
+.ff-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.ff-switch input:checked + .ff-switch__track {
+  background: var(--ff-primary);
+}
+
+.ff-switch input:checked + .ff-switch__track::after {
+  translate: 1rem 0;
+}
+
+.ff-switch input:focus-visible + .ff-switch__track {
+  box-shadow: 0 0 0 3px var(--ff-accent-muted);
+}
+
+/* ===========================================================================
+ * Field
+ * ======================================================================== */
 
 .ff-field {
   display: flex;
@@ -142,24 +344,60 @@
   font-size: var(--ff-text-sm);
   font-weight: var(--ff-weight-medium);
   color: var(--ff-text);
+  line-height: 1;
 }
 
 .ff-help {
-  font-size: var(--ff-text-xs);
+  font-size: var(--ff-text-sm);
   color: var(--ff-text-muted);
 }
 
 .ff-error {
-  font-size: var(--ff-text-xs);
+  font-size: var(--ff-text-sm);
+  font-weight: var(--ff-weight-medium);
   color: var(--ff-danger);
 }
 
-/* --- Search --------------------------------------------------------------- */
+.ff-required {
+  color: var(--ff-danger);
+  margin-inline-start: 0.125rem;
+}
+
+/* Invalid fields take a red edge as well as a message, so the eye finds them in
+ * a long form without reading every label. */
+.ff-field[data-invalid="true"] .ff-input,
+.ff-field[data-invalid="true"] .ff-select,
+.ff-field[data-invalid="true"] .ff-textarea {
+  border-color: var(--ff-danger);
+}
+
+.ff-field[data-invalid="true"] .ff-input:focus-visible,
+.ff-field[data-invalid="true"] .ff-select:focus-visible,
+.ff-field[data-invalid="true"] .ff-textarea:focus-visible {
+  box-shadow: 0 0 0 3px var(--ff-danger-subtle);
+}
+
+/* A read-only value must not look like an input someone forgot to fill. */
+.ff-readonly {
+  display: flex;
+  align-items: center;
+  min-height: var(--ff-control-height);
+  padding: 0 var(--ff-space-3);
+  border: 1px dashed var(--ff-border);
+  border-radius: var(--ff-radius-md);
+  background: var(--ff-surface-sunken);
+  color: var(--ff-text-muted);
+  font-size: var(--ff-text-base);
+}
+
+/* ===========================================================================
+ * Search
+ * ======================================================================== */
 
 .ff-search {
   position: relative;
-  flex: 1 1 18rem;
-  max-width: 26rem;
+  flex: 1 1 16rem;
+  max-width: 22rem;
 }
 
 .ff-search .ff-input {
@@ -173,14 +411,22 @@
   translate: 0 -50%;
   color: var(--ff-text-subtle);
   pointer-events: none;
+  line-height: 1;
 }
 
-/* --- Card ---------------------------------------------------------------- */
+/* Chrome draws its own clear button on a search field, at its own size. */
+.ff-input[type="search"]::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+/* ===========================================================================
+ * Card
+ * ======================================================================== */
 
 .ff-card {
   background: var(--ff-surface);
   border: 1px solid var(--ff-border);
-  border-radius: var(--ff-radius-lg);
+  border-radius: var(--ff-radius-xl);
   box-shadow: var(--ff-shadow-xs);
 }
 
@@ -188,68 +434,78 @@
   display: flex;
   align-items: center;
   gap: var(--ff-space-3);
-  padding: var(--ff-space-4) var(--ff-space-5);
+  padding: var(--ff-space-5) var(--ff-space-6);
   border-bottom: 1px solid var(--ff-border);
 }
 
 .ff-card__title {
   font-size: var(--ff-text-md);
   font-weight: var(--ff-weight-semibold);
+  letter-spacing: -0.01em;
 }
 
 .ff-card__body {
-  padding: var(--ff-space-5);
+  padding: var(--ff-space-6);
 }
 
-/* --- Stat tile ----------------------------------------------------------- */
+/* ===========================================================================
+ * Stat tile
+ * ======================================================================== */
 
 .ff-stat {
   display: flex;
   flex-direction: column;
   gap: var(--ff-space-1);
-  padding: var(--ff-space-5);
+  padding: var(--ff-space-5) var(--ff-space-6);
   background: var(--ff-surface);
   border: 1px solid var(--ff-border);
-  border-radius: var(--ff-radius-lg);
+  border-radius: var(--ff-radius-xl);
   box-shadow: var(--ff-shadow-xs);
   transition:
     border-color var(--ff-duration-fast) var(--ff-ease),
-    box-shadow var(--ff-duration-fast) var(--ff-ease);
+    box-shadow var(--ff-duration-fast) var(--ff-ease),
+    translate var(--ff-duration-fast) var(--ff-ease);
 }
 
 a.ff-stat:hover {
-  border-color: var(--ff-accent-border);
+  border-color: var(--ff-border-strong);
   box-shadow: var(--ff-shadow-sm);
+  translate: 0 -1px;
 }
 
 .ff-stat__label {
+  order: -1;
   font-size: var(--ff-text-sm);
-  font-weight: var(--ff-weight-medium);
   color: var(--ff-text-subtle);
 }
 
 .ff-stat__value {
-  font-size: var(--ff-text-2xl);
+  font-size: 2rem;
   font-weight: var(--ff-weight-semibold);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
 }
 
 .ff-stat__meta {
-  font-size: var(--ff-text-sm);
-  color: var(--ff-text-muted);
+  font-size: var(--ff-text-base);
+  font-weight: var(--ff-weight-medium);
+  color: var(--ff-text);
 }
 
-/* --- Table ---------------------------------------------------------------
+/* ===========================================================================
+ * Table
+ *
  * Wrapped in .ff-table-wrap so a wide table scrolls inside its own container
- * and the page body never scrolls horizontally.
- */
+ * and the page body never scrolls sideways.
+ * ======================================================================== */
 
 .ff-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--ff-border);
-  border-radius: var(--ff-radius-lg);
+  border-radius: var(--ff-radius-xl);
   background: var(--ff-surface);
+  box-shadow: var(--ff-shadow-xs);
 }
 
 .ff-table {
@@ -262,7 +518,7 @@ a.ff-stat:hover {
   top: 0;
   z-index: 1;
   padding: var(--ff-space-3) var(--ff-space-4);
-  background: var(--ff-surface-sunken);
+  background: var(--ff-surface);
   border-bottom: 1px solid var(--ff-border);
   font-size: var(--ff-text-sm);
   font-weight: var(--ff-weight-medium);
@@ -271,7 +527,8 @@ a.ff-stat:hover {
 }
 
 .ff-table tbody td {
-  padding: var(--ff-space-3) var(--ff-space-4);
+  /* Taller than a spreadsheet row: an admin table is read, not just scanned. */
+  padding: var(--ff-space-4);
   border-bottom: 1px solid var(--ff-border);
   vertical-align: middle;
 }
@@ -280,8 +537,32 @@ a.ff-stat:hover {
   border-bottom: 0;
 }
 
+.ff-table tbody tr {
+  transition: background var(--ff-duration-fast) var(--ff-ease);
+}
+
 .ff-table tbody tr:hover {
-  background: var(--ff-surface-hover);
+  background: var(--ff-surface-sunken);
+}
+
+/* The identifier recedes; the linked column carries the weight, because that is
+ * what people aim at. */
+.ff-table tbody td:first-child {
+  font-size: var(--ff-text-sm);
+  color: var(--ff-text-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.ff-table .ff-link {
+  color: var(--ff-text);
+  font-weight: var(--ff-weight-medium);
+  text-decoration: none;
+}
+
+.ff-table .ff-link:hover {
+  color: var(--ff-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
 
 .ff-table__sort {
@@ -290,6 +571,7 @@ a.ff-stat:hover {
   gap: var(--ff-space-1);
   color: inherit;
   cursor: pointer;
+  border-radius: var(--ff-radius-sm);
 }
 
 .ff-table__sort:hover {
@@ -297,30 +579,55 @@ a.ff-stat:hover {
 }
 
 .ff-table__sort[aria-sort]:not([aria-sort="none"]) {
-  color: var(--ff-accent);
+  color: var(--ff-text);
+  font-weight: var(--ff-weight-semibold);
 }
 
 .ff-table__arrow {
-  font-size: 0.7em;
-  opacity: 0.5;
+  font-size: 0.65em;
+  opacity: 0.4;
 }
 
 .ff-table__sort[aria-sort]:not([aria-sort="none"]) .ff-table__arrow {
   opacity: 1;
+  color: var(--ff-accent);
 }
 
-/* --- Badge --------------------------------------------------------------- */
+/* Row actions stay quiet until the row is hovered, so a long table is not a wall
+ * of buttons. They remain keyboard reachable at all times. */
+.ff-table tbody td:last-child .ff-btn {
+  opacity: 0;
+  transition: opacity var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-table tbody tr:hover td:last-child .ff-btn,
+.ff-table tbody td:last-child .ff-btn:focus-visible {
+  opacity: 1;
+}
+
+/* Touch has no hover, so the actions would never appear. */
+@media (hover: none) {
+  .ff-table tbody td:last-child .ff-btn {
+    opacity: 1;
+  }
+}
+
+/* ===========================================================================
+ * Badge
+ * ======================================================================== */
 
 .ff-badge {
   display: inline-flex;
   align-items: center;
   gap: var(--ff-space-1);
-  padding: 0.125rem var(--ff-space-2);
+  padding: 0.1875rem var(--ff-space-2);
+  border: 1px solid transparent;
   border-radius: var(--ff-radius-full);
   background: var(--ff-surface-sunken);
   color: var(--ff-text-muted);
   font-size: var(--ff-text-xs);
   font-weight: var(--ff-weight-medium);
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -346,18 +653,28 @@ a.ff-stat:hover {
 
 /* A boolean cell reads faster as a mark than as the word "True". */
 .ff-bool {
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: var(--ff-radius-full);
+  font-size: 0.75rem;
   font-weight: var(--ff-weight-semibold);
 }
 
 .ff-bool--on {
+  background: var(--ff-success-subtle);
   color: var(--ff-success);
 }
 
 .ff-bool--off {
+  background: var(--ff-surface-sunken);
   color: var(--ff-text-subtle);
 }
 
-/* --- Pagination ---------------------------------------------------------- */
+/* ===========================================================================
+ * Pagination
+ * ======================================================================== */
 
 .ff-pagination {
   display: flex;
@@ -374,28 +691,31 @@ a.ff-stat:hover {
   font-variant-numeric: tabular-nums;
 }
 
-/* --- Empty state --------------------------------------------------------
+/* ===========================================================================
+ * Empty state
+ *
  * Designed rather than blank: an empty table with no explanation reads as a
  * broken page.
- */
+ * ======================================================================== */
 
 .ff-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--ff-space-3);
-  padding: var(--ff-space-16) var(--ff-space-5);
+  padding: var(--ff-space-12) var(--ff-space-5);
   text-align: center;
 }
 
 .ff-empty__icon {
   display: grid;
   place-items: center;
-  width: 3rem;
-  height: 3rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border-radius: var(--ff-radius-full);
   background: var(--ff-surface-sunken);
   color: var(--ff-text-subtle);
+  font-size: var(--ff-text-lg);
 }
 
 .ff-empty__title {
@@ -409,71 +729,57 @@ a.ff-stat:hover {
   color: var(--ff-text-muted);
 }
 
-/* --- Alert --------------------------------------------------------------- */
+/* ===========================================================================
+ * Alert
+ * ======================================================================== */
 
 .ff-alert {
   display: flex;
   gap: var(--ff-space-3);
-  padding: var(--ff-space-3) var(--ff-space-4);
+  padding: var(--ff-space-4);
   border: 1px solid var(--ff-border);
-  border-radius: var(--ff-radius-md);
-  background: var(--ff-surface-sunken);
+  border-radius: var(--ff-radius-lg);
+  background: var(--ff-surface);
   font-size: var(--ff-text-base);
 }
 
+.ff-alert--success {
+  border-color: color-mix(in oklab, var(--ff-success) 35%, transparent);
+  background: var(--ff-success-subtle);
+}
+
+.ff-alert--info {
+  border-color: color-mix(in oklab, var(--ff-info) 35%, transparent);
+  background: var(--ff-info-subtle);
+}
+
 .ff-alert--warning {
+  border-color: color-mix(in oklab, var(--ff-warning) 35%, transparent);
   background: var(--ff-warning-subtle);
-  border-color: var(--ff-warning);
-  color: var(--ff-text);
 }
 
 .ff-alert--danger {
+  border-color: color-mix(in oklab, var(--ff-danger) 35%, transparent);
   background: var(--ff-danger-subtle);
-  border-color: var(--ff-danger);
 }
 
 .ff-alert__title {
   font-weight: var(--ff-weight-semibold);
 }
 
-/* --- HTMX ---------------------------------------------------------------
- * `.ff-busy` is shown only while a request is in flight, which HTMX toggles.
- */
-
-.ff-busy {
-  opacity: 0;
-  transition: opacity var(--ff-duration-fast) var(--ff-ease);
+.ff-messages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ff-space-2);
+  margin-bottom: var(--ff-space-5);
 }
 
-.htmx-request .ff-busy,
-.htmx-request.ff-busy {
-  opacity: 1;
-}
-
-.htmx-request .ff-table tbody {
-  opacity: 0.5;
-  transition: opacity var(--ff-duration) var(--ff-ease);
-}
-
-/* --- Utilities ----------------------------------------------------------
- * A deliberately short list. Anything used more than a few times becomes a
- * component instead.
- */
-
-.ff-mt-0 { margin-top: 0; }
-.ff-mt-2 { margin-top: var(--ff-space-2); }
-.ff-mt-4 { margin-top: var(--ff-space-4); }
-.ff-mt-6 { margin-top: var(--ff-space-6); }
-.ff-ml-auto { margin-inline-start: auto; }
-.ff-w-full { width: 100%; }
-.ff-flex-1 { flex: 1 1 auto; }
-.ff-text-center { text-align: center; }
-.ff-nowrap { white-space: nowrap; }
-
-/* --- Sign-in page --------------------------------------------------------
+/* ===========================================================================
+ * Sign-in page
+ *
  * Its own layout, not the shell: a page an anonymous visitor can reach must not
  * render a sidebar listing every model the admin manages.
- */
+ * ======================================================================== */
 
 .ff-auth {
   display: grid;
@@ -486,12 +792,12 @@ a.ff-stat:hover {
 
 .ff-auth__panel {
   width: 100%;
-  max-width: 24rem;
+  max-width: 23rem;
   padding: var(--ff-space-8);
   background: var(--ff-surface);
   border: 1px solid var(--ff-border);
-  border-radius: var(--ff-radius-lg);
-  box-shadow: var(--ff-shadow);
+  border-radius: var(--ff-radius-xl);
+  box-shadow: var(--ff-shadow-lg);
 }
 
 .ff-auth__brand {
@@ -508,10 +814,25 @@ a.ff-stat:hover {
   color: var(--ff-text-subtle);
 }
 
-/* --- Account menu -------------------------------------------------------
- * A <details> element, so it opens, closes on Escape and traps nothing --
- * behaviour a hand-rolled dropdown has to reimplement and usually gets wrong.
- */
+.ff-auth__language {
+  margin-top: var(--ff-space-5);
+  display: flex;
+  gap: var(--ff-space-2);
+  justify-content: center;
+}
+
+.ff-auth__language .ff-select {
+  width: auto;
+  min-width: 9rem;
+}
+
+/* ===========================================================================
+ * Account menu
+ *
+ * A <details> element, so it opens, closes on Escape and is keyboard reachable
+ * without any JavaScript -- behaviour a hand-rolled dropdown has to reimplement
+ * and usually gets wrong.
+ * ======================================================================== */
 
 .ff-account {
   position: relative;
@@ -521,13 +842,14 @@ a.ff-stat:hover {
   display: flex;
   align-items: center;
   gap: var(--ff-space-2);
-  min-height: var(--ff-control-height-sm);
-  padding: var(--ff-space-1) var(--ff-space-2);
-  border-radius: var(--ff-radius);
+  height: var(--ff-control-height);
+  padding-inline: var(--ff-space-2) var(--ff-space-3);
+  border-radius: var(--ff-radius-full);
   color: var(--ff-text-muted);
-  font-size: var(--ff-text-sm);
+  font-size: var(--ff-text-base);
   cursor: pointer;
   list-style: none;
+  transition: background var(--ff-duration-fast) var(--ff-ease);
 }
 
 .ff-account > summary::-webkit-details-marker {
@@ -542,11 +864,11 @@ a.ff-stat:hover {
 .ff-account__avatar {
   display: grid;
   place-items: center;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.75rem;
+  height: 1.75rem;
   border-radius: var(--ff-radius-full);
-  background: var(--ff-accent-muted);
-  color: var(--ff-accent);
+  background: var(--ff-primary);
+  color: var(--ff-primary-text);
   font-size: var(--ff-text-xs);
   font-weight: var(--ff-weight-semibold);
 }
@@ -556,11 +878,11 @@ a.ff-stat:hover {
   inset-inline-end: 0;
   top: calc(100% + var(--ff-space-2));
   z-index: var(--ff-z-dropdown);
-  min-width: 13rem;
+  min-width: 15rem;
   padding: var(--ff-space-2);
   background: var(--ff-surface-raised);
   border: 1px solid var(--ff-border);
-  border-radius: var(--ff-radius-md);
+  border-radius: var(--ff-radius-lg);
   box-shadow: var(--ff-shadow-lg);
 }
 
@@ -575,71 +897,79 @@ a.ff-stat:hover {
 }
 
 .ff-account__meta {
+  display: block;
   font-size: var(--ff-text-xs);
   color: var(--ff-text-subtle);
 }
 
-/* --- Form extras ---------------------------------------------------------- */
-
-.ff-required {
-  color: var(--ff-danger);
-  margin-inline-start: 0.125rem;
+.ff-account__section {
+  padding: var(--ff-space-2);
+  border-bottom: 1px solid var(--ff-border);
+  margin-bottom: var(--ff-space-2);
 }
 
-/* A read-only value must not look like an empty input someone forgot to fill. */
-.ff-readonly {
-  min-height: var(--ff-control-height);
-  padding: var(--ff-space-2) var(--ff-space-3);
-  border: 1px dashed var(--ff-border);
-  border-radius: var(--ff-radius);
-  background: var(--ff-surface-sunken);
-  color: var(--ff-text-muted);
+.ff-account__section .ff-select {
+  width: 100%;
+  margin-top: var(--ff-space-2);
 }
 
-.ff-checkbox {
-  display: flex;
-  align-items: center;
-  gap: var(--ff-space-2);
-  min-height: var(--ff-control-height);
-  cursor: pointer;
+/* ===========================================================================
+ * Live updates
+ * ======================================================================== */
+
+.ff-busy {
+  opacity: 0;
+  transition: opacity var(--ff-duration-fast) var(--ff-ease);
 }
 
-.ff-checkbox input {
+.htmx-request .ff-busy,
+.htmx-request.ff-busy {
+  opacity: 1;
+}
+
+.ff-spinner {
   width: 1rem;
   height: 1rem;
-  accent-color: var(--ff-accent);
-  cursor: pointer;
+  border: 2px solid var(--ff-border-strong);
+  border-top-color: var(--ff-accent);
+  border-radius: var(--ff-radius-full);
+  animation: ff-spin 0.6s linear infinite;
 }
 
-/* Invalid fields get a red edge as well as a message, so the eye finds them in a
- * long form without reading every label. */
-.ff-field[data-invalid="true"] .ff-input,
-.ff-field[data-invalid="true"] .ff-select,
-.ff-field[data-invalid="true"] .ff-textarea {
-  border-color: var(--ff-danger);
+@keyframes ff-spin {
+  to {
+    rotate: 360deg;
+  }
 }
 
-.ff-field[data-invalid="true"] .ff-input:focus-visible,
-.ff-field[data-invalid="true"] .ff-select:focus-visible,
-.ff-field[data-invalid="true"] .ff-textarea:focus-visible {
-  box-shadow: 0 0 0 3px var(--ff-danger-subtle);
+@media (prefers-reduced-motion: reduce) {
+  .ff-spinner {
+    animation: none;
+    border-top-color: var(--ff-border-strong);
+  }
 }
 
-/* --- Flash messages ------------------------------------------------------ */
-
-.ff-messages {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ff-space-2);
-  margin-bottom: var(--ff-space-5);
+/* Dim the outgoing results rather than removing them, so the page does not jump
+ * and the previous answer stays readable while the next one arrives. */
+[data-ff-loading="true"] {
+  opacity: 0.5;
+  transition: opacity var(--ff-duration) var(--ff-ease);
+  pointer-events: none;
 }
 
-.ff-alert--success {
-  background: var(--ff-success-subtle);
-  border-color: var(--ff-success);
-}
+/* ===========================================================================
+ * Utilities
+ *
+ * A deliberately short list. Anything used more than a few times becomes a
+ * component instead.
+ * ======================================================================== */
 
-.ff-alert--info {
-  background: var(--ff-info-subtle);
-  border-color: var(--ff-info);
-}
+.ff-mt-0 { margin-top: 0; }
+.ff-mt-2 { margin-top: var(--ff-space-2); }
+.ff-mt-4 { margin-top: var(--ff-space-4); }
+.ff-mt-6 { margin-top: var(--ff-space-6); }
+.ff-ml-auto { margin-inline-start: auto; }
+.ff-w-full { width: 100%; }
+.ff-flex-1 { flex: 1 1 auto; }
+.ff-text-center { text-align: center; }
+.ff-nowrap { white-space: nowrap; }

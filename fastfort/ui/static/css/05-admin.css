@@ -1,27 +1,33 @@
-/* Page-level refinements.
+/* Page composition.
  *
- * Loaded after the components, so it tunes them in context rather than
- * duplicating them. Everything here reads from tokens.
+ * Loaded last, so it arranges the components rather than redefining them.
+ * Anything here is about how the pieces sit together on a page; anything about
+ * how a piece looks belongs in 04-components.css.
  */
 
-/* --- Sidebar -------------------------------------------------------------
- * An active item gets a bar on its leading edge as well as a tint. Colour alone
- * fails for anyone who cannot distinguish it, and the bar reads instantly.
- */
+/* --- Shell ---------------------------------------------------------------- */
 
-.ff-nav-item {
-  position: relative;
-  font-weight: var(--ff-weight-medium);
+.ff-sidebar {
+  padding: var(--ff-space-4) var(--ff-space-3);
+  background: var(--ff-surface-sunken);
+  border-inline-end: 1px solid var(--ff-border);
 }
 
-.ff-nav-item[aria-current="page"]::before {
-  content: "";
-  position: absolute;
-  inset-inline-start: calc(var(--ff-space-3) * -1 - 1px);
-  inset-block: 20%;
-  width: 3px;
-  border-radius: var(--ff-radius-full);
-  background: var(--ff-accent);
+.ff-brand {
+  height: auto;
+  padding: 0 var(--ff-space-2) var(--ff-space-4);
+  margin-bottom: var(--ff-space-2);
+  border-bottom: 1px solid var(--ff-border);
+  font-size: var(--ff-text-base);
+}
+
+.ff-brand__mark {
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--ff-radius-md);
+  background: var(--ff-primary);
+  color: var(--ff-primary-text);
+  box-shadow: var(--ff-shadow-sm);
 }
 
 .ff-nav-group {
@@ -32,214 +38,138 @@
   margin-bottom: var(--ff-space-1);
 }
 
-.ff-brand {
-  border-bottom: 1px solid var(--ff-border);
-  margin-bottom: var(--ff-space-3);
-}
-
-/* --- Topbar -------------------------------------------------------------- */
-
-.ff-topbar {
-  /* Translucent, so content scrolling under it stays visible as texture rather
-   * than disappearing behind a solid slab. */
-  background: color-mix(in oklab, var(--ff-surface) 88%, transparent);
-  backdrop-filter: blur(8px);
-}
-
-/* --- Page header --------------------------------------------------------- */
-
-.ff-page-header {
-  padding-bottom: var(--ff-space-5);
-  border-bottom: 1px solid var(--ff-border);
-  align-items: center;
-}
-
-.ff-page-header .ff-h1 {
-  font-size: var(--ff-text-2xl);
-  line-height: 1.15;
-}
-
-/* --- Filter bar ---------------------------------------------------------
- * Grouped into a panel so it reads as one control strip rather than as loose
- * inputs floating above the table.
- */
-
-.ff-filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--ff-space-2);
-  padding: var(--ff-space-3);
-  margin-top: var(--ff-space-5);
-  background: var(--ff-surface);
-  border: 1px solid var(--ff-border);
-  border-radius: var(--ff-radius-lg);
-}
-
-.ff-filters .ff-field {
-  flex: 0 0 auto;
-}
-
-/* --- Table --------------------------------------------------------------- */
-
-.ff-table thead th {
-  /* Slightly taller than a body row: the header should read as a header without
-   * needing a heavier rule under it. */
-  padding-block: var(--ff-space-3);
-  background: var(--ff-surface-sunken);
-}
-
-.ff-table tbody tr {
-  transition: background var(--ff-duration-fast) var(--ff-ease);
-}
-
-.ff-table tbody td:first-child {
-  font-variant-numeric: tabular-nums;
-  color: var(--ff-text-muted);
-}
-
-/* Row actions stay quiet until the row is hovered, so a long table is not a wall
- * of buttons. They remain reachable by keyboard at all times. */
-.ff-table tbody td:last-child .ff-btn {
-  opacity: 0.45;
-  transition: opacity var(--ff-duration-fast) var(--ff-ease);
-}
-
-.ff-table tbody tr:hover td:last-child .ff-btn,
-.ff-table tbody td:last-child .ff-btn:focus-visible {
-  opacity: 1;
-}
-
-/* --- Stat tiles ---------------------------------------------------------- */
-
-.ff-stat {
+.ff-nav-item {
   position: relative;
-  overflow: hidden;
+  min-height: 2.25rem;
+  padding-block: var(--ff-space-2);
+  border-radius: var(--ff-radius-md);
+  font-size: var(--ff-text-base);
 }
 
-.ff-stat::after {
-  content: "";
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline: 0;
-  height: 2px;
-  background: linear-gradient(
-    to right,
-    var(--ff-accent),
-    color-mix(in oklab, var(--ff-accent) 30%, transparent)
-  );
-  opacity: 0;
-  transition: opacity var(--ff-duration) var(--ff-ease);
-}
-
-a.ff-stat:hover::after {
-  opacity: 1;
-}
-
-a.ff-stat:hover {
-  transform: translateY(-1px);
-}
-
-.ff-stat {
-  transition:
-    border-color var(--ff-duration-fast) var(--ff-ease),
-    box-shadow var(--ff-duration-fast) var(--ff-ease),
-    transform var(--ff-duration-fast) var(--ff-ease);
-}
-
-/* --- Forms --------------------------------------------------------------
- * Two columns on a wide screen, the way a desktop admin should use its space.
- * Long controls span both, because a textarea squeezed into half a page is worse
- * than a taller form.
- */
-
-.ff-form-grid {
-  display: grid;
-  gap: var(--ff-space-5);
-  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
-  align-items: start;
-}
-
-.ff-form-grid > .ff-field--wide {
-  grid-column: 1 / -1;
-}
-
-.ff-card__header--form {
-  background: var(--ff-surface-sunken);
-  border-radius: var(--ff-radius-lg) var(--ff-radius-lg) 0 0;
-}
-
-/* A sticky action bar, so Save is reachable without scrolling a long form. */
-.ff-form-actions {
-  position: sticky;
-  bottom: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ff-space-2);
-  padding: var(--ff-space-4) 0;
-  margin-top: var(--ff-space-4);
-  background: linear-gradient(to top, var(--ff-bg) 60%, transparent);
-}
-
-/* --- Buttons ------------------------------------------------------------- */
-
-.ff-btn {
+/* The active item is lifted onto the page surface, so hierarchy is depth and not
+ * only colour -- and it takes a bar on its leading edge, because colour alone
+ * fails for anyone who cannot distinguish it. */
+.ff-nav-item[aria-current="page"] {
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  font-weight: var(--ff-weight-medium);
   box-shadow: var(--ff-shadow-xs);
 }
 
-.ff-btn--ghost {
-  box-shadow: none;
+.ff-nav-item[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: calc(var(--ff-space-2) * -1);
+  inset-block: 25%;
+  width: 3px;
+  border-radius: var(--ff-radius-full);
+  background: var(--ff-accent);
 }
 
-.ff-btn--primary {
-  box-shadow: var(--ff-shadow-sm);
+.ff-topbar {
+  padding-inline: var(--ff-space-6);
+  /* Translucent, so content scrolling under it stays visible as texture rather
+   * than disappearing behind a solid slab. */
+  background: color-mix(in oklab, var(--ff-surface) 85%, transparent);
+  backdrop-filter: blur(8px);
 }
 
-/* --- Breadcrumbs --------------------------------------------------------- */
+.ff-content {
+  padding: var(--ff-space-8) var(--ff-space-6) var(--ff-space-16);
+}
 
 .ff-breadcrumbs {
   font-size: var(--ff-text-sm);
 }
 
 .ff-breadcrumbs .ff-link {
-  text-decoration: none;
   color: var(--ff-text-muted);
+  text-decoration: none;
 }
 
 .ff-breadcrumbs .ff-link:hover {
-  color: var(--ff-accent);
+  color: var(--ff-text);
 }
 
-/* --- Language switcher --------------------------------------------------- */
+/* --- Page header ---------------------------------------------------------
+ * No rule under it. The panel below already draws that line, and two horizontal
+ * strokes a few pixels apart is what makes a page read as a wireframe.
+ */
 
-.ff-select--sm {
-  min-height: var(--ff-control-height-sm);
-  padding-block: 0;
-  font-size: var(--ff-text-sm);
+.ff-page-header {
+  align-items: center;
+  gap: var(--ff-space-3);
+  margin-bottom: var(--ff-space-5);
 }
 
-.ff-account__section {
-  padding: var(--ff-space-2);
-  border-bottom: 1px solid var(--ff-border);
-  margin-bottom: var(--ff-space-2);
+.ff-page-header .ff-h1 {
+  font-size: 1.625rem;
+  font-weight: var(--ff-weight-semibold);
+  letter-spacing: -0.021em;
 }
 
-/* On the sign-in page it sits below the panel, out of the way of the form but
- * reachable before anyone has an account to store a preference against. */
-.ff-auth__language {
-  margin-top: var(--ff-space-5);
+.ff-page-header .ff-muted {
+  margin-top: var(--ff-space-1);
+  font-size: var(--ff-text-base);
+}
+
+/* --- One panel per list --------------------------------------------------
+ * The filter bar and the table are one surface. The gap between them was the
+ * single thing that read as unfinished.
+ */
+
+.ff-filters {
   display: flex;
-  gap: var(--ff-space-2);
-  justify-content: center;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ff-space-3);
+  padding: var(--ff-space-3) var(--ff-space-4);
+  background: var(--ff-surface);
+  border: 1px solid var(--ff-border);
+  border-bottom: 0;
+  border-radius: var(--ff-radius-xl) var(--ff-radius-xl) 0 0;
+  box-shadow: var(--ff-shadow-xs);
 }
 
-/* --- Range filter -------------------------------------------------------- */
+#ff-results > .ff-table-wrap {
+  border-radius: 0 0 var(--ff-radius-xl) var(--ff-radius-xl);
+  border-top: 0;
+}
+
+/* Inside the bar the controls recede: the rows below are the content, and a
+ * strip of outlined boxes above them competes for attention. */
+.ff-filters .ff-input,
+.ff-filters .ff-select {
+  background-color: var(--ff-surface-sunken);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.ff-filters .ff-input:hover,
+.ff-filters .ff-select:hover {
+  border-color: var(--ff-border);
+}
+
+.ff-filters .ff-input:focus-visible,
+.ff-filters .ff-select:focus-visible {
+  background-color: var(--ff-surface);
+  border-color: var(--ff-accent);
+}
+
+.ff-filters .ff-field {
+  flex: 0 0 auto;
+}
+
+.ff-pagination {
+  padding-inline: var(--ff-space-1);
+}
+
+/* --- Range filter --------------------------------------------------------- */
 
 .ff-range {
   display: flex;
   align-items: center;
   gap: var(--ff-space-2);
-  padding-inline: var(--ff-space-2);
 }
 
 .ff-range__label {
@@ -253,313 +183,60 @@ a.ff-stat:hover {
 }
 
 .ff-input--sm {
-  min-height: var(--ff-control-height-sm);
+  height: var(--ff-control-height-sm);
   width: auto;
-  padding-block: 0;
   font-size: var(--ff-text-sm);
 }
 
-/* --- Live updates -------------------------------------------------------
- * The spinner is the only thing that appears during a live update. Replacing the
- * table with a skeleton would make a fast update flash, which reads as a bug.
+/* --- Forms ---------------------------------------------------------------
+ * Two columns on a wide screen, the way a desktop admin should use its space.
+ * Long controls span both: a textarea squeezed into half a page is worse than a
+ * taller form.
  */
 
-.ff-spinner {
-  width: 1rem;
-  height: 1rem;
-  border: 2px solid var(--ff-border-strong);
-  border-top-color: var(--ff-accent);
-  border-radius: var(--ff-radius-full);
-  animation: ff-spin 0.6s linear infinite;
+.ff-form-grid {
+  display: grid;
+  gap: var(--ff-space-5);
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+  align-items: start;
 }
 
-@keyframes ff-spin {
-  to {
-    transform: rotate(360deg);
-  }
+.ff-form-grid > .ff-field--wide {
+  grid-column: 1 / -1;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .ff-spinner {
-    animation: none;
-    border-top-color: var(--ff-border-strong);
-  }
-}
-
-/* Dim the outgoing results rather than removing them, so the page does not jump
- * and the previous answer stays readable while the next one arrives. */
-[data-ff-loading="true"] {
-  opacity: 0.55;
-  transition: opacity var(--ff-duration) var(--ff-ease);
-  pointer-events: none;
-}
-
-/* ===========================================================================
- * Visual pass.
- *
- * The interface worked but read as a wireframe: everything the same weight,
- * borders competing with content, and no clear hierarchy between the page, the
- * panel and the row. This section tunes rhythm, weight and depth. Every value
- * still comes from a token, so the single-hue rebranding holds.
- * ======================================================================== */
-
-/* --- Shell ---------------------------------------------------------------- */
-
-.ff-sidebar {
-  padding: var(--ff-space-4) var(--ff-space-3);
-  background: var(--ff-surface-sunken);
-}
-
-.ff-brand {
-  height: auto;
-  padding: 0 var(--ff-space-2) var(--ff-space-4);
-  font-size: var(--ff-text-base);
-}
-
-.ff-brand__mark {
-  width: 2rem;
-  height: 2rem;
-  border-radius: var(--ff-radius-md);
-  box-shadow: var(--ff-shadow-sm);
-}
-
-.ff-nav-item {
-  min-height: 2.25rem;
-  padding-block: var(--ff-space-2);
-  font-size: var(--ff-text-base);
-  font-weight: var(--ff-weight-normal);
-}
-
-.ff-nav-item[aria-current="page"] {
-  background: var(--ff-surface);
-  color: var(--ff-text);
-  font-weight: var(--ff-weight-medium);
-  box-shadow: var(--ff-shadow-xs);
-}
-
-.ff-topbar {
-  padding-inline: var(--ff-space-6);
-  border-bottom-color: var(--ff-border);
-}
-
-.ff-content {
-  padding: var(--ff-space-8) var(--ff-space-6) var(--ff-space-16);
-}
-
-/* --- Page header ---------------------------------------------------------
- * No rule under it: the panel below already draws the line, and two horizontal
- * strokes a few pixels apart is what made the page look like a wireframe.
- */
-
-.ff-page-header {
-  padding-bottom: 0;
-  border-bottom: 0;
-  margin-bottom: var(--ff-space-5);
-  gap: var(--ff-space-3);
-}
-
-.ff-page-header .ff-h1 {
-  font-size: 1.625rem;
-  font-weight: var(--ff-weight-semibold);
-  letter-spacing: -0.021em;
-}
-
-.ff-page-header .ff-muted {
-  font-size: var(--ff-text-base);
-  margin-top: var(--ff-space-1);
-}
-
-/* --- One panel per page --------------------------------------------------
- * The filter bar and the table are one surface, not two floating boxes with a
- * gap between them. That gap is the single thing that read as unfinished.
- */
-
-.ff-filters {
-  margin-top: 0;
-  margin-bottom: 0;
-  padding: var(--ff-space-3) var(--ff-space-4);
-  border-radius: var(--ff-radius-lg) var(--ff-radius-lg) 0 0;
-  border-bottom: 0;
-  background: var(--ff-surface);
-  gap: var(--ff-space-3);
-}
-
-.ff-filters + #ff-results .ff-table-wrap,
-#ff-results > .ff-table-wrap {
-  margin-top: 0;
-  border-radius: 0 0 var(--ff-radius-lg) var(--ff-radius-lg);
-  border-top: 0;
-}
-
-.ff-filters .ff-input,
-.ff-filters .ff-select {
-  background: var(--ff-surface-sunken);
-  border-color: transparent;
-}
-
-.ff-filters .ff-input:hover,
-.ff-filters .ff-select:hover {
-  border-color: var(--ff-border-strong);
-}
-
-.ff-filters .ff-input:focus-visible,
-.ff-filters .ff-select:focus-visible {
-  background: var(--ff-surface);
-}
-
-.ff-search {
-  flex: 1 1 16rem;
-  max-width: 22rem;
-}
-
-/* --- Table ---------------------------------------------------------------- */
-
-.ff-table-wrap {
-  box-shadow: var(--ff-shadow-xs);
-}
-
-.ff-table thead th {
-  background: var(--ff-surface);
-  border-bottom-color: var(--ff-border-strong);
-  padding-block: var(--ff-space-3);
-}
-
-.ff-table tbody td {
-  /* Taller rows: an admin table is read, not just scanned, and cramped rows are
-   * the difference between a spreadsheet and an interface. */
-  padding-block: var(--ff-space-4);
-  border-bottom-color: var(--ff-border);
-}
-
-.ff-table tbody tr:hover {
-  background: var(--ff-accent-subtle);
-}
-
-/* The first column is an identifier, so it recedes. The link column carries the
- * weight instead, because that is what people aim at. */
-.ff-table tbody td:first-child {
-  font-size: var(--ff-text-sm);
-  color: var(--ff-text-subtle);
-}
-
-.ff-table .ff-link {
-  color: var(--ff-text);
-  font-weight: var(--ff-weight-medium);
-  text-decoration: none;
-}
-
-.ff-table .ff-link:hover {
-  color: var(--ff-accent);
-  text-decoration: underline;
-}
-
-.ff-table__sort {
-  font-weight: inherit;
-}
-
-.ff-pagination {
-  padding: var(--ff-space-4) var(--ff-space-1) 0;
-}
-
-/* --- Cards and tiles ------------------------------------------------------ */
-
-.ff-stat {
+/* Sticky, so Save is reachable without scrolling a long form back up. */
+.ff-form-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--ff-space-2);
-  padding: var(--ff-space-5) var(--ff-space-6);
+  padding: var(--ff-space-4) 0;
+  margin-top: var(--ff-space-4);
+  background: linear-gradient(to top, var(--ff-bg) 65%, transparent);
 }
 
-.ff-stat__value {
-  font-size: 2rem;
-  line-height: 1.1;
-}
-
-.ff-stat__meta {
-  font-size: var(--ff-text-base);
-  font-weight: var(--ff-weight-medium);
-  color: var(--ff-text);
-}
-
-.ff-stat__label {
-  order: -1;
-  font-size: var(--ff-text-xs);
-  color: var(--ff-text-subtle);
-}
-
-.ff-card {
-  box-shadow: var(--ff-shadow-xs);
-}
-
-.ff-card__body {
-  padding: var(--ff-space-6);
-}
-
-/* --- Controls ------------------------------------------------------------- */
-
-.ff-btn {
-  border-radius: var(--ff-radius-md);
-  font-weight: var(--ff-weight-medium);
-}
-
-.ff-btn--primary {
-  border-color: transparent;
-}
-
-.ff-input,
-.ff-select,
-.ff-textarea {
-  border-radius: var(--ff-radius-md);
-  border-color: var(--ff-border-strong);
-}
-
-.ff-label {
-  font-size: var(--ff-text-sm);
-  color: var(--ff-text-muted);
-  font-weight: var(--ff-weight-medium);
-}
-
-/* --- Account menu --------------------------------------------------------
- * The language control was cramped into the dropdown as an unlabelled select.
- * Given room and a label it reads as a setting rather than as a stray widget.
+/* --- Dark mode adjustments -----------------------------------------------
+ * An inline SVG data URI cannot read a custom property, so the two that carry a
+ * stroke colour are swapped here rather than being left as a white tick on a
+ * near-white box.
  */
 
-.ff-account > summary {
-  min-height: var(--ff-control-height);
-  padding-inline: var(--ff-space-2) var(--ff-space-3);
-  border-radius: var(--ff-radius-full);
-  font-size: var(--ff-text-base);
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ff-theme="light"]) .ff-checkbox input[type="checkbox"]:checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2318181b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 8 3.5 3.5L13 5'/%3E%3C/svg%3E");
+  }
+
+  :root:not([data-ff-theme="light"]) .ff-switch__track::after {
+    background: oklch(0.97 0.004 var(--ff-h));
+  }
 }
 
-.ff-account__menu {
-  min-width: 15rem;
-  padding: var(--ff-space-3);
-  border-radius: var(--ff-radius-lg);
+:root[data-ff-theme="dark"] .ff-checkbox input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2318181b' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 8 3.5 3.5L13 5'/%3E%3C/svg%3E");
 }
 
-.ff-account__identity {
-  padding: var(--ff-space-1) var(--ff-space-2) var(--ff-space-3);
-}
-
-.ff-account__section {
-  padding: var(--ff-space-2) var(--ff-space-2) var(--ff-space-3);
-}
-
-.ff-account__section .ff-select {
-  width: 100%;
-}
-
-.ff-account__meta {
-  display: block;
-  margin-bottom: var(--ff-space-1);
-}
-
-/* --- Empty states --------------------------------------------------------- */
-
-.ff-empty {
-  padding-block: var(--ff-space-12);
-}
-
-.ff-empty__icon {
-  width: 2.75rem;
-  height: 2.75rem;
-  font-size: var(--ff-text-lg);
+:root[data-ff-theme="dark"] .ff-switch__track::after {
+  background: oklch(0.97 0.004 var(--ff-h));
 }

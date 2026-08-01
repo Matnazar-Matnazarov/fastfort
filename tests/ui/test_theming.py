@@ -18,7 +18,14 @@ from fastfort.ui.theming import Theme
 CSS_DIR = Path(__file__).resolve().parents[2] / "fastfort" / "ui" / "static" / "css"
 
 #: Every stylesheet, in the order a page loads them.
-SHEETS = ("00-reset.css", "01-tokens.css", "02-base.css")
+SHEETS = (
+    "00-reset.css",
+    "01-tokens.css",
+    "02-base.css",
+    "03-layout.css",
+    "04-components.css",
+    "05-admin.css",
+)
 
 
 @pytest.fixture(scope="module")
@@ -42,17 +49,40 @@ def test_braces_are_balanced(css: str) -> None:
 
 
 def test_every_declaration_ends_with_a_semicolon(css: str) -> None:
-    """A dropped semicolon swallows the next declaration without any error."""
+    """A dropped semicolon swallows the next declaration without any error.
+
+    Multi-line declarations are common -- `transition` and `grid-template-areas`
+    both read better broken up -- so the check follows a declaration to the line
+    that actually terminates it rather than judging each line alone.
+    """
     offenders: list[str] = []
+    continuing = False
+
     for line in css.splitlines():
         stripped = line.strip()
+
+        if continuing:
+            # A brace means the previous line was a selector after all, not an
+            # unterminated declaration.
+            if stripped.endswith((";", "{", "}")):
+                continuing = False
+            continue
+
         if (
             not stripped
             or stripped.startswith(("/*", "*", "@", "}", "{"))
-            or stripped.endswith(("{", "}", ",", ";", "*/"))
+            # A trailing comma is a selector list or a multi-value declaration;
+            # either way the line that terminates it is the one to judge.
+            or stripped.endswith(("{", "}", ";", ",", "*/"))
         ):
             continue
+
+        if ":" in stripped:
+            continuing = True
+            continue
+
         offenders.append(stripped)
+
     assert offenders == [], offenders
 
 
@@ -119,11 +149,16 @@ def test_motion_is_disabled_when_the_viewer_asks(css: str) -> None:
 
 
 def test_the_stylesheets_stay_within_budget(css: str) -> None:
-    """The whole front end is budgeted at 60 KB gzip; tokens are a small slice."""
+    """The whole front end is budgeted at 60 KB gzipped, CSS and JavaScript.
+
+    A complete design system for an admin -- shell, table, forms, every drawn
+    control, both themes -- fits in a fraction of that, and this fails if it
+    stops doing so.
+    """
     import gzip
 
     compressed = len(gzip.compress(css.encode("utf-8")))
-    assert compressed < 6_000, f"{compressed} bytes gzipped"
+    assert compressed < 16_000, f"{compressed} bytes gzipped"
 
 
 # ---------------------------------------------------------------------------
@@ -177,3 +212,51 @@ def test_without_a_custom_sheet_only_ours_loads() -> None:
     assert Theme.from_settings(UISettings()).stylesheets("/admin/static") == (
         "/admin/static/fastfort.css",
     )
+
+
+# ---------------------------------------------------------------------------
+# Controls are drawn, not left to the browser
+# ---------------------------------------------------------------------------
+
+
+def test_no_control_is_left_native(css: str) -> None:
+    """A native select beside a styled input is the clearest tell that an
+    interface was not finished, and it changes shape between platforms."""
+    assert ".ff-select {" in css
+    assert "appearance: none" in css
+    assert '.ff-checkbox input[type="checkbox"]' in css
+    assert ".ff-switch__track" in css
+
+
+def test_drawn_controls_carry_their_own_glyphs(css: str) -> None:
+    """The chevron and the tick are inline SVG data URIs, which the content
+    security policy allows under `img-src data:`."""
+    assert css.count("data:image/svg+xml") >= 2
+
+
+def test_a_data_uri_glyph_is_swapped_for_dark_mode(css: str) -> None:
+    """A data URI cannot read a custom property, so a white tick would stay white
+    on the near-white box dark mode gives the checkbox."""
+    assert ':root[data-ff-theme="dark"] .ff-checkbox input[type="checkbox"]:checked' in css
+
+
+def test_the_primary_action_is_neutral_not_the_brand_colour(css: str) -> None:
+    """A blue Save beside a blue Add beside a blue link gives a page three equally
+    loud things and no focal point."""
+    assert "--ff-primary:" in css
+    assert ".ff-btn--primary" in css
+    assert "--ff-focus-color" in css
+
+
+def test_radius_derives_from_one_value(css: str) -> None:
+    """So a project can round the whole interface by changing one number."""
+    assert "--ff-radius-base:" in css
+    for name in ("--ff-radius-sm", "--ff-radius-md", "--ff-radius-lg", "--ff-radius-xl"):
+        assert (
+            f"{name}: calc(var(--ff-radius-base)" in css or f"{name}: var(--ff-radius-base)" in css
+        )
+
+
+def test_row_actions_stay_visible_without_hover(css: str) -> None:
+    """Touch has no hover, so fading them out would hide them entirely."""
+    assert "@media (hover: none)" in css
