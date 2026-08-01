@@ -65,7 +65,7 @@ class ProductAdmin(admin.ModelAdmin):
     search_fields = ("name", "description")
     ordering = ("-created_at",)
     select_related = ("category",)
-    icon = "box"          # drawn beside the sidebar entry
+    icon = "box"  # drawn beside the sidebar entry
 ```
 
 Create the first account and start the server:
