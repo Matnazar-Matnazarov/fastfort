@@ -8,17 +8,68 @@ on the first request. A typo in `list_display` should be a start-up error, not a
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from fastfort.core.exceptions import ConfigurationError
 from fastfort.spec import FieldType, SortSpec
 from fastfort.ui.icons import icon_names, is_icon
 
+from .forms import WIDGET_NAMES
+
 if TYPE_CHECKING:
     from fastfort.spec import ModelSpec
 
-__all__ = ["ModelAdmin"]
+__all__ = ["Action", "ModelAdmin", "action"]
+
+#: The name of the delete action every model gets for free.
+DELETE_ACTION = "delete"
+
+
+@dataclass(frozen=True, slots=True)
+class Action:
+    """One entry in the bulk-action menu above the list."""
+
+    name: str
+    label: str
+    icon: str | None = None
+    #: Asks for confirmation before running, and is drawn in the danger colour.
+    #: Anything that cannot be undone should say so here.
+    danger: bool = False
+    #: What the confirmation asks. `{count}` is substituted.
+    confirm: str | None = None
+
+
+def action(
+    label: str,
+    *,
+    icon: str | None = None,
+    danger: bool = False,
+    confirm: str | None = None,
+) -> Callable[[Any], Any]:
+    """Mark a `ModelAdmin` method as a bulk action.
+
+    The method receives the adapter and the selected rows, and returns the
+    message to show::
+
+        @admin.action("Mark as shipped", icon="truck")
+        async def mark_shipped(self, adapter, objects):
+            for order in objects:
+                await adapter.update(order, {"status": "shipped"})
+            return f"{len(objects)} orders marked as shipped."
+
+    Declared with a decorator rather than by naming methods in a list, so the
+    label and the code that implements it cannot drift apart.
+    """
+
+    def decorate(method: Any) -> Any:
+        method.ff_action = Action(
+            name=method.__name__, label=label, icon=icon, danger=danger, confirm=confirm
+        )
+        return method
+
+    return decorate
 
 
 class ModelAdmin:
@@ -68,12 +119,56 @@ class ModelAdmin:
     password_fields: ClassVar[Sequence[str]] = ()
 
     #: Overrides for the sidebar. Derived from the model name when unset.
+    #:
+    #: Not translated. A model's name is the project's word for its own domain,
+    #: and FastFort has no business guessing it in nine languages -- the same
+    #: reason Django does not translate your model names either. FastFort
+    #: translates its own interface: the buttons, the filters, the messages.
     verbose_name: ClassVar[str | None] = None
     verbose_name_plural: ClassVar[str | None] = None
+
+    #: The sidebar group this model sits under. Without it the namespace half of
+    #: the registry key is used.
+    group_name: ClassVar[str | None] = None
+
+    #: Labels for individual fields, keyed by field name. Overrides what the
+    #: adapter derived from the column.
+    field_labels: ClassVar[Mapping[str, str]] = {}
 
     #: A name from `fastfort.ui.icons`, drawn beside the sidebar entry. Checked at
     #: declaration time, so a typo is an error rather than a silently blank slot.
     icon: ClassVar[str | None] = None
+
+    #: Which control renders a field, overriding what its type would choose.
+    #:
+    #: Keyed by field name or by `FieldType`, so a project can retype one column
+    #: or every column of a kind::
+    #:
+    #:     formfield_overrides = {
+    #:         "brand_colour": "color",
+    #:         "description": "richtext",
+    #:         FieldType.TEXT: "richtext",
+    #:     }
+    #:
+    #: A name beats a type when both match. Names are checked against the spec at
+    #: declaration time; an unknown widget name is a start-up error rather than a
+    #: field that silently renders read-only.
+    formfield_overrides: ClassVar[Mapping[str | FieldType, str]] = {}
+
+    #: Whether the list offers a download of the current view. Off for a model
+    #: whose rows should not leave the admin in a file.
+    exportable: ClassVar[bool] = True
+
+    #: Columns an export contains. Defaults to what the list shows, so the file
+    #: matches the table it came from; widen it to include columns that are on
+    #: the record but too many to put in a table.
+    export_fields: ClassVar[Sequence[str]] = ()
+
+    #: Bulk actions offered once rows are selected. `"delete"` is built in and
+    #: enabled by default; anything else is the name of a method carrying
+    #: `@admin.action`. Set to `()` to offer none, which is how a model whose rows
+    #: must never be removed in bulk says so.
+    actions: ClassVar[Sequence[str]] = (DELETE_ACTION,)
 
     def __init__(self, spec: ModelSpec) -> None:
         self.spec = spec
@@ -102,6 +197,7 @@ class ModelAdmin:
             "prefetch_related",
             "readonly_fields",
             "password_fields",
+            "export_fields",
         ):
             for name in getattr(self, attribute):
                 if name not in known:
@@ -127,6 +223,29 @@ class ModelAdmin:
             available = ", ".join(icon_names())
             problems.append(f"icon names {self.icon!r}, which is not one of: {available}")
 
+        for name in self.actions:
+            if name == DELETE_ACTION:
+                continue
+            handler = getattr(self, name, None)
+            if handler is None:
+                problems.append(f"actions names {name!r}, which is not a method on this admin")
+            elif not hasattr(handler, "ff_action"):
+                problems.append(f"actions names {name!r}, which is missing the @admin.action mark")
+
+        for name in self.field_labels:
+            if name not in known:
+                problems.append(f"field_labels names {name!r}, which {self.spec.key} has no")
+
+        for key, widget in self.formfield_overrides.items():
+            if isinstance(key, str) and key not in known:
+                problems.append(f"formfield_overrides names {key!r}, which {self.spec.key} has no")
+            if widget not in WIDGET_NAMES:
+                offered = ", ".join(sorted(WIDGET_NAMES))
+                problems.append(
+                    f"formfield_overrides maps {key!r} to {widget!r}, "
+                    f"which is not a widget. Available: {offered}"
+                )
+
         if problems:
             listed = "\n".join(f"  - {problem}" for problem in problems)
             available = ", ".join(sorted(known))
@@ -144,6 +263,21 @@ class ModelAdmin:
     @property
     def singular(self) -> str:
         return self.verbose_name or self.spec.verbose_name
+
+    def widget_override(self, spec: Any) -> str | None:
+        """The control this admin insists on for a field, if it named one.
+
+        A field name wins over a type, because the narrower declaration is the
+        one that was written about this column in particular.
+        """
+        by_name = self.formfield_overrides.get(spec.name)
+        if by_name is not None:
+            return by_name
+        return self.formfield_overrides.get(spec.type)
+
+    def field_label(self, name: str, fallback: str) -> str:
+        """A field's label, honouring an override the admin declared."""
+        return self.field_labels.get(name) or fallback
 
     def columns(self) -> tuple[str, ...]:
         """The list columns, falling back to something useful."""
@@ -165,6 +299,9 @@ class ModelAdmin:
                 continue
             chosen.append(field.name)
         return tuple(chosen)
+
+    def export_columns(self) -> tuple[str, ...]:
+        return tuple(self.export_fields) if self.export_fields else self.columns()
 
     def link_columns(self) -> frozenset[str]:
         if self.list_display_links:
@@ -211,6 +348,39 @@ class ModelAdmin:
             self.readonly_fields
         )
 
+    def action_specs(self) -> tuple[Action, ...]:
+        """The bulk actions this model offers, in declaration order."""
+        found: list[Action] = []
+        for name in self.actions:
+            if name == DELETE_ACTION:
+                found.append(
+                    Action(
+                        name=DELETE_ACTION,
+                        label="Delete selected",
+                        icon="trash",
+                        danger=True,
+                        confirm="Delete {count} rows?",
+                    )
+                )
+                continue
+            handler = getattr(self, name, None)
+            declared = getattr(handler, "ff_action", None)
+            if declared is not None:
+                found.append(declared)
+        return tuple(found)
+
+    def action_handler(self, name: str) -> Any:
+        """The callable behind an action name, or None when it is not offered.
+
+        Checked against `actions` rather than resolved by `getattr` alone: a
+        method that happens to carry the mark but was left out of the list must
+        not be reachable by posting its name.
+        """
+        if name not in self.actions or name == DELETE_ACTION:
+            return None
+        handler = getattr(self, name, None)
+        return handler if hasattr(handler, "ff_action") else None
+
     def cell(self, obj: Any, column: str) -> Any:
         """The raw value for one cell.
 
@@ -219,6 +389,11 @@ class ModelAdmin:
         """
         value = getattr(obj, column, None)
         field = self.spec.get(column)
+        if field is not None and field.type is FieldType.GEOMETRY and value is not None:
+            # Otherwise the cell is a WKB hex blob, which reads as corruption.
+            from .forms import _point_text
+
+            return _point_text(value)
         if field is None or not field.is_relation:
             return value
         if field.type.is_multi_valued:
