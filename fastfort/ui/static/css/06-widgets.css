@@ -1,0 +1,2142 @@
+/* FastFort interactive widgets.
+ *
+ * Everything here replaces a browser default that an admin cannot live with.
+ * A native `<select>` is drawn by the operating system: its list is unstyleable,
+ * it cannot be searched, and on Linux it renders as a grey box with a blue
+ * highlight that belongs to no design system. A `<select multiple>` is worse
+ * still -- it asks people to hold Ctrl, which is not a thing anyone should have
+ * to know to attach three tags to a product.
+ *
+ * So each of these is a real control built out of a button and a listbox, with
+ * the native element kept underneath as the thing that actually submits. With
+ * JavaScript off the native element is what shows, and every form still works;
+ * `[data-ff-js]` on the root is what swaps them.
+ */
+
+/* ===========================================================================
+ * Popovers
+ *
+ * One positioned surface shared by the menu, the combobox and the palette, so
+ * the three cannot drift into three different shadows and radii.
+ * ======================================================================== */
+
+.ff-pop {
+  position: absolute;
+  z-index: var(--ff-z-dropdown);
+  min-width: 12rem;
+  padding: var(--ff-space-1);
+  background: var(--ff-surface-raised);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-lg);
+  box-shadow: var(--ff-shadow-lg);
+  /* Opened by script, which moves it into place first. Hidden until then so it
+   * cannot flash in the top-left corner on the way. */
+  animation: ff-pop-in var(--ff-duration-fast) var(--ff-ease-out);
+}
+
+.ff-pop[hidden] {
+  display: none;
+}
+
+@keyframes ff-pop-in {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ff-pop {
+    animation: none;
+  }
+}
+
+/* ===========================================================================
+ * Dropdown menu
+ *
+ * The row-actions overflow, the bulk-action list, anything that is a short list
+ * of verbs. Rows are real buttons and links so the keyboard reaches them.
+ * ======================================================================== */
+
+.ff-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.ff-dropdown__panel {
+  inset-inline-end: 0;
+  top: calc(100% + var(--ff-space-1));
+}
+
+/* Opening upward when there is no room below. Set by script, which measures. */
+.ff-dropdown__panel[data-ff-place="above"] {
+  top: auto;
+  bottom: calc(100% + var(--ff-space-1));
+}
+
+.ff-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-3);
+  width: 100%;
+  padding: var(--ff-space-2) var(--ff-space-3);
+  border: 0;
+  border-radius: var(--ff-radius-sm);
+  background: none;
+  color: var(--ff-text-muted);
+  font: inherit;
+  font-size: var(--ff-text-base);
+  text-align: start;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ff-item:hover,
+.ff-item:focus-visible,
+.ff-item[data-ff-active="true"] {
+  background: var(--ff-surface-hover);
+  color: var(--ff-text);
+  outline: none;
+}
+
+.ff-item--danger {
+  color: var(--ff-danger);
+}
+
+.ff-item--danger:hover,
+.ff-item--danger:focus-visible,
+.ff-item--danger[data-ff-active="true"] {
+  background: var(--ff-danger-subtle);
+  color: var(--ff-danger);
+}
+
+.ff-item__icon {
+  flex: 0 0 auto;
+  color: var(--ff-text-subtle);
+}
+
+.ff-item:hover .ff-item__icon,
+.ff-item[data-ff-active="true"] .ff-item__icon {
+  color: inherit;
+}
+
+.ff-item__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ff-item__hint {
+  flex: 0 0 auto;
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===========================================================================
+ * Combobox
+ *
+ * Replaces `<select>`. The trigger looks exactly like `.ff-input`, because a
+ * control that opens a list and a control that takes text are siblings and
+ * should read as a set.
+ * ======================================================================== */
+
+/* The native element is still in the DOM -- it is what submits -- but once the
+ * combobox is built it is only reachable through the combobox. */
+.ff-combo__native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ff-combo {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.ff-combo__button {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+  width: 100%;
+  min-height: var(--ff-control-height);
+  padding: 0 var(--ff-space-2) 0 var(--ff-space-3);
+  background: var(--ff-surface);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
+  color: var(--ff-text);
+  font: inherit;
+  font-size: var(--ff-text-base);
+  text-align: start;
+  cursor: pointer;
+  transition:
+    border-color var(--ff-duration-fast) var(--ff-ease),
+    background var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-combo__button:hover {
+  border-color: var(--ff-border-strong);
+}
+
+.ff-combo__button:focus-visible,
+.ff-combo[data-ff-open="true"] .ff-combo__button {
+  outline: none;
+  border-color: var(--ff-accent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ff-accent) 18%, transparent);
+}
+
+.ff-combo__button:disabled {
+  background: var(--ff-surface-sunken);
+  color: var(--ff-text-subtle);
+  cursor: not-allowed;
+}
+
+.ff-combo__value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Nothing chosen yet reads as placeholder text, not as a value. */
+.ff-combo__value[data-ff-empty="true"] {
+  color: var(--ff-text-subtle);
+}
+
+.ff-combo__caret {
+  flex: 0 0 auto;
+  color: var(--ff-text-subtle);
+  transition: rotate var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-combo[data-ff-open="true"] .ff-combo__caret {
+  rotate: 180deg;
+}
+
+/* Clears the selection without opening the list. Only rendered when there is
+ * something to clear and the field allows empty. */
+.ff-combo__clear {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ff-radius-full);
+  background: none;
+  color: var(--ff-text-subtle);
+  cursor: pointer;
+}
+
+.ff-combo__clear:hover {
+  background: var(--ff-surface-hover);
+  color: var(--ff-text);
+}
+
+/* -- the panel ---------------------------------------------------------- */
+
+.ff-combo__panel {
+  inset-inline: 0;
+  top: calc(100% + 4px);
+  min-width: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+
+.ff-combo__panel[data-ff-place="above"] {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+.ff-combo__search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+  padding: var(--ff-space-2) var(--ff-space-3);
+  border-bottom: 1px solid var(--ff-border);
+  color: var(--ff-text-subtle);
+}
+
+.ff-combo__search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ff-text);
+  font: inherit;
+  font-size: var(--ff-text-base);
+}
+
+.ff-combo__search input:focus {
+  outline: none;
+}
+
+.ff-combo__list {
+  max-height: 16rem;
+  padding: var(--ff-space-1);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ff-combo__option {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+  width: 100%;
+  padding: var(--ff-space-2) var(--ff-space-3);
+  border: 0;
+  border-radius: var(--ff-radius-sm);
+  background: none;
+  color: var(--ff-text-muted);
+  font: inherit;
+  font-size: var(--ff-text-base);
+  text-align: start;
+  cursor: pointer;
+}
+
+/* One highlight, driven by the roving `aria-activedescendant` rather than by
+ * :hover, so the mouse and the arrow keys cannot both claim a row at once. */
+.ff-combo__option[data-ff-active="true"] {
+  background: var(--ff-surface-hover);
+  color: var(--ff-text);
+}
+
+.ff-combo__option[aria-selected="true"] {
+  color: var(--ff-text);
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-combo__option__mark {
+  flex: 0 0 auto;
+  color: var(--ff-accent);
+  visibility: hidden;
+}
+
+.ff-combo__option[aria-selected="true"] .ff-combo__option__mark {
+  visibility: visible;
+}
+
+.ff-combo__option__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ff-combo__note {
+  padding: var(--ff-space-4) var(--ff-space-3);
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-sm);
+  text-align: center;
+}
+
+/* A footer line for "showing the first 50 of 4,120" -- the honest answer when a
+ * relation is too large to list, instead of silently truncating. */
+.ff-combo__footer {
+  padding: var(--ff-space-2) var(--ff-space-3);
+  border-top: 1px solid var(--ff-border);
+  background: var(--ff-surface-sunken);
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-xs);
+}
+
+/* ===========================================================================
+ * Chips
+ *
+ * How a many-to-many selection is shown: one removable token per related row,
+ * inside the control rather than in a list beside it.
+ * ======================================================================== */
+
+/* A `<button>` rather than a div: the whole box opens the list, and it has to be
+ * reachable by Tab and by Enter like any other control. */
+.ff-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ff-space-1);
+  width: 100%;
+  min-height: var(--ff-control-height);
+  padding: calc(var(--ff-space-1) + 1px) var(--ff-space-2);
+  background: var(--ff-surface);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
+  color: var(--ff-text);
+  font: inherit;
+  font-size: var(--ff-text-base);
+  text-align: start;
+  cursor: pointer;
+}
+
+.ff-chips:focus-visible {
+  outline: none;
+  border-color: var(--ff-accent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ff-accent) 18%, transparent);
+}
+
+.ff-chips:hover {
+  border-color: var(--ff-border-strong);
+}
+
+.ff-combo[data-ff-open="true"] .ff-chips {
+  border-color: var(--ff-accent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ff-accent) 18%, transparent);
+}
+
+.ff-chips__placeholder {
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-base);
+  padding-inline-start: var(--ff-space-1);
+}
+
+.ff-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ff-space-1);
+  max-width: 100%;
+  padding: 2px var(--ff-space-1) 2px var(--ff-space-2);
+  background: var(--ff-surface-sunken);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-sm);
+  color: var(--ff-text);
+  font-size: var(--ff-text-sm);
+  line-height: 1.5;
+}
+
+.ff-chip__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ff-chip__remove {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ff-radius-sm);
+  background: none;
+  color: var(--ff-text-subtle);
+  cursor: pointer;
+}
+
+.ff-chip__remove:hover {
+  background: var(--ff-danger-subtle);
+  color: var(--ff-danger);
+}
+
+/* ===========================================================================
+ * Filter chips
+ *
+ * What is currently narrowing the list, stated in words with a way to undo each
+ * one. Without this, an active filter is only visible by reading every control.
+ * ======================================================================== */
+
+.ff-active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ff-space-2);
+  margin-top: var(--ff-space-3);
+}
+
+.ff-active-filters__label {
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ff-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ff-space-1);
+  padding: 2px var(--ff-space-1) 2px var(--ff-space-2);
+  background: var(--ff-accent-subtle);
+  border: 1px solid var(--ff-accent-border);
+  border-radius: var(--ff-radius-full);
+  color: var(--ff-accent);
+  font-size: var(--ff-text-xs);
+  font-weight: var(--ff-weight-medium);
+  text-decoration: none;
+}
+
+.ff-filter-chip__field {
+  opacity: 0.75;
+}
+
+.ff-filter-chip__remove {
+  display: grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: var(--ff-radius-full);
+  color: inherit;
+}
+
+.ff-filter-chip:hover .ff-filter-chip__remove {
+  background: color-mix(in oklch, var(--ff-accent) 20%, transparent);
+}
+
+/* ===========================================================================
+ * Toolbar
+ *
+ * The search box, the filters and the view actions on one line. It is a card
+ * rather than a bare row so the table below reads as its result.
+ * ======================================================================== */
+
+.ff-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ff-space-2);
+  padding: var(--ff-space-3);
+  background: var(--ff-surface);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-lg);
+}
+
+/* The search box takes the slack; every filter keeps its natural width. */
+.ff-toolbar__search {
+  flex: 1 1 16rem;
+  min-width: 12rem;
+}
+
+.ff-toolbar__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ff-space-2);
+}
+
+.ff-toolbar__end {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+  margin-inline-start: auto;
+}
+
+/* Filter controls are sized to their label rather than stretched, so a row of
+ * them reads as a row of separate questions. The native `<select>` is included
+ * because it is what shows when there is no script to upgrade it, and left to
+ * itself it grows to fill the row and pushes the search box onto its own line. */
+.ff-toolbar .ff-combo,
+.ff-toolbar .ff-select {
+  min-width: 9rem;
+  max-width: 16rem;
+  width: auto;
+}
+
+/* ===========================================================================
+ * Language switcher
+ *
+ * A filterable list rather than a plain one: nine languages is past the point
+ * where a list is scanned rather than read.
+ * ======================================================================== */
+
+.ff-langs__search {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+  margin: var(--ff-space-1) var(--ff-space-2) var(--ff-space-2);
+  padding: var(--ff-space-1) var(--ff-space-2);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
+  color: var(--ff-text-subtle);
+}
+
+.ff-langs__search:focus-within {
+  border-color: var(--ff-accent);
+}
+
+.ff-langs__search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ff-text);
+  font: inherit;
+  font-size: var(--ff-text-sm);
+}
+
+.ff-langs__search input:focus {
+  outline: none;
+}
+
+/* Capped, so the menu cannot grow past the window as languages are added. */
+.ff-langs__list {
+  max-height: 14rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ff-langs__empty {
+  padding: var(--ff-space-3) var(--ff-space-2);
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-sm);
+  text-align: center;
+}
+
+/* ===========================================================================
+ * Drawer
+ *
+ * A panel that slides in from the edge. Used by the appearance settings, and
+ * the filter panel wears the same clothes so the two do not become two
+ * different-looking side panels in one interface.
+ * ======================================================================== */
+
+.ff-drawer {
+  position: fixed;
+  z-index: var(--ff-z-modal);
+  top: 0;
+  bottom: 0;
+  inset-inline-end: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(22rem, 100vw);
+  background: var(--ff-surface);
+  border-inline-start: 1px solid var(--ff-border);
+  box-shadow: var(--ff-shadow-overlay);
+  animation: ff-slide-in var(--ff-duration) var(--ff-ease-out);
+}
+
+.ff-drawer[hidden] {
+  display: none;
+}
+
+.ff-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ff-space-2);
+  padding: var(--ff-space-4);
+  border-bottom: 1px solid var(--ff-border);
+}
+
+.ff-drawer__title {
+  font-size: var(--ff-text-md);
+  font-weight: var(--ff-weight-semibold);
+}
+
+.ff-drawer__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ff-space-5);
+  flex: 1 1 auto;
+  padding: var(--ff-space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ff-drawer__foot {
+  padding: var(--ff-space-4);
+  border-top: 1px solid var(--ff-border);
+  background: var(--ff-surface-sunken);
+}
+
+.ff-scrim--settings {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--ff-z-modal) - 1);
+  display: block;
+  background: color-mix(in oklch, oklch(0.15 0.02 var(--ff-h)) 40%, transparent);
+}
+
+/* -- one setting --------------------------------------------------------- */
+
+.ff-setting {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ff-space-2);
+}
+
+.ff-setting__label {
+  color: var(--ff-text-muted);
+  font-size: var(--ff-text-xs);
+  font-weight: var(--ff-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* -- accent swatches ----------------------------------------------------- */
+
+.ff-swatches {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: var(--ff-space-2);
+}
+
+.ff-swatch {
+  /* Declared here as well as set inline, so the token exists even if a swatch
+   * ever renders without its own colour -- an undeclared custom property
+   * resolves to nothing and the button would be invisible. */
+  --ff-swatch: var(--ff-accent);
+
+  aspect-ratio: 1;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: var(--ff-radius);
+  background: var(--ff-swatch);
+  cursor: pointer;
+  transition: scale var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-swatch:hover {
+  scale: 1.08;
+}
+
+/* The ring sits outside the swatch so the colour itself is never covered --
+ * which matters when the whole point of the control is judging the colour. */
+.ff-swatch[aria-pressed="true"] {
+  border-color: var(--ff-surface);
+  box-shadow: 0 0 0 2px var(--ff-text);
+}
+
+.ff-swatch:focus-visible {
+  outline: var(--ff-focus-width) solid var(--ff-focus-color);
+  outline-offset: var(--ff-focus-offset);
+}
+
+/* ===========================================================================
+ * Filter panel
+ *
+ * One button, and everything behind it. A box per filterable column across the
+ * top does not survive a model with eight of them: the toolbar wraps onto three
+ * lines, the table is pushed off the screen, and there is still nowhere to put a
+ * filter that needs more than a single line.
+ *
+ * Without script the panel is not a panel. It lays out inline under the search
+ * box and its Apply button submits the form, because a popover that nothing can
+ * open would make every filter unreachable.
+ * ======================================================================== */
+
+.ff-filters-toggle {
+  gap: var(--ff-space-2);
+}
+
+/* The page's own scrim is scoped to the mobile sidebar breakpoint; the filter
+ * drawer needs one at every width. */
+.ff-scrim--filters {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--ff-z-modal) - 1);
+  display: block;
+  background: color-mix(in oklch, oklch(0.15 0.02 var(--ff-h)) 40%, transparent);
+}
+
+.ff-filters-toggle[aria-expanded="true"] {
+  border-color: var(--ff-accent);
+  color: var(--ff-text);
+}
+
+.ff-filters-toggle__count {
+  display: grid;
+  place-items: center;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  padding-inline: 4px;
+  border-radius: var(--ff-radius-full);
+  background: var(--ff-accent);
+  color: var(--ff-accent-text);
+  font-size: var(--ff-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+:root[data-ff-js] .ff-filter-panel {
+  position: fixed;
+  z-index: var(--ff-z-modal);
+  top: 0;
+  bottom: 0;
+  inset-inline-end: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(22rem, 100vw);
+  background: var(--ff-surface);
+  border-inline-start: 1px solid var(--ff-border);
+  box-shadow: var(--ff-shadow-overlay);
+  animation: ff-slide-in var(--ff-duration) var(--ff-ease-out);
+}
+
+@keyframes ff-slide-in {
+  from {
+    translate: 100% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-ff-js] .ff-filter-panel {
+    animation: none;
+  }
+}
+
+/* `hidden` has to win over the panel's own `display`, or the drawer would sit
+ * open on every page load. */
+.ff-filter-panel[hidden] {
+  display: none;
+}
+
+/* Inline when there is no script: the whole row of filters, laid out under the
+ * search box, exactly as a plain form would. */
+:root:not([data-ff-js]) .ff-filter-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--ff-space-4);
+  width: 100%;
+  margin-top: var(--ff-space-2);
+}
+
+:root:not([data-ff-js]) .ff-filter-panel[hidden] {
+  display: flex;
+}
+
+.ff-filter-panel__head {
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ff-space-2);
+  padding: var(--ff-space-4);
+  border-bottom: 1px solid var(--ff-border);
+}
+
+:root[data-ff-js] .ff-filter-panel__head {
+  display: flex;
+}
+
+.ff-filter-panel__title {
+  font-size: var(--ff-text-md);
+  font-weight: var(--ff-weight-semibold);
+}
+
+.ff-filter-panel__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ff-space-4);
+}
+
+:root[data-ff-js] .ff-filter-panel__body {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  flex: 1 1 auto;
+  padding: var(--ff-space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ff-filter-panel__foot {
+  display: flex;
+  gap: var(--ff-space-2);
+}
+
+:root[data-ff-js] .ff-filter-panel__foot {
+  padding: var(--ff-space-4);
+  border-top: 1px solid var(--ff-border);
+  background: var(--ff-surface-sunken);
+}
+
+.ff-filter-group {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  margin: 0;
+}
+
+.ff-filter-group__label {
+  padding: 0 0 var(--ff-space-2);
+  color: var(--ff-text-muted);
+  font-size: var(--ff-text-xs);
+  font-weight: var(--ff-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Capped and scrollable: an enumeration with forty members must not push the
+ * Apply button off the bottom of the drawer. */
+.ff-filter-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 13rem;
+  overflow-y: auto;
+}
+
+.ff-filter-option {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+  padding: var(--ff-space-1) var(--ff-space-2);
+  border-radius: var(--ff-radius-sm);
+  cursor: pointer;
+}
+
+.ff-filter-option:hover {
+  background: var(--ff-surface-hover);
+}
+
+.ff-filter-option__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ff-text-base);
+}
+
+/* -- date range ---------------------------------------------------------
+ *
+ * Two date inputs side by side are as wide as the whole rest of the toolbar and
+ * are empty almost all of the time, so they live behind a button. Without
+ * scripting the button is not rendered and the panel is laid out inline, which
+ * is why the panel's positioning is scoped to `[data-ff-js]` rather than being
+ * the default.
+ */
+
+.ff-range-filter .ff-combo__button {
+  width: auto;
+  min-width: 11rem;
+}
+
+:root[data-ff-js] .ff-range-panel {
+  padding: var(--ff-space-3);
+  min-width: 15rem;
+}
+
+.ff-range-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ff-space-2);
+}
+
+/* Inline when there is no script to open it: a popover nobody can close would
+ * otherwise float permanently over the table. */
+:root:not([data-ff-js]) .ff-range-panel {
+  position: static;
+  flex-direction: row;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  animation: none;
+}
+
+/* Presets as a wrap of chips. A radio group, so the browser enforces one
+ * answer and clears the previous one without any script. */
+.ff-date-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ff-space-1);
+  margin-bottom: var(--ff-space-2);
+}
+
+.ff-date-preset {
+  display: inline-flex;
+  padding: 3px var(--ff-space-2);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-full);
+  background: none;
+  color: var(--ff-text-muted);
+  font: inherit;
+  font-size: var(--ff-text-xs);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ff-date-preset:hover {
+  border-color: var(--ff-border-strong);
+  color: var(--ff-text);
+}
+
+/* `aria-pressed` rather than a class, so the state a screen reader announces
+ * and the state that is drawn cannot drift apart. */
+.ff-date-preset[aria-pressed="true"] {
+  background: var(--ff-accent-subtle);
+  border-color: var(--ff-accent-border);
+  color: var(--ff-accent);
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-range-panel__row {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+}
+
+.ff-range-panel__row .ff-input {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+.ff-range__label {
+  flex: 0 0 2.5rem;
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-xs);
+  white-space: nowrap;
+}
+
+/* The native picker button is invisible on a dark surface in several browsers,
+ * so it gets inverted along with the theme. */
+:root[data-ff-theme="dark"] .ff-range-panel input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ff-theme="light"]) .ff-range-panel input::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    opacity: 0.6;
+  }
+}
+
+/* ===========================================================================
+ * Row selection and bulk actions
+ * ======================================================================== */
+
+.ff-table__select {
+  width: 2.75rem;
+  padding-inline: var(--ff-space-3) 0 !important;
+}
+
+/* The action bar these feed is script-only, so without it a ticked box does
+ * nothing at all. The whole column goes rather than just the inputs, which would
+ * leave an empty gutter down the table. */
+:root:not([data-ff-js]) .ff-table__select {
+  display: none;
+}
+
+.ff-check {
+  display: grid;
+  place-items: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  border: 1.5px solid var(--ff-border-strong);
+  border-radius: var(--ff-radius-sm);
+  background: var(--ff-surface);
+  appearance: none;
+  cursor: pointer;
+  transition:
+    background var(--ff-duration-fast) var(--ff-ease),
+    border-color var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-check:hover {
+  border-color: var(--ff-accent);
+}
+
+.ff-check:checked,
+.ff-check:indeterminate {
+  background: var(--ff-accent);
+  border-color: var(--ff-accent);
+}
+
+.ff-check:checked::after {
+  content: "";
+  width: 0.55rem;
+  height: 0.3rem;
+  border: 2px solid var(--ff-accent-text);
+  border-top: 0;
+  border-right: 0;
+  rotate: -45deg;
+  translate: 0 -1px;
+}
+
+.ff-check:indeterminate::after {
+  content: "";
+  width: 0.55rem;
+  height: 2px;
+  background: var(--ff-accent-text);
+}
+
+.ff-check:focus-visible {
+  outline: var(--ff-focus-width) solid var(--ff-focus-color);
+  outline-offset: var(--ff-focus-offset);
+}
+
+/* A selected row is tinted, so the selection survives a glance away from the
+ * checkbox column. */
+.ff-table tbody tr[data-ff-selected="true"] {
+  background: var(--ff-accent-subtle);
+}
+
+/* The whole row opens the record, so it has to say so. Only with script: the
+ * behaviour is script-only, and a pointer cursor over something that does
+ * nothing is a lie. */
+:root[data-ff-js] .ff-table tbody tr[data-ff-row-url] {
+  cursor: pointer;
+}
+
+/* The action bar floats over the table rather than pushing it down: a bar that
+ * appears in the flow moves every row the moment a checkbox is ticked. */
+.ff-bulkbar {
+  position: sticky;
+  bottom: var(--ff-space-4);
+  z-index: var(--ff-z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-3);
+  width: fit-content;
+  max-width: 100%;
+  margin: var(--ff-space-4) auto 0;
+  padding: var(--ff-space-2) var(--ff-space-2) var(--ff-space-2) var(--ff-space-4);
+  background: var(--ff-primary);
+  color: var(--ff-primary-text);
+  border-radius: var(--ff-radius-full);
+  box-shadow: var(--ff-shadow-lg);
+  animation: ff-rise var(--ff-duration) var(--ff-ease-out);
+}
+
+.ff-bulkbar[hidden] {
+  display: none;
+}
+
+@keyframes ff-rise {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ff-bulkbar {
+    animation: none;
+  }
+}
+
+.ff-bulkbar__count {
+  font-size: var(--ff-text-sm);
+  font-weight: var(--ff-weight-medium);
+  white-space: nowrap;
+}
+
+/* Buttons on the bar sit on the inverted surface, so they take their colours
+ * from it rather than from the page. */
+.ff-bulkbar .ff-btn {
+  background: color-mix(in oklch, var(--ff-primary-text) 14%, transparent);
+  border-color: transparent;
+  color: var(--ff-primary-text);
+}
+
+.ff-bulkbar .ff-btn:hover {
+  background: color-mix(in oklch, var(--ff-primary-text) 24%, transparent);
+}
+
+.ff-bulkbar .ff-btn--danger {
+  background: var(--ff-danger);
+  color: oklch(0.99 0 0);
+}
+
+.ff-bulkbar .ff-btn--danger:hover {
+  background: color-mix(in oklch, var(--ff-danger) 85%, black);
+}
+
+/* ===========================================================================
+ * Row actions
+ *
+ * Icon buttons, always present. The previous behaviour -- text links revealed
+ * on hover -- meant the actions were invisible until the mouse found them, and
+ * invisible altogether on a touch screen.
+ * ======================================================================== */
+
+.ff-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.ff-action {
+  display: grid;
+  place-items: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ff-radius);
+  background: none;
+  color: var(--ff-text-subtle);
+  cursor: pointer;
+  transition:
+    background var(--ff-duration-fast) var(--ff-ease),
+    color var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-action:hover {
+  background: var(--ff-surface-hover);
+  color: var(--ff-text);
+}
+
+.ff-action:focus-visible {
+  outline: var(--ff-focus-width) solid var(--ff-focus-color);
+  outline-offset: -1px;
+}
+
+.ff-action--danger:hover {
+  background: var(--ff-danger-subtle);
+  color: var(--ff-danger);
+}
+
+/* ===========================================================================
+ * Tooltip
+ *
+ * Attribute-driven, so an icon button carries its own label without a wrapper
+ * element. `title` alone is not enough: it takes a second to appear, cannot be
+ * styled, and never shows on a keyboard focus.
+ * ======================================================================== */
+
+[data-ff-tip] {
+  position: relative;
+}
+
+[data-ff-tip]::after {
+  content: attr(data-ff-tip);
+  position: absolute;
+  z-index: var(--ff-z-toast);
+  bottom: calc(100% + 6px);
+  left: 50%;
+  translate: -50% 0;
+  padding: 3px var(--ff-space-2);
+  background: var(--ff-primary);
+  color: var(--ff-primary-text);
+  border-radius: var(--ff-radius-sm);
+  font-size: var(--ff-text-xs);
+  font-weight: var(--ff-weight-normal);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--ff-duration-fast) var(--ff-ease);
+}
+
+[data-ff-tip]:hover::after,
+[data-ff-tip]:focus-visible::after {
+  opacity: 1;
+}
+
+/* A centred tooltip runs off whichever edge its control sits against. These two
+ * pin it to the control's own edge instead: `end` for the last button in a table
+ * row, `start` for the first button in the topbar -- where the label was being
+ * clipped by the left edge of the window. */
+[data-ff-tip][data-ff-tip-align="end"]::after {
+  left: auto;
+  right: 0;
+  translate: 0 0;
+}
+
+[data-ff-tip][data-ff-tip-align="start"]::after {
+  left: 0;
+  translate: 0 0;
+}
+
+/* Below the control, not above it. Anything in the topbar has no room above --
+ * the tooltip rendered off the top of the window, so the label for the sidebar
+ * and appearance buttons was a sliver of text clipped by the viewport edge. */
+[data-ff-tip][data-ff-tip-below]::after {
+  top: calc(100% + 6px);
+  bottom: auto;
+}
+
+@media (hover: none) {
+  /* On a touch screen there is no hover, so a tooltip would only ever appear
+   * stuck to whatever was last tapped. */
+  [data-ff-tip]::after {
+    content: none;
+  }
+}
+
+/* ===========================================================================
+ * Modal
+ *
+ * A real `<dialog>`: the browser gives focus trapping, Escape, inertness of the
+ * page behind and the top layer for free. Reimplementing those in script is how
+ * modals end up unreachable by keyboard.
+ * ======================================================================== */
+
+.ff-modal {
+  width: min(32rem, calc(100vw - var(--ff-space-8)));
+  max-height: calc(100vh - var(--ff-space-16));
+  /* Restated because the reset zeroes every margin, and a modal `<dialog>` is
+   * centred by the browser's own `margin: auto`. Without this it sits in the
+   * top-left corner. */
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-xl);
+  background: var(--ff-surface);
+  color: var(--ff-text);
+  box-shadow: var(--ff-shadow-overlay);
+  overflow: visible;
+}
+
+.ff-modal::backdrop {
+  background: color-mix(in oklch, oklch(0.15 0.02 var(--ff-h)) 55%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.ff-modal[open] {
+  animation: ff-modal-in var(--ff-duration) var(--ff-ease-out);
+}
+
+@keyframes ff-modal-in {
+  from {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ff-modal[open] {
+    animation: none;
+  }
+}
+
+.ff-modal__header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ff-space-3);
+  padding: var(--ff-space-5) var(--ff-space-5) var(--ff-space-3);
+}
+
+.ff-modal__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--ff-radius-full);
+  background: var(--ff-danger-subtle);
+  color: var(--ff-danger);
+}
+
+.ff-modal__title {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: var(--ff-text-lg);
+  font-weight: var(--ff-weight-semibold);
+  line-height: var(--ff-leading-tight);
+}
+
+.ff-modal__close {
+  flex: 0 0 auto;
+}
+
+.ff-modal__body {
+  padding: 0 var(--ff-space-5) var(--ff-space-5);
+  color: var(--ff-text-muted);
+  font-size: var(--ff-text-base);
+  overflow-y: auto;
+}
+
+/* Aligned with the title, not with the icon: the icon is a marker, and text
+ * that starts under it reads as a caption for it. */
+.ff-modal__header + .ff-modal__body {
+  padding-inline-start: calc(var(--ff-space-5) + 2.25rem + var(--ff-space-3));
+}
+
+.ff-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ff-space-2);
+  padding: var(--ff-space-3) var(--ff-space-5) var(--ff-space-5);
+}
+
+/* ===========================================================================
+ * Toasts
+ *
+ * Feedback for something that finished without a page load -- a bulk delete, a
+ * copied link. A page-load message stays in the banner, where it does not
+ * vanish before it has been read.
+ * ======================================================================== */
+
+.ff-toasts {
+  position: fixed;
+  z-index: var(--ff-z-toast);
+  bottom: var(--ff-space-4);
+  inset-inline-end: var(--ff-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ff-space-2);
+  width: min(22rem, calc(100vw - var(--ff-space-8)));
+  pointer-events: none;
+}
+
+.ff-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ff-space-3);
+  padding: var(--ff-space-3) var(--ff-space-4);
+  background: var(--ff-surface-raised);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-lg);
+  box-shadow: var(--ff-shadow-lg);
+  color: var(--ff-text);
+  font-size: var(--ff-text-base);
+  pointer-events: auto;
+  animation: ff-toast-in var(--ff-duration) var(--ff-ease-out);
+}
+
+.ff-toast[data-ff-leaving="true"] {
+  animation: ff-toast-out var(--ff-duration) var(--ff-ease) forwards;
+}
+
+.ff-toast__icon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.ff-toast--success .ff-toast__icon {
+  color: var(--ff-success);
+}
+
+.ff-toast--danger .ff-toast__icon {
+  color: var(--ff-danger);
+}
+
+.ff-toast--info .ff-toast__icon {
+  color: var(--ff-info);
+}
+
+.ff-toast__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@keyframes ff-toast-in {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+@keyframes ff-toast-out {
+  to {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ff-toast,
+  .ff-toast[data-ff-leaving="true"] {
+    animation: none;
+  }
+}
+
+/* ===========================================================================
+ * Command palette
+ *
+ * Ctrl+K. In an admin with thirty models the sidebar stops being navigation and
+ * becomes a list to read, and typing three letters is faster than any of it.
+ * ======================================================================== */
+
+.ff-palette {
+  width: min(36rem, calc(100vw - var(--ff-space-8)));
+  max-height: 70vh;
+  padding: 0;
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-xl);
+  background: var(--ff-surface-raised);
+  color: var(--ff-text);
+  box-shadow: var(--ff-shadow-overlay);
+  /* Sits above centre. A dialog centred vertically drifts down the screen as it
+   * fills with results, which drags the eye with it. The horizontal auto is
+   * restated because the reset zeroes every margin, and centring a modal
+   * `<dialog>` is something the browser does with `margin: auto`. */
+  margin: 12vh auto auto;
+  overflow: hidden;
+}
+
+.ff-palette::backdrop {
+  background: color-mix(in oklch, oklch(0.15 0.02 var(--ff-h)) 50%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.ff-palette__search {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-3);
+  padding: var(--ff-space-4);
+  border-bottom: 1px solid var(--ff-border);
+  color: var(--ff-text-subtle);
+}
+
+.ff-palette__search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ff-text);
+  font: inherit;
+  font-size: var(--ff-text-md);
+}
+
+.ff-palette__search input:focus {
+  outline: none;
+}
+
+.ff-palette__results {
+  max-height: 24rem;
+  padding: var(--ff-space-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.ff-palette__group {
+  padding: var(--ff-space-2) var(--ff-space-3) var(--ff-space-1);
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-xs);
+  font-weight: var(--ff-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ff-palette__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-4);
+  padding: var(--ff-space-2) var(--ff-space-4);
+  border-top: 1px solid var(--ff-border);
+  background: var(--ff-surface-sunken);
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-xs);
+}
+
+.ff-kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding-inline: 4px;
+  background: var(--ff-surface);
+  border: 1px solid var(--ff-border);
+  border-bottom-width: 2px;
+  border-radius: var(--ff-radius-sm);
+  color: var(--ff-text-muted);
+  font-family: var(--ff-font);
+  font-size: 0.6875rem;
+  line-height: 1;
+}
+
+/* The topbar trigger. Looks like a search box because that is what it does,
+ * even though it opens a dialog rather than taking text in place. */
+.ff-palette-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+  min-width: 12rem;
+  height: var(--ff-control-height-sm);
+  padding: 0 var(--ff-space-2) 0 var(--ff-space-3);
+  background: var(--ff-surface-sunken);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
+  color: var(--ff-text-subtle);
+  font: inherit;
+  font-size: var(--ff-text-sm);
+  cursor: pointer;
+}
+
+.ff-palette-trigger:hover {
+  border-color: var(--ff-border-strong);
+  color: var(--ff-text-muted);
+}
+
+.ff-palette-trigger__label {
+  flex: 1 1 auto;
+  text-align: start;
+}
+
+@media (max-width: 60rem) {
+  /* Below this the topbar has no room for it; Ctrl+K still opens the palette. */
+  .ff-palette-trigger__label,
+  .ff-palette-trigger .ff-kbd {
+    display: none;
+  }
+
+  .ff-palette-trigger {
+    min-width: 0;
+    width: var(--ff-control-height-sm);
+    padding: 0;
+    justify-content: center;
+  }
+}
+
+/* ===========================================================================
+ * Pagination
+ *
+ * Numbered. "Page 7 of 40" with two arrows makes reaching page 12 a matter of
+ * clicking Next five times.
+ * ======================================================================== */
+
+.ff-pages {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ff-page-btn {
+  display: grid;
+  place-items: center;
+  min-width: var(--ff-control-height-sm);
+  height: var(--ff-control-height-sm);
+  padding-inline: var(--ff-space-1);
+  border: 1px solid transparent;
+  border-radius: var(--ff-radius);
+  background: none;
+  color: var(--ff-text-muted);
+  font-size: var(--ff-text-sm);
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+
+.ff-page-btn:hover {
+  background: var(--ff-surface-hover);
+  color: var(--ff-text);
+}
+
+.ff-page-btn[aria-current="page"] {
+  background: var(--ff-primary);
+  border-color: var(--ff-primary);
+  color: var(--ff-primary-text);
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-page-btn[aria-disabled="true"] {
+  color: var(--ff-text-subtle);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.ff-page-gap {
+  display: grid;
+  place-items: center;
+  min-width: 1.25rem;
+  color: var(--ff-text-subtle);
+}
+
+/* -- rows per page ------------------------------------------------------- */
+
+.ff-page-size__button {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-1);
+  height: var(--ff-control-height-sm);
+  padding-inline: var(--ff-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--ff-radius);
+  background: none;
+  color: var(--ff-text-muted);
+  font: inherit;
+  font-size: var(--ff-text-sm);
+  cursor: pointer;
+}
+
+.ff-page-size__button:hover {
+  border-color: var(--ff-border);
+  color: var(--ff-text);
+}
+
+/* Opens upward: this control sits at the foot of the table, so there is rarely
+   room below it. */
+.ff-page-size .ff-dropdown__panel {
+  inset-inline-start: 0;
+  inset-inline-end: auto;
+}
+
+/* Always in the layout, only sometimes visible: hiding it outright would shift
+ * every label sideways as the choice moves. */
+.ff-item__mark {
+  flex: 0 0 auto;
+  color: var(--ff-accent);
+  visibility: hidden;
+}
+
+.ff-item[aria-current="true"] {
+  color: var(--ff-text);
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-item[aria-current="true"] .ff-item__mark {
+  visibility: visible;
+}
+
+/* ===========================================================================
+ * Only-without-script
+ *
+ * The counterpart to `.ff-js-only` in the base sheet. A control that script is
+ * about to replace -- the native `<select>` behind a combobox, the link to the
+ * delete page behind the confirm dialog -- is marked with this so it disappears
+ * the moment its replacement exists, and stays when it does not.
+ * ======================================================================== */
+
+:root[data-ff-js] .ff-no-js {
+  display: none;
+}
+
+/* ===========================================================================
+ * Related objects
+ *
+ * The buttons beside a foreign key. Sized and aligned to the picker so the row
+ * reads as one control rather than a control and some decorations.
+ * ======================================================================== */
+
+.ff-with-related {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ff-space-1);
+}
+
+.ff-with-related > .ff-combo,
+.ff-with-related > .ff-select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ff-related {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  /* Matches the control height so the icons sit on its centre line. */
+  min-height: var(--ff-control-height);
+}
+
+.ff-related .ff-action:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.ff-related .ff-action:disabled:hover {
+  background: none;
+  color: var(--ff-text-subtle);
+}
+
+/* ===========================================================================
+ * Popup
+ *
+ * A form opened from a relation field on another form. No shell, so the window
+ * is the form and nothing else.
+ * ======================================================================== */
+
+.ff-popup {
+  padding: var(--ff-space-6) var(--ff-space-5);
+}
+
+/* Nothing to navigate to from a window that exists to answer one question. */
+.ff-popup .ff-page-header__actions,
+.ff-popup .ff-breadcrumbs {
+  display: none;
+}
+
+.ff-popup-note {
+  padding: var(--ff-space-8);
+  color: var(--ff-text-muted);
+  font-family: var(--ff-font);
+  text-align: center;
+}
+
+/* ===========================================================================
+ * Colour
+ *
+ * A swatch and the hex beside it, bound together. The native picker alone
+ * cannot be typed into or read aloud; the text box alone cannot be pointed at.
+ * ======================================================================== */
+
+.ff-color {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+}
+
+.ff-color__swatch {
+  flex: 0 0 auto;
+  width: var(--ff-control-height);
+  height: var(--ff-control-height);
+  padding: 2px;
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius);
+  background: var(--ff-surface);
+  cursor: pointer;
+}
+
+/* Chrome and Firefox each wrap the swatch in their own box; without these the
+ * colour sits in the middle of a grey rectangle rather than filling the
+ * control. */
+.ff-color__swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.ff-color__swatch::-webkit-color-swatch,
+.ff-color__swatch::-moz-color-swatch {
+  border: 0;
+  border-radius: calc(var(--ff-radius) - 2px);
+}
+
+.ff-color__hex {
+  max-width: 10rem;
+  text-transform: uppercase;
+}
+
+/* The English name beside the endonym. Quieter, because someone who reads the
+ * script has already found their language by the time they reach it. */
+.ff-menu-item__aka {
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-xs);
+}
+
+/* ===========================================================================
+ * Date picker
+ *
+ * The native input keeps the value; only its picker is replaced. The platform
+ * indicator is hidden so there is one way to open a calendar rather than two
+ * that look and behave differently.
+ * ======================================================================== */
+
+.ff-datefield {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.ff-datefield .ff-input {
+  padding-inline-end: calc(var(--ff-control-height) - var(--ff-space-1));
+}
+
+.ff-datefield input::-webkit-calendar-picker-indicator {
+  display: none;
+}
+
+.ff-datefield__button {
+  position: absolute;
+  inset-inline-end: var(--ff-space-1);
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ff-radius-sm);
+  background: none;
+  color: var(--ff-text-subtle);
+  cursor: pointer;
+}
+
+.ff-datefield__button:hover {
+  background: var(--ff-surface-hover);
+  color: var(--ff-text);
+}
+
+.ff-datepicker {
+  top: calc(100% + 4px);
+  inset-inline-start: 0;
+  width: 17rem;
+  padding: var(--ff-space-2);
+}
+
+.ff-datepicker[data-ff-place="above"] {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+.ff-datepicker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ff-space-2);
+  padding-bottom: var(--ff-space-2);
+}
+
+.ff-datepicker__month {
+  font-size: var(--ff-text-base);
+  font-weight: var(--ff-weight-medium);
+  text-transform: capitalize;
+}
+
+.ff-datepicker__week,
+.ff-datepicker__days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.ff-datepicker__week span {
+  padding-bottom: var(--ff-space-1);
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-xs);
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.ff-datepicker__day {
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ff-radius-sm);
+  background: none;
+  color: var(--ff-text);
+  font: inherit;
+  font-size: var(--ff-text-sm);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.ff-datepicker__day:hover {
+  background: var(--ff-surface-hover);
+}
+
+/* Days spilling in from the neighbouring months stay visible but recede: the
+ * grid reads as one month with context, rather than six arbitrary weeks. */
+.ff-datepicker__day[data-ff-outside="true"] {
+  color: var(--ff-text-subtle);
+}
+
+.ff-datepicker__day[aria-current="date"] {
+  box-shadow: inset 0 0 0 1px var(--ff-accent-border);
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-datepicker__day[aria-selected="true"] {
+  background: var(--ff-accent);
+  color: var(--ff-accent-text);
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-datepicker__day:focus-visible {
+  outline: var(--ff-focus-width) solid var(--ff-focus-color);
+  outline-offset: -1px;
+}
+
+.ff-datepicker__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ff-space-2);
+  padding-top: var(--ff-space-2);
+  margin-top: var(--ff-space-2);
+  border-top: 1px solid var(--ff-border);
+}
+
+/* ===========================================================================
+ * Duration
+ *
+ * Four boxes rather than one, each saying what it holds. The text input keeps
+ * the value and the name; these only write into it.
+ * ======================================================================== */
+
+.ff-duration {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--ff-space-2);
+}
+
+.ff-duration__part {
+  display: grid;
+  gap: var(--ff-space-1);
+}
+
+.ff-duration__box {
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* The spinners are a second way to change a number that is half the width of a
+ * digit, and they push the value off centre. Arrow keys still step. */
+.ff-duration__box::-webkit-outer-spin-button,
+.ff-duration__box::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.ff-duration__box {
+  -moz-appearance: textfield;
+}
+
+.ff-duration__unit {
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-xs);
+  text-align: center;
+}
+
+/* ===========================================================================
+ * Signups chart
+ *
+ * Bars are elements with a height, drawn by the server. No canvas, no library,
+ * no second request -- the chart is in the first paint, it inherits the theme's
+ * own colours, and it survives script being off.
+ * ======================================================================== */
+
+.ff-grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.ff-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 8rem;
+  /* The baseline, so days with nothing still read as days rather than as gaps. */
+  border-bottom: 1px solid var(--ff-border);
+}
+
+.ff-chart__slot {
+  display: flex;
+  flex: 1;
+  align-items: flex-end;
+  min-width: 0;
+  height: 100%;
+  border-radius: var(--ff-radius-sm) var(--ff-radius-sm) 0 0;
+}
+
+.ff-chart__slot:hover {
+  background: var(--ff-surface-hover);
+}
+
+.ff-chart__bar {
+  width: 100%;
+  min-height: 0;
+  border-radius: var(--ff-radius-sm) var(--ff-radius-sm) 0 0;
+  background: var(--ff-accent);
+}
+
+.ff-chart__slot:hover .ff-chart__bar {
+  background: var(--ff-accent-hover);
+}
+
+.ff-chart__axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--ff-space-2);
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===========================================================================
+ * Map
+ *
+ * Tiles are absolutely positioned and moved with `transform`, so panning is a
+ * composited operation rather than a relayout of every image on every frame.
+ * ======================================================================== */
+
+.ff-map {
+  position: relative;
+  margin-top: var(--ff-space-2);
+  overflow: hidden;
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-md);
+}
+
+.ff-map__canvas {
+  position: relative;
+  height: 16rem;
+  background: var(--ff-surface-sunken);
+  /* Panning is a drag, so the browser must not claim the gesture for scrolling
+   * first -- without this the map barely moves on a touchscreen. */
+  touch-action: none;
+  cursor: crosshair;
+  user-select: none;
+}
+
+.ff-map__tiles {
+  position: absolute;
+  inset: 0;
+}
+
+.ff-map__tile {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 256px;
+  height: 256px;
+  max-width: none;
+  /* Starts invisible and fades in once loaded, so a newly requested tile
+   * appears rather than popping in as a hard-edged rectangle. Zeroed under
+   * prefers-reduced-motion along with every other transition, through the
+   * duration token rather than a rule of its own. */
+  opacity: 0;
+  transition: opacity var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-map__tile[data-ff-loaded="true"] {
+  opacity: 1;
+}
+
+.ff-map__marker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  /* The transform positions the marker's top-left, and the point is its centre. */
+  margin: -7px 0 0 -7px;
+  border: 2px solid var(--ff-surface);
+  border-radius: var(--ff-radius-full);
+  background: var(--ff-danger);
+  box-shadow: var(--ff-shadow-sm);
+  pointer-events: none;
+}
+
+.ff-map__controls {
+  position: absolute;
+  top: var(--ff-space-2);
+  inset-inline-end: var(--ff-space-2);
+  display: grid;
+  gap: var(--ff-space-1);
+}
+
+.ff-map__controls .ff-action {
+  background: var(--ff-surface);
+  box-shadow: var(--ff-shadow-sm);
+}
+
+/* ===========================================================================
+ * File and image fields
+ *
+ * A native file input cannot be prefilled, so a stored value is shown beside
+ * it rather than in it: a thumbnail for an image, a link for anything else,
+ * and a checkbox to remove it without choosing a replacement.
+ * ======================================================================== */
+
+.ff-file-current {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-3);
+  margin-bottom: var(--ff-space-2);
+}
+
+.ff-file-current__thumb {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-sm);
+  object-fit: cover;
+}
+
+.ff-file-current__link {
+  overflow: hidden;
+  color: var(--ff-text);
+  font-size: var(--ff-text-sm);
+  text-decoration: underline;
+  text-decoration-color: var(--ff-border-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ff-file-current__clear {
+  margin-inline-start: auto;
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-sm);
+}

@@ -6,10 +6,20 @@
   context. A separate "partial" template is how the two quietly drift apart.
 #}
   {% if page.items %}
-    <div class="ff-table-wrap ff-scroll ff-mt-4">
-      <table class="ff-table">
+    <div class="ff-table-wrap ff-scroll">
+      <table class="ff-table" {% if actions %}data-ff-selectable{% endif %}>
         <thead>
           <tr>
+            {% if actions %}
+              <th scope="col" class="ff-table__select">
+                <input
+                  class="ff-check"
+                  type="checkbox"
+                  data-ff-select-all
+                  aria-label="{{ _("Select every row on this page") }}"
+                />
+              </th>
+            {% endif %}
             {% for column in columns %}
               <th scope="col" {% if column.sort_state != "none" %}aria-sort="{{ column.sort_state }}"{% endif %}>
                 {% if column.sort_url %}
@@ -20,7 +30,13 @@
                   >
                     {{ column.label }}
                     <span class="ff-table__arrow" aria-hidden="true">
-                      {%- if column.sort_state == "ascending" %}▲{% elif column.sort_state == "descending" %}▼{% else %}⇅{% endif -%}
+                      {%- if column.sort_state == "ascending" -%}
+                        {{ ff_icon("sort-asc", size=13) }}
+                      {%- elif column.sort_state == "descending" -%}
+                        {{ ff_icon("sort-desc", size=13) }}
+                      {%- else -%}
+                        {{ ff_icon("sort", size=13) }}
+                      {%- endif -%}
                     </span>
                   </a>
                 {% else %}
@@ -33,7 +49,23 @@
         </thead>
         <tbody>
           {% for row in rows %}
-            <tr>
+            {# The whole row opens the record, not only the pencil. Hunting for a
+               16px target to open a row people have already pointed at is a step
+               with no purpose. The linked cell is still a real link, so middle
+               click, Ctrl+click and the keyboard all still work -- this only adds
+               a shortcut for the plain click that lands anywhere else. #}
+            <tr data-ff-row-url="{{ row.edit_url }}">
+              {% if actions %}
+                <td class="ff-table__select">
+                  <input
+                    class="ff-check"
+                    type="checkbox"
+                    value="{{ row.key }}"
+                    data-ff-select-row
+                    aria-label="{{ _("Select {name}", name=row.label) }}"
+                  />
+                </td>
+              {% endif %}
               {% for cell in row.cells %}
                 <td {% if cell.numeric %}class="ff-numeric"{% endif %}>
                   {% if cell.boolean %}
@@ -46,8 +78,42 @@
                 </td>
               {% endfor %}
               <td class="ff-nowrap ff-no-print">
-                <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ row.edit_url }}">{{ _("Edit") }}</a>
-                <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ row.delete_url }}">{{ _("Delete") }}</a>
+                {# Icon buttons, always drawn. Text links revealed on hover meant
+                   the actions were invisible until the mouse found them, and
+                   invisible altogether on a touch screen. #}
+                <div class="ff-row-actions">
+                  <a
+                    class="ff-action"
+                    href="{{ row.edit_url }}"
+                    data-ff-tip="{{ _("Edit") }}"
+                  >
+                    {{ ff_icon("edit", size=15) }}
+                    <span class="ff-sr-only">{{ _("Edit {name}", name=row.label) }}</span>
+                  </a>
+                  {# `data-ff-method="post"` makes the confirmed answer delete
+                     the row, rather than following the link to the confirmation
+                     page and asking a second time. Without script the link is
+                     what it has always been: a GET to that page. #}
+                  <a
+                    class="ff-action ff-action--danger"
+                    href="{{ row.delete_url }}"
+                    data-ff-tip="{{ _("Delete") }}"
+                    data-ff-tip-align="end"
+                    data-ff-method="post"
+                    data-ff-confirm="{{ _("Delete {name}?", name=row.label) }}"
+                    data-ff-confirm-body="{{ _("This action cannot be undone.") }}"
+                    {% if cascades %}
+                      {# Naming what else goes is the difference between a
+                         confirmation and a trap, so the dialog has to say
+                         everything the confirmation page would have said. #}
+                      data-ff-confirm-detail="{{ _("These will be deleted too:") }} {{ cascades|join(", ") }}"
+                    {% endif %}
+                    data-ff-confirm-label="{{ _("Delete") }}"
+                  >
+                    {{ ff_icon("trash", size=15) }}
+                    <span class="ff-sr-only">{{ _("Delete {name}", name=row.label) }}</span>
+                  </a>
+                </div>
               </td>
             </tr>
           {% endfor %}
@@ -58,37 +124,92 @@
     <nav class="ff-pagination ff-no-print" aria-label="{{ _("Pagination") }}">
       {# One line, so the rendered text is a contiguous "1–25 of 400" rather
          than being broken by template indentation. #}
-      <span class="ff-pagination__info">{{ "{:,}".format(page.start_index) }}–{{ "{:,}".format(page.end_index) }} of {{ "{:,}".format(page.total) }}</span>
-      {% if page.has_previous %}
-        <a class="ff-btn ff-btn--sm" href="{{ page_url(page.page - 1) }}">{{ _("Previous") }}</a>
-      {% else %}
-        <span class="ff-btn ff-btn--sm" aria-disabled="true">{{ _("Previous") }}</span>
-      {% endif %}
-      <span class="ff-muted">{{ _("Page {page} of {pages}", page=page.page, pages=page.pages) }}</span>
-      {% if page.has_next %}
-        <a class="ff-btn ff-btn--sm" href="{{ page_url(page.page + 1) }}">{{ _("Next") }}</a>
-      {% else %}
-        <span class="ff-btn ff-btn--sm" aria-disabled="true">{{ _("Next") }}</span>
-      {% endif %}
+      <span class="ff-pagination__info">{{ "{:,}".format(page.start_index) }}–{{ "{:,}".format(page.end_index) }} {{ _("of") }} {{ "{:,}".format(page.total) }}</span>
+
+      {# How many rows per page. A link per size rather than a form control, so
+         it works without script and each choice is a URL that can be shared. #}
+      <div class="ff-dropdown ff-page-size">
+        <button class="ff-page-size__button" type="button" data-ff-menu>
+          <span>{{ _("{n} per page", n=page.page_size) }}</span>
+          {{ ff_icon("chevron-down", size=13) }}
+        </button>
+        <div class="ff-pop ff-dropdown__panel">
+          {% for choice in page_sizes %}
+            <a
+              class="ff-item"
+              href="{{ choice.url }}"
+              {% if choice.current %}aria-current="true"{% endif %}
+            >
+              <span class="ff-item__label">{{ _("{n} per page", n=choice.size) }}</span>
+              <span class="ff-item__mark">{{ ff_icon("check", size=14) }}</span>
+            </a>
+          {% endfor %}
+        </div>
+      </div>
+
+      {# The numbered buttons carry the position visually, through the one
+         marked aria-current. This says the same thing in a sentence, for anyone
+         who is hearing the page rather than seeing it. #}
+      <span class="ff-sr-only">{{ _("Page {page} of {pages}", page=page.page, pages=page.pages) }}</span>
+
+      <div class="ff-pages">
+        {% if page.has_previous %}
+          <a class="ff-page-btn" href="{{ page_url(page.page - 1) }}" rel="prev" aria-label="{{ _("Previous") }}">
+            {{ ff_icon("chevron-left", size=15) }}
+          </a>
+        {% else %}
+          <span class="ff-page-btn" aria-disabled="true">{{ ff_icon("chevron-left", size=15) }}</span>
+        {% endif %}
+
+        {# Numbered, with gaps. Reaching page 12 by pressing Next eleven times
+           is not navigation. #}
+        {% for link in page_links %}
+          {% if link.gap %}
+            <span class="ff-page-gap" aria-hidden="true">…</span>
+          {% elif link.current %}
+            <span class="ff-page-btn" aria-current="page">{{ link.number }}</span>
+          {% else %}
+            <a class="ff-page-btn" href="{{ link.url }}" aria-label="{{ _("Page {page}", page=link.number) }}">{{ link.number }}</a>
+          {% endif %}
+        {% endfor %}
+
+        {% if page.has_next %}
+          <a class="ff-page-btn" href="{{ page_url(page.page + 1) }}" rel="next" aria-label="{{ _("Next") }}">
+            {{ ff_icon("chevron-right", size=15) }}
+          </a>
+        {% else %}
+          <span class="ff-page-btn" aria-disabled="true">{{ ff_icon("chevron-right", size=15) }}</span>
+        {% endif %}
+      </div>
     </nav>
   {% else %}
-    <div class="ff-card ff-mt-4">
+    <div class="ff-card">
       <div class="ff-empty">
-        <div class="ff-empty__icon" aria-hidden="true">◇</div>
+        <div class="ff-empty__icon" aria-hidden="true">
+          {% if query.search or query.filters %}
+            {{ ff_icon("search", size=22) }}
+          {% else %}
+            {{ ff_icon("inbox", size=22) }}
+          {% endif %}
+        </div>
         {% if query.search or query.filters %}
           <div class="ff-empty__title">{{ _("Nothing matched") }}</div>
           <p class="ff-empty__body">
             {{ _("Nothing matches the current search and filters.") }}
           </p>
-          <a class="ff-btn" href="{{ list_url }}">{{ _("Clear search and filters") }}</a>
+          <a class="ff-btn" href="{{ list_url }}">
+            {{ ff_icon("filter-off", size=15) }}
+            {{ _("Clear search and filters") }}
+          </a>
         {% else %}
           <div class="ff-empty__title">{{ _("Nothing here yet") }}</div>
           <p class="ff-empty__body">
-            Nothing has been added to <code class="ff-mono">{{ admin.spec.key }}</code> yet.
+            {{ _("Nothing has been added to {name} yet.", name=model_title|lower) }}
           </p>
           {% if add_url %}
             <a class="ff-btn ff-btn--primary" href="{{ add_url }}">
-              {{ _("Add the first {name}", name=_(admin.singular)|lower) }}
+              {{ ff_icon("plus", size=15) }}
+              {{ _("Add the first {name}", name=model_singular|lower) }}
             </a>
           {% endif %}
         {% endif %}

@@ -1,0 +1,35 @@
+{#
+  What a popup shows for the instant between saving and closing.
+
+  The row that was just created is carried in data attributes rather than in an
+  inline script: the admin's CSP is `script-src 'self'` with no nonce, and
+  keeping it that way is worth more than the convenience of a one-line
+  `<script>`. `fastfort.js` finds this element on load, hands the value to the
+  window that opened this one, and closes it.
+
+  Deliberately not built on the shell. There is nothing to navigate to from a
+  window that is about to close.
+#}
+<!doctype html>
+<html lang="{{ language }}" {% for name, value in theme.root_attributes().items() %}{{ name }}="{{ value }}" {% endfor %}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>{{ page_title }}</title>
+    <script src="{{ static_url }}/js/boot.js"></script>
+    {% for stylesheet in stylesheets %}
+      <link rel="stylesheet" href="{{ stylesheet }}" />
+    {% endfor %}
+    <script src="{{ static_url }}/js/fastfort.js" defer></script>
+  </head>
+  <body>
+    <div
+      id="ff-popup-result"
+      data-ff-value="{{ result_value }}"
+      data-ff-label="{{ result_label }}"
+      data-ff-field="{{ result_field }}"
+      hidden
+    ></div>
+    <p class="ff-popup-note">{{ _("Saved. You can close this window.") }}</p>
+  </body>
+</html>

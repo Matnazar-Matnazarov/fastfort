@@ -3,10 +3,10 @@
 {% block content %}
   <div class="ff-page-header">
     <div class="ff-page-header__text">
-      <h1 class="ff-h1">{{ _(admin.title) }}</h1>
+      <h1 class="ff-h1">{{ model_title }}</h1>
       <p class="ff-muted ff-mt-2">
         {% if page.total %}
-          {{ "{:,}".format(page.total) }} {{ (_(admin.title) if page.total != 1 else _(admin.singular))|lower }}
+          {{ "{:,}".format(page.total) }} {{ (model_title if page.total != 1 else model_singular)|lower }}
         {% else %}
           {{ _("Nothing here yet") }}
         {% endif %}
@@ -14,86 +14,271 @@
     </div>
     {% if add_url %}
       <div class="ff-page-header__actions">
-        <a class="ff-btn ff-btn--primary" href="{{ add_url }}">{{ _("Add {name}", name=_(admin.singular)) }}</a>
+        <a class="ff-btn ff-btn--primary" href="{{ add_url }}">
+          {{ ff_icon("plus", size=16) }}
+          {{ _("Add {name}", name=model_singular) }}
+        </a>
       </div>
     {% endif %}
   </div>
 
-  {# data-ff-live turns this into an in-place update when JavaScript is running.
-     Without it the form and its links still work as a plain GET, which is why
-     every control below is a real input and every sort header a real link. #}
-  <form
-    class="ff-filters ff-no-print"
-    method="get"
-    action="{{ list_url }}"
-    data-ff-live
-    data-ff-target="#ff-results"
-  >
-    {% if admin.searchable() %}
-      <div class="ff-search">
-        <span class="ff-search__icon" aria-hidden="true">⌕</span>
-        <input
-          class="ff-input"
-          type="search"
-          name="q"
-          value="{{ query.search }}"
-          placeholder="{{ _("Search {name}…", name=_(admin.title)|lower) }}"
-          aria-label="{{ _("Search") }}"
-        />
-      </div>
-    {% endif %}
-
-    {% for filter in filters %}
-      {% if filter.kind == "range" %}
-        {# Two bounds rather than one value: "created this month" is the question
-           people actually ask of a date column. #}
-        <div class="ff-range" role="group" aria-label="{{ filter.label }}">
-          <span class="ff-range__label">{{ filter.label }}</span>
+  <div class="ff-listing">
+    {# data-ff-live turns this into an in-place update when JavaScript is
+       running. Without it the form and its links still work as a plain GET,
+       which is why every control below is a real input and every sort header a
+       real link. #}
+    <form
+      class="ff-toolbar ff-no-print"
+      method="get"
+      action="{{ list_url }}"
+      data-ff-live
+      data-ff-target="#ff-results"
+    >
+      {% if admin.searchable() %}
+        <div class="ff-search ff-toolbar__search">
+          <span class="ff-search__icon" aria-hidden="true">{{ ff_icon("search", size=15) }}</span>
           <input
-            class="ff-input ff-input--sm"
-            type="{{ filter.input_type }}"
-            name="{{ filter.from_name }}"
-            value="{{ filter.from_value }}"
-            aria-label="{{ filter.label }} — {{ _("from") }}"
-          />
-          <span class="ff-range__dash" aria-hidden="true">–</span>
-          <input
-            class="ff-input ff-input--sm"
-            type="{{ filter.input_type }}"
-            name="{{ filter.to_name }}"
-            value="{{ filter.to_value }}"
-            aria-label="{{ filter.label }} — {{ _("to") }}"
+            class="ff-input"
+            type="search"
+            name="q"
+            value="{{ query.search }}"
+            placeholder="{{ _("Search {name}…", name=model_title|lower) }}"
+            aria-label="{{ _("Search") }}"
           />
         </div>
-      {% else %}
-        <label class="ff-field">
-          <span class="ff-sr-only">{{ filter.label }}</span>
-          <select class="ff-select" name="{{ filter.name }}" aria-label="{{ filter.label }}">
-            <option value="">{{ filter.label }}: {{ _("any") }}</option>
-            {% for choice in filter.choices %}
-              <option value="{{ choice.value }}" {% if choice.selected %}selected{% endif %}>
-                {{ choice.label }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
       {% endif %}
-    {% endfor %}
 
-    {# The ordering rides along in a hidden field, so applying a filter does not
-       silently reset the column the user sorted by. #}
-    {% if ordering_param %}
-      <input type="hidden" name="o" value="{{ ordering_param }}" />
+      {% if filters %}
+        {# One button, not a row of controls. Every filterable column as its own
+           box across the top does not survive a model with eight of them, and it
+           leaves nowhere to put a filter that needs more than a line. The panel
+           holds them all and states how many are on. #}
+        <button
+          class="ff-btn ff-filters-toggle ff-js-only"
+          type="button"
+          data-ff-filters
+          aria-controls="ff-filter-panel"
+          aria-expanded="false"
+        >
+          {{ ff_icon("sliders", size=15) }}
+          {{ _("Filters") }}
+          {% if active_filters %}
+            <span class="ff-filters-toggle__count">{{ active_filters|length }}</span>
+          {% endif %}
+        </button>
+
+        {# Without script this is not a panel at all: it lays out inline, below
+           the search box, and Apply submits it. A popover nobody can open would
+           make every filter unreachable. #}
+        <div class="ff-filter-panel" id="ff-filter-panel" hidden>
+          <div class="ff-filter-panel__head ff-js-only">
+            <span class="ff-filter-panel__title">{{ _("Filters") }}</span>
+            <button
+              class="ff-btn ff-btn--ghost ff-btn--icon ff-btn--sm"
+              type="button"
+              data-ff-filters-close
+              aria-label="{{ _("Close") }}"
+            >
+              {{ ff_icon("close", size=16) }}
+            </button>
+          </div>
+
+          <div class="ff-filter-panel__body">
+          {% for filter in filters %}
+            <fieldset class="ff-filter-group">
+              <legend class="ff-filter-group__label">{{ filter.label }}</legend>
+
+              {% if filter.kind == "range" %}
+                {# Nobody types two dates to ask "this month". The presets are
+                   what a date filter is used for; the two boxes below are the
+                   escape hatch for the range they do not cover.
+
+                   Buttons, not radios: they only exist with script, and a radio
+                   with a name submits itself alongside the bounds it filled in,
+                   which put a meaningless `…__preset=on` in every URL. #}
+                <div class="ff-date-presets ff-js-only" role="group" aria-label="{{ filter.label }}">
+                  {% for preset in filter.presets %}
+                    <button
+                      class="ff-date-preset"
+                      type="button"
+                      data-ff-from="{{ preset.from_value }}"
+                      data-ff-to="{{ preset.to_value }}"
+                      aria-pressed="{{ "true" if preset.current else "false" }}"
+                    >{{ preset.label }}</button>
+                  {% endfor %}
+                </div>
+
+                <div class="ff-range-panel">
+                  <label class="ff-range-panel__row">
+                    <span class="ff-range__label">{{ _("from") }}</span>
+                    <input
+                      class="ff-input ff-input--sm"
+                      type="{{ filter.input_type }}"
+                      name="{{ filter.from_name }}"
+                      value="{{ filter.from_value }}"
+                      aria-label="{{ filter.label }} — {{ _("from") }}"
+                    />
+                  </label>
+                  <label class="ff-range-panel__row">
+                    <span class="ff-range__label">{{ _("to") }}</span>
+                    <input
+                      class="ff-input ff-input--sm"
+                      type="{{ filter.input_type }}"
+                      name="{{ filter.to_name }}"
+                      value="{{ filter.to_value }}"
+                      aria-label="{{ filter.label }} — {{ _("to") }}"
+                    />
+                  </label>
+                </div>
+
+              {% elif filter.kind == "search" %}
+                {# Too many rows to list. A multi-select backed by the
+                   autocomplete endpoint; a native multi-select without script. #}
+                <select
+                  class="ff-select"
+                  name="{{ filter.param }}"
+                  aria-label="{{ filter.label }}"
+                  multiple
+                  size="4"
+                  data-ff-combo
+                  data-ff-search="always"
+                  data-ff-placeholder="{{ _("any") }}"
+                  data-ff-url="{{ filter.url }}"
+                >
+                  {% for choice in filter.choices %}
+                    <option value="{{ choice.value }}" {% if choice.selected %}selected{% endif %}>
+                      {{ choice.label }}
+                    </option>
+                  {% endfor %}
+                </select>
+
+              {% else %}
+                {# Checkboxes, not a dropdown. Every value is worth showing at
+                   once here, several can be on together, and the whole point of
+                   the panel is that there is room. They submit `field__in`, so
+                   ticking three is one query rather than three. #}
+                <div class="ff-filter-options ff-scroll">
+                  {% for choice in filter.choices %}
+                    <label class="ff-filter-option">
+                      <input
+                        class="ff-check"
+                        type="checkbox"
+                        name="{{ filter.param }}"
+                        value="{{ choice.value }}"
+                        {% if choice.selected %}checked{% endif %}
+                      />
+                      <span class="ff-filter-option__label">{{ choice.label }}</span>
+                    </label>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </fieldset>
+          {% endfor %}
+          </div>
+
+          <div class="ff-filter-panel__foot">
+            <button class="ff-btn ff-btn--primary ff-btn--sm" type="submit">
+              {{ _("Apply") }}
+            </button>
+            {% if active_filters %}
+              <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ list_url }}">{{ _("Reset") }}</a>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+
+      {# The ordering rides along in a hidden field, so applying a filter does
+         not silently reset the column the user sorted by. #}
+      {% if ordering_param %}
+        <input type="hidden" name="o" value="{{ ordering_param }}" />
+      {% endif %}
+
+      <div class="ff-toolbar__end">
+        <span class="ff-busy ff-spinner" aria-hidden="true"></span>
+
+        {% if exports %}
+          {# Downloads what is on screen, filters and ordering included. A button
+             that ignored them would export the whole model, which is never what
+             someone who has just narrowed a list is asking for. #}
+          <div class="ff-dropdown">
+            <button class="ff-btn ff-btn--sm" type="button" data-ff-menu>
+              {{ ff_icon("download", size=15) }}
+              {{ _("Export") }}
+            </button>
+            <div class="ff-pop ff-dropdown__panel">
+              {% for entry in exports %}
+                <a class="ff-item" href="{{ entry.url }}" download>
+                  <span class="ff-item__icon">{{ ff_icon("file", size=15) }}</span>
+                  <span class="ff-item__label">{{ entry.label }}</span>
+                </a>
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
+        {# Without script nothing applies on change, and a model with no filters
+           would otherwise offer no submit at all -- leaving Enter in the search
+           box as the only way to run it, which is not discoverable. #}
+        <button class="ff-btn ff-no-js" type="submit">{{ _("Apply") }}</button>
+        {% if active_filters %}
+          <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ list_url }}">
+            {{ ff_icon("filter-off", size=15) }}
+            {{ _("Clear") }}
+          </a>
+        {% endif %}
+      </div>
+    </form>
+
+    {% if active_filters %}
+      {# What is currently narrowing the list, in words, each removable on its
+         own. The commonest support question about any admin is "why can I not
+         find this row", answered by a filter someone left set. #}
+      <div class="ff-active-filters">
+        <span class="ff-active-filters__label">{{ _("Filtered by") }}</span>
+        {% for chip in active_filters %}
+          <a class="ff-filter-chip" href="{{ chip.remove_url }}">
+            <span class="ff-filter-chip__field">{{ chip.field }}:</span>
+            <span>{{ chip.value }}</span>
+            <span class="ff-filter-chip__remove" aria-hidden="true">{{ ff_icon("close", size=11) }}</span>
+            <span class="ff-sr-only">{{ _("Remove this filter") }}</span>
+          </a>
+        {% endfor %}
+      </div>
     {% endif %}
 
-    <button class="ff-btn" type="submit">{{ _("Apply") }}</button>
-    <span class="ff-busy ff-spinner" aria-hidden="true"></span>
-    {% if query.search or query.filters %}
-      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">{{ _("Clear") }}</a>
-    {% endif %}
-  </form>
-
-  <div id="ff-results" aria-live="polite" aria-busy="false">
-    {% include "model/_results.html" %}
+    <div id="ff-results" aria-live="polite" aria-busy="false">
+      {% include "model/_results.html" %}
+    </div>
   </div>
+
+  {% if actions %}
+    {# Outside #ff-results so it survives a live update, and so the selection it
+       describes is not wiped out by the fragment that replaces the rows. #}
+    <form
+      class="ff-bulkbar ff-js-only ff-no-print"
+      id="ff-bulkbar"
+      method="post"
+      action="{{ action_url }}"
+      hidden
+    >
+      <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+      <span data-ff-keys hidden></span>
+      <span class="ff-bulkbar__count" data-ff-count>0 {{ _("selected") }}</span>
+      {% for entry in actions %}
+        <button
+          class="ff-btn ff-btn--sm {% if entry.danger %}ff-btn--danger{% endif %}"
+          type="submit"
+          name="action"
+          value="{{ entry.name }}"
+          {% if entry.danger %}
+            data-ff-confirm="{{ _(entry.label) }}"
+            data-ff-confirm-body="{{ _("This cannot be undone.") }}"
+            data-ff-confirm-label="{{ _(entry.label) }}"
+          {% endif %}
+        >
+          {{ ff_icon(entry.icon, size=15) }}
+          {{ _(entry.label) }}
+        </button>
+      {% endfor %}
+    </form>
+  {% endif %}
 {% endblock %}
