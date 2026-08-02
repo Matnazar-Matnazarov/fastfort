@@ -45,6 +45,7 @@ class FieldType(StrEnum):
     FILE = "file"
     IMAGE = "image"
     ARRAY = "array"
+    GEOMETRY = "geometry"
     FOREIGN_KEY = "foreign_key"
     ONE_TO_ONE = "one_to_one"
     MANY_TO_MANY = "many_to_many"
@@ -71,7 +72,15 @@ _RELATION_TYPES = frozenset(
 )
 
 #: Types whose values are never rendered as plain text in a list column.
-_NON_TEXT_TYPES = frozenset({FieldType.PASSWORD, FieldType.FILE, FieldType.IMAGE, FieldType.JSON})
+_NON_TEXT_TYPES = frozenset(
+    {
+        FieldType.PASSWORD,
+        FieldType.FILE,
+        FieldType.IMAGE,
+        FieldType.JSON,
+        FieldType.GEOMETRY,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)

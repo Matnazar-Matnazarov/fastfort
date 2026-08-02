@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
-from fastfort.core.exceptions import ObjectNotFound, ValidationError
+from fastfort.core.exceptions import AdapterError, ObjectNotFound, ValidationError
 from fastfort.orm.base import PrimaryKey, RelatedChoice
 from fastfort.spec import ListQuery, ModelSpec, Page
 
@@ -94,14 +94,20 @@ class SQLAlchemyAdapter:
         return obj
 
     async def related_choices(
-        self, field: str, term: str, *, limit: int
+        self, field: str, term: str, *, limit: int, search_fields: Sequence[str] = ()
     ) -> Sequence[RelatedChoice]:
         spec = self._spec.field(field)
         if spec.relation is None:
             raise ValidationError(f"{field!r} is not a relation field.")
 
         target = self._relation_target(field)
-        target_spec_names: list[str] = [
+        # What the caller declared wins. The label a person reads is the target's
+        # `__str__`, which cannot be searched in SQL, so the columns it is built
+        # from have to be named -- and the target's own `ModelAdmin.search_fields`
+        # is where a project has already said which those are. The conventional
+        # names are the fallback for a model that never said.
+        declared = [name for name in search_fields if hasattr(target, name)]
+        target_spec_names: list[str] = declared or [
             name
             for name in ("name", "title", "label", "slug", "email", "username")
             if hasattr(target, name)
@@ -129,17 +135,32 @@ class SQLAlchemyAdapter:
         self.session.add(obj)
         # Flush rather than commit: the caller owns the transaction, but generated
         # keys and defaults have to be readable before it decides.
-        await self.session.flush()
+        await self._flush()
         return obj
 
     async def update(self, obj: Any, data: Mapping[str, Any]) -> Any:
         await self._apply(obj, data)
-        await self.session.flush()
+        await self._flush()
         return obj
 
     async def delete(self, obj: Any) -> None:
         await self.session.delete(obj)
-        await self.session.flush()
+        await self._flush()
+
+    async def _flush(self) -> None:
+        """Flush, turning a constraint violation into something a form can show.
+
+        The database is the last line of validation and it catches what the spec
+        cannot: a unique index, a check constraint, a foreign key that no longer
+        points anywhere. Left as `IntegrityError` those surfaced as a 500 -- the
+        person filling the form saw a stack trace instead of the field they had
+        to change, and their input was gone. `AdapterError` is what the views
+        already catch and re-render the form with.
+        """
+        try:
+            await self.session.flush()
+        except sa.exc.IntegrityError as exc:
+            raise AdapterError(_constraint_message(exc)) from exc
 
     async def bulk_update(self, query: ListQuery, data: Mapping[str, Any]) -> int:
         writable = self._writable(data)
@@ -263,6 +284,26 @@ class SQLAlchemyAdapter:
 
     def _attribute(self, name: str) -> InstrumentedAttribute[Any]:
         return cast("InstrumentedAttribute[Any]", getattr(self.model, name))
+
+
+def _constraint_message(error: sa.exc.IntegrityError) -> str:
+    """What to tell someone whose save the database refused.
+
+    The driver's text names the constraint and often the column, which is more
+    use than "integrity error" -- but it also carries the whole failing row,
+    which can be a screenful and may contain data the person should not see
+    echoed back. Only the first line is kept.
+    """
+    detail = str(getattr(error, "orig", error)).strip().splitlines()
+    first = detail[0].strip() if detail else ""
+    # asyncpg stringifies as "<class 'asyncpg.exceptions.X'>: the real message".
+    # The class name is noise to everyone who is not reading a traceback.
+    _, separator, tail = first.partition(">: ")
+    message = (tail if separator else first).strip()
+    # No "could not be saved" prefix: the banner that renders this already says
+    # so, and repeating it produced "This could not be saved: This could not be
+    # saved: duplicate key…".
+    return message or "The database rejected this change."
 
 
 def _identity(obj: Any) -> Any:

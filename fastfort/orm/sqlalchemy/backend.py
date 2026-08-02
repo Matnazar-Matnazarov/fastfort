@@ -115,6 +115,17 @@ class SQLAlchemyBackend:
     def __repr__(self) -> str:
         return f"<SQLAlchemyBackend {self.dialect}>"
 
+    def set_key_resolver(self, resolve: Callable[[type], str]) -> None:
+        """Replace the rule that names a relation's target model.
+
+        Called by `FastFort` so that a relation points at the key the target is
+        *registered* under rather than one derived from its module. Anything
+        already introspected is dropped, because a cached spec would still carry
+        the old names.
+        """
+        self._resolve_key = resolve
+        self._specs.clear()
+
     # -- identity -----------------------------------------------------------
 
     @property

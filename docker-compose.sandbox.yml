@@ -1,0 +1,33 @@
+# The database behind `test_api`, the scratch application.
+#
+#   docker compose -f docker-compose.sandbox.yml up -d
+#   uv run uvicorn test_api.main:app --reload
+#
+# Separate from `docker-compose.test.yml` on purpose. That one is throwaway --
+# tmpfs, wiped between runs, plain PostgreSQL. This one keeps its data across
+# restarts, because a sandbox you have to re-seed every time is a sandbox nobody
+# opens, and it carries PostGIS so the geography column in `test_api.models` has
+# somewhere to live.
+#
+# The port is shifted again, so it collides with neither 5432 on the host nor the
+# test containers on 55432.
+
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: fastfort
+      POSTGRES_PASSWORD: fastfort
+      POSTGRES_DB: fastfort_sandbox
+    ports:
+      - "55433:5432"
+    volumes:
+      - sandbox-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fastfort -d fastfort_sandbox"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  sandbox-data:

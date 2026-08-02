@@ -18,7 +18,7 @@ from fastfort.auth.user_config import UserModelConfig
 
 from .exceptions import ConfigurationError, ImproperlyConfigured, RegistrationError
 from .hooks import HookRegistry
-from .registry import AdminRegistry, RegistryEntry
+from .registry import AdminRegistry, RegistryEntry, default_model_key
 from .settings import FastFortSettings
 
 if TYPE_CHECKING:
@@ -42,6 +42,7 @@ class FastFort:
         self.registry: AdminRegistry[Any] = AdminRegistry()
         self.hooks = HookRegistry()
         self._backend = backend
+        self._teach_backend_the_registry()
         self._user_config: UserModelConfig | None = None
         self._mounted_on: FastAPI | None = None
         #: Set by the admin router when it is built. Exposed so a project can
@@ -73,6 +74,32 @@ class FastFort:
                 hint="Configure FastFort fully before calling mount().",
             )
         self._backend = backend
+        self._teach_backend_the_registry()
+
+    def _teach_backend_the_registry(self) -> None:
+        """Let the backend name a relation's target by its *registered* key.
+
+        Introspection derives a key from the model's module by default, so a
+        `Product.category` pointing at a model registered as `shop.category`
+        came back as `test_api.category` -- a key nothing could look up. Every
+        feature that resolves a relation to the admin behind it was therefore
+        quietly doing nothing: the autocomplete fell back to guessing which
+        columns to search, and the buttons beside a foreign key never appeared.
+
+        Resolved through the registry when the target is registered, and by the
+        backend's own rule when it is not, because pointing at a model that has
+        no admin page of its own is perfectly normal.
+        """
+        backend = self._backend
+        setter = getattr(backend, "set_key_resolver", None)
+        if setter is None:
+            return
+
+        def resolve(model: type) -> str:
+            entry = self.registry.get(model)
+            return entry.key if entry is not None else default_model_key(model)
+
+        setter(resolve)
 
     @property
     def user_config(self) -> UserModelConfig:
