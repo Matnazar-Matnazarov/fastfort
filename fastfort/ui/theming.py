@@ -47,6 +47,7 @@ class Theme:
     density: str
     logo_url: str | None
     favicon_url: str | None
+    richtext_url: str | None
     custom_css_url: str | None
     environment_label: str | None
     environment_tone: str
@@ -60,6 +61,7 @@ class Theme:
             density=settings.density,
             logo_url=settings.logo_url,
             favicon_url=settings.favicon_url,
+            richtext_url=settings.richtext_url,
             custom_css_url=settings.custom_css_url,
             environment_label=settings.environment_label,
             environment_tone=settings.environment_tone,

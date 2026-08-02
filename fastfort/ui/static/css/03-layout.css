@@ -16,7 +16,7 @@
   transition: grid-template-columns var(--ff-duration) var(--ff-ease);
 }
 
-.ff-app[data-collapsed="true"] {
+:root[data-ff-collapsed="true"] .ff-app {
   grid-template-columns: var(--ff-sidebar-width-collapsed) minmax(0, 1fr);
 }
 
@@ -155,15 +155,15 @@
 }
 
 /* Collapsed: labels are hidden but remain in the accessibility tree. */
-.ff-app[data-collapsed="true"] .ff-collapsible {
+:root[data-ff-collapsed="true"] .ff-app .ff-collapsible {
   display: none;
 }
 
 /* With the labels gone the icons carry the whole rail, so they centre rather
  * than sitting against a left edge that no longer has anything to align to. */
-.ff-app[data-collapsed="true"] .ff-nav-item,
-.ff-app[data-collapsed="true"] .ff-brand,
-.ff-app[data-collapsed="true"] .ff-account > summary {
+:root[data-ff-collapsed="true"] .ff-app .ff-nav-item,
+:root[data-ff-collapsed="true"] .ff-app .ff-brand,
+:root[data-ff-collapsed="true"] .ff-app .ff-account > summary {
   justify-content: center;
   padding-inline: var(--ff-space-2);
 }
@@ -171,7 +171,7 @@
 /* The group label becomes the rule that separates the groups: collapsed, the
  * words would not fit, but the grouping still has to be visible. It stays in the
  * accessibility tree, where it is still the name of what follows. */
-.ff-app[data-collapsed="true"] .ff-nav-group__label {
+:root[data-ff-collapsed="true"] .ff-app .ff-nav-group__label {
   height: 1px;
   overflow: hidden;
   padding: 0;
@@ -278,7 +278,7 @@
 
 @media (max-width: 60rem) {
   .ff-app,
-  .ff-app[data-collapsed="true"] {
+  :root[data-ff-collapsed="true"] .ff-app {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "topbar"
@@ -301,18 +301,18 @@
 
   /* The drawer is always full width, so the collapsed rail's rules have nothing
    * to do here and would only shrink a sidebar that is already an overlay. */
-  .ff-app[data-collapsed="true"] .ff-collapsible {
+  :root[data-ff-collapsed="true"] .ff-app .ff-collapsible {
     display: revert;
   }
 
-  .ff-app[data-collapsed="true"] .ff-nav-item,
-  .ff-app[data-collapsed="true"] .ff-brand,
-  .ff-app[data-collapsed="true"] .ff-account > summary {
+  :root[data-ff-collapsed="true"] .ff-app .ff-nav-item,
+  :root[data-ff-collapsed="true"] .ff-app .ff-brand,
+  :root[data-ff-collapsed="true"] .ff-app .ff-account > summary {
     justify-content: flex-start;
     padding-inline: var(--ff-space-3);
   }
 
-  .ff-app[data-collapsed="true"] .ff-nav-group__label {
+  :root[data-ff-collapsed="true"] .ff-app .ff-nav-group__label {
     height: auto;
     padding: var(--ff-space-1) var(--ff-space-2);
     margin: 0;
@@ -333,8 +333,24 @@
 }
 
 @media (min-width: 60.0625rem) {
-  .ff-scrim,
-  .ff-drawer-toggle {
+  .ff-scrim {
+    display: none;
+  }
+
+  /* Scoped to the topbar to outrank `.ff-btn`, which declares its own `display`
+   * from a stylesheet that loads after this one. A bare `.ff-drawer-toggle`
+   * loses that tie, which left the drawer button on screen at desktop widths
+   * doing nothing at all -- the drawer it opens only exists below this
+   * breakpoint. */
+  .ff-topbar .ff-drawer-toggle {
+    display: none;
+  }
+}
+
+@media (max-width: 60rem) {
+  /* Below the breakpoint the sidebar is a drawer, so there is nothing to
+   * collapse; the drawer button is the control that applies. */
+  .ff-topbar .ff-collapse-toggle {
     display: none;
   }
 }

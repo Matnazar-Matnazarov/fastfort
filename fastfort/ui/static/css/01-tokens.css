@@ -308,3 +308,18 @@
     --ff-duration-slow: 0ms;
   }
 }
+
+/* --- Button colour ---------------------------------------------------------
+ * The primary action is neutral by default -- near-black on light, near-white
+ * on dark -- because a blue Save beside a blue Add beside a blue link gives a
+ * page three equally loud things and no focal point.
+ *
+ * Some people want it in the brand colour anyway, and that is a preference
+ * rather than a mistake, so the appearance panel offers it. Set on the root by
+ * `boot.js` before the first paint, like every other choice there.
+ */
+:root[data-ff-primary="accent"] {
+  --ff-primary: var(--ff-accent);
+  --ff-primary-hover: var(--ff-accent-hover);
+  --ff-primary-text: var(--ff-accent-text);
+}

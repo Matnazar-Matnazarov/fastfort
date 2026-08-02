@@ -130,9 +130,21 @@ body {
  * none of them has to be re-drawn for dark mode.
  */
 
+/* The stroke lives here rather than on the sprite. A `<use>` clones the symbol
+ * into the shadow tree of the element that references it, so the cloned paths
+ * inherit from *this* element -- not from the `<svg>` the symbol was defined in.
+ * Presentation attributes on the sprite root therefore never reach them, and
+ * every icon renders as a solid black silhouette, which is exactly what it was
+ * doing. Setting the properties here is also what lets an icon take its colour
+ * from `currentColor` at the point of use. */
 .ff-icon {
   display: block;
   flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* The sprite itself is a definition, not a picture. Removed from layout without
