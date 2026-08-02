@@ -87,6 +87,7 @@ def build_auth_router(fort: FastFort, auth: AdminAuth, renderer: Renderer) -> AP
             # `?next=` that says where the person was headed.
             current_path=f"{login_url}?next={quote(next_url, safe='/')}" if next_url else login_url,
             stylesheets=theme.stylesheets(static_url),
+            static_url=static_url,
             version=__version__,
             login_url=login_url,
             next_url=next_url,
