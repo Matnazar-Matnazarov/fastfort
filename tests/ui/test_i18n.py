@@ -54,6 +54,95 @@ def test_a_catalogue_is_valid_json_of_strings(code: str) -> None:
     assert all(isinstance(k, str) and isinstance(v, str) and v for k, v in loaded.items())
 
 
+#: Chrome strings that reach the translator as data rather than as a literal at
+#: the call site -- date presets, accent names, the built-in action label. The
+#: scanner cannot see these, so they are listed once here instead.
+_INDIRECT = frozenset(
+    {
+        "Today",
+        "Yesterday",
+        "Last 7 days",
+        "Last 30 days",
+        "This week",
+        "This month",
+        "Last month",
+        "This year",
+        "Violet",
+        "Indigo",
+        "Blue",
+        "Sky",
+        "Teal",
+        "Green",
+        "Lime",
+        "Amber",
+        "Orange",
+        "Red",
+        "Pink",
+        "Magenta",
+        "Add",
+        "Delete selected",
+        "Leave blank to keep the current password.",
+    }
+)
+
+
+def _translated_literals() -> set[str]:
+    """Every string the admin's own interface passes through the translator.
+
+    Templates call `_("…")`; the Python layer calls a `Translator` bound to a
+    local name. Both are scanned, because a string added in either place and not
+    added to the catalogues is invisible until someone switches language and
+    finds one English sentence in the middle of a translated page.
+
+    Model and field names are deliberately absent: those are the project's words
+    for its own domain, and FastFort does not translate them.
+    """
+    import pathlib
+
+    package = pathlib.Path(__file__).resolve().parents[2] / "fastfort"
+    found: set[str] = set(_INDIRECT)
+
+    for path in (package / "ui" / "templates").rglob("*.html"):
+        text = path.read_text(encoding="utf-8")
+        found |= set(re.findall(r'_\(\s*"((?:[^"\\]|\\.)*)"', text))
+        found |= set(re.findall(r"_\(\s*'((?:[^'\\]|\\.)*)'", text))
+
+    for path in package.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        found |= set(re.findall(r'(?:translate|label_of)\(\s*"((?:[^"\\]|\\.)*)"', text))
+
+    return found
+
+
+@pytest.mark.parametrize("code", [c for c in LANGUAGES if c != DEFAULT_LANGUAGE])
+def test_every_interface_string_is_translated(code: str) -> None:
+    """A string added without a catalogue entry renders English and looks broken.
+
+    This is the check that keeps the admin from drifting back into half a page
+    in one language: it fails on the commit that adds the string, not months
+    later when someone switches to Uzbek and finds "20 per page" in the middle
+    of an otherwise translated list.
+    """
+    catalog = json.loads((LOCALE_DIR / f"{code}.json").read_text(encoding="utf-8"))
+    missing = sorted(text for text in _translated_literals() if text not in catalog)
+
+    assert missing == [], f"{code} is missing: {missing}"
+
+
+@pytest.mark.parametrize("code", [c for c in LANGUAGES if c != DEFAULT_LANGUAGE])
+def test_a_catalogue_carries_nothing_the_interface_does_not_use(code: str) -> None:
+    """A catalogue that accumulates dead entries stops being reviewable.
+
+    Model names used to live in here. They do not any more: a model's name is the
+    project's word for its own domain, and translating it was never FastFort's
+    job -- Django does not translate your model names either.
+    """
+    catalog = json.loads((LOCALE_DIR / f"{code}.json").read_text(encoding="utf-8"))
+    stale = sorted(set(catalog) - _translated_literals())
+
+    assert stale == [], f"{code} carries entries nothing renders: {stale}"
+
+
 @pytest.mark.parametrize("code", [c for c in LANGUAGES if c != DEFAULT_LANGUAGE])
 def test_a_translation_keeps_its_placeholders(code: str) -> None:
     """A translation that drops `{count}` renders a sentence missing its number;
@@ -239,7 +328,22 @@ async def test_the_switcher_is_not_a_native_select(client: httpx.AsyncClient) ->
     body = await page(client, "/admin/login")
 
     assert not re.search(r'<select[^>]*name="language"', body)
-    assert len(re.findall(r'<button\b[^>]*?name="language"', body, re.DOTALL)) == 3
+    # One button per language, however many there are.
+    assert len(re.findall(r'<button\b[^>]*?name="language"', body, re.DOTALL)) == len(LANGUAGES)
+
+
+async def test_the_switcher_can_be_filtered(client: httpx.AsyncClient) -> None:
+    """Nine languages is past the point where a list is scanned rather than read.
+
+    The filter matches the name and the code, because someone who knows "de" is
+    not going to guess "Deutsch".
+    """
+    body = await page(client, "/admin/login")
+
+    assert "data-ff-lang-filter" in body
+    # The endonym, the English name and the code all match, because someone
+    # might reach for any of the three.
+    assert 'data-ff-lang="deutsch german de"' in body
 
 
 async def test_each_language_carries_its_flag_and_its_code(client: httpx.AsyncClient) -> None:
@@ -257,9 +361,13 @@ async def test_the_current_language_is_marked(client: httpx.AsyncClient) -> None
     await client.post("/admin/language", data={"language": "uz", "next": "/admin/login"})
     body = await page(client, "/admin/login")
 
-    marked = re.findall(
-        r'name="language"\s+value="(\w+)"[^>]*lang="\w+"\s+aria-current="true"', body
-    )
+    # Tolerant of attribute order and of attributes added between them: this is
+    # checking which row is marked, not how the button is spelled.
+    marked = [
+        re.search(r'value="(\w+)"', button).group(1)
+        for button in re.findall(r"<button\b[^>]*?name=\"language\"[^>]*>", body, re.DOTALL)
+        if 'aria-current="true"' in button
+    ]
     assert marked == ["uz"]
 
 
@@ -283,3 +391,40 @@ async def test_switching_language_keeps_the_query_string(client: httpx.AsyncClie
     body = await page(client, "/admin/shop.product/?q=widget&o=-id")
 
     assert 'name="next" value="/admin/shop.product/?q=widget&o=-id"' in body
+
+
+# ---------------------------------------------------------------------------
+# The strings script produces on its own
+# ---------------------------------------------------------------------------
+
+
+def test_every_string_the_script_asks_for_is_one_the_server_sends() -> None:
+    """The script reads them off `<html>`, so the two sides have to agree.
+
+    `t("ZoomIn")` reads `dataset.ffTZoomIn`, which is the attribute
+    `data-ff-t-zoom-in` -- so the server's key has to be `zoom-in` and not
+    `zoomin`. Get that wrong and the control keeps its English fallback in every
+    language, forever, without anything failing: the string is in all nine
+    catalogues, the test that checks they are complete passes, and the label on
+    screen is still in English.
+    """
+    from fastfort.admin.site import _ui_text
+
+    script = (
+        Path(__file__).resolve().parents[2] / "fastfort" / "ui" / "static" / "js" / "fastfort.js"
+    ).read_text(encoding="utf-8")
+
+    block = re.search(r"const FALLBACK_TEXT = \{(.*?)\n  \};", script, re.S)
+    assert block, "the script should declare its fallbacks in one place"
+
+    asked = re.findall(r"^\s{4}(\w+):", block.group(1), re.M)
+    assert asked, "no fallback keys found -- has the block moved?"
+
+    # dataset `ffTNoResults` <- attribute `data-ff-t-no-results`.
+    def attribute(name: str) -> str:
+        return re.sub(r"(?<!^)(?=[A-Z])", "-", name).lower()
+
+    sent = set(_ui_text(Translator()))
+    missing = sorted(attribute(name) for name in asked if attribute(name) not in sent)
+
+    assert not missing, f"the script asks for strings the server never sends: {missing}"

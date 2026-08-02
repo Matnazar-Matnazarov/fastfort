@@ -16,6 +16,7 @@ from typing import Any
 __all__ = [
     "DEFAULT_LANGUAGE",
     "LANGUAGES",
+    "LANGUAGE_ENGLISH_NAMES",
     "LANGUAGE_FLAGS",
     "LanguageChoice",
     "Translator",
@@ -31,10 +32,36 @@ DEFAULT_LANGUAGE = "en"
 
 #: Display names, in the language itself -- a Russian speaker looking for their
 #: language scans for "Русский", not for "Russian".
+#:
+#: Shown alongside `LANGUAGE_ENGLISH_NAMES` rather than instead of it. Either one
+#: alone fails somebody: a list of endonyms is unreadable to anyone who does not
+#: know the script ("中文" says nothing if you cannot read it), and a list of
+#: English names makes a speaker hunt for the word English happens to use for
+#: their language. Both, and the switcher filters on either.
 LANGUAGES: dict[str, str] = {
     "en": "English",
     "uz": "O'zbekcha",
     "ru": "Русский",
+    "tr": "Türkçe",
+    "de": "Deutsch",
+    "fr": "Français",
+    "es": "Español",
+    "zh": "中文",
+    "ko": "한국어",
+}
+
+#: The same languages named in English, for anyone who cannot read the script a
+#: language is written in -- which is most people, for most scripts.
+LANGUAGE_ENGLISH_NAMES: dict[str, str] = {
+    "en": "English",
+    "uz": "Uzbek",
+    "ru": "Russian",
+    "tr": "Turkish",
+    "de": "German",
+    "fr": "French",
+    "es": "Spanish",
+    "zh": "Chinese",
+    "ko": "Korean",
 }
 
 #: Regional-indicator pairs, shown beside the name in the switcher. Decoration
@@ -45,6 +72,12 @@ LANGUAGE_FLAGS: dict[str, str] = {
     "en": "\U0001f1ec\U0001f1e7",
     "uz": "\U0001f1fa\U0001f1ff",
     "ru": "\U0001f1f7\U0001f1fa",
+    "tr": "\U0001f1f9\U0001f1f7",
+    "de": "\U0001f1e9\U0001f1ea",
+    "fr": "\U0001f1eb\U0001f1f7",
+    "es": "\U0001f1ea\U0001f1f8",
+    "zh": "\U0001f1e8\U0001f1f3",
+    "ko": "\U0001f1f0\U0001f1f7",
 }
 
 
@@ -55,6 +88,9 @@ class LanguageChoice:
     code: str
     name: str
     flag: str
+    #: The same language named in English. Equal to `name` for English itself,
+    #: and the template drops the duplicate rather than printing it twice.
+    english: str = ""
 
     @property
     def short(self) -> str:
@@ -170,11 +206,21 @@ class Translator:
     @property
     def choice(self) -> LanguageChoice:
         """This translator's own language, for a switcher's summary."""
-        return LanguageChoice(self.language, self.label, LANGUAGE_FLAGS.get(self.language, ""))
+        return LanguageChoice(
+            self.language,
+            self.label,
+            LANGUAGE_FLAGS.get(self.language, ""),
+            LANGUAGE_ENGLISH_NAMES.get(self.language, ""),
+        )
 
     def choices(self) -> tuple[LanguageChoice, ...]:
         """Every offered language, for a switcher."""
         return tuple(
-            LanguageChoice(code, LANGUAGES.get(code, code), LANGUAGE_FLAGS.get(code, ""))
+            LanguageChoice(
+                code,
+                LANGUAGES.get(code, code),
+                LANGUAGE_FLAGS.get(code, ""),
+                LANGUAGE_ENGLISH_NAMES.get(code, ""),
+            )
             for code in available_languages()
         )
