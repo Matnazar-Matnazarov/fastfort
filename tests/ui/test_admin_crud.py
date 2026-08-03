@@ -279,6 +279,29 @@ async def test_editing_a_row_with_a_relation_does_not_fail(
     assert (await client.get("/admin/shop.product/1/")).status_code == 200
 
 
+async def test_an_invalid_edit_re_renders_instead_of_crashing(
+    client: httpx.AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """A rejected submission on an *existing* row used to be a 500.
+
+    `change_submit` rolled the transaction back and only afterward built the
+    form's own action URL from the instance's primary key. A rollback expires
+    every attribute on every object still in the session, `instance` included,
+    so that read was a synchronous refresh attempt against an async session
+    outside the greenlet bridge that makes those work -- `MissingGreenlet`,
+    on every edit that failed validation, not on a fraction of them.
+    """
+    response = await submit(client, "/admin/shop.product/1/", name="")
+
+    assert response.status_code == 200
+    assert "This field is required." in response.text
+
+    # And the stored row is untouched -- a rejected submission must not clear
+    # it, whatever the re-rendered form shows back for the field being fixed.
+    async with session_factory() as session:
+        assert (await session.get(Product, 1)).name == "Pixel Phone"  # type: ignore[union-attr]
+
+
 async def test_a_missing_row_is_a_404(client: httpx.AsyncClient) -> None:
     assert (await client.get("/admin/shop.product/999999/")).status_code == 404
     assert (await client.get("/admin/shop.product/not-a-number/")).status_code == 404
