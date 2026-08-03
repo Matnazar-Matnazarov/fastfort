@@ -48,8 +48,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `05-admin.css`: a visual pass over the sidebar, filter bar, table, stat tiles
   and forms, including a two-column form grid and a sticky action bar
 
-- `fastfort.i18n`: English, Uzbek and Russian, with a language switcher on every
-  page including sign-in, and `Accept-Language` negotiation
+- `fastfort.i18n`: the admin's own interface in nine languages -- English,
+  Uzbek, Russian, Turkish, German, French, Spanish, Chinese and Korean -- with a
+  filterable language switcher on every page including sign-in, and
+  `Accept-Language` negotiation. The catalogues ship inside the package, so a
+  project installs FastFort and its admin is already translated; there is
+  nothing to configure and no catalogue to write
 
 - Relation and date-range filters, alongside the existing boolean and enum ones
 - The list updates in place: searching, filtering, sorting and paging swap the
@@ -58,8 +62,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A `fastfort` command: `createsuperuser`, `check`, `registered-models`,
   `generate-secret` and `version`
 
-- `UISettings.locale_dir`: a project supplies its own catalogues, so it can
-  translate its model and field names
+- `UISettings.locale_dir`: a project can override any of FastFort's own
+  interface strings, or add a language FastFort does not ship
 
 - `fastfort.ui.icons`: a hand-drawn SVG icon set, inlined once per page as a
   sprite. No font, no CDN, no second request. `ModelAdmin.icon` names one and is
@@ -68,13 +72,94 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `UISettings.environment_tone`: how loudly to draw `environment_label`, which
   now appears in the header rather than the sidebar footer
 
+- `06-widgets.css` and a component runtime in `fastfort.js`: a combobox, a
+  many-to-many chip picker, dropdown menus, a modal dialog, toasts, tooltips and
+  a command palette. No framework and no build step -- with JavaScript disabled
+  every one of them falls back to the native control it replaces
+- Bulk actions. Rows carry a checkbox, selecting any of them raises an action
+  bar, and `POST {model}/action` runs the chosen one over the selected keys.
+  `delete` is built in; `@admin.action("Label", icon=...)` marks a `ModelAdmin`
+  method as another. `ModelAdmin.actions` is the allow-list, checked on the
+  server, so an action removed from it cannot be reached by posting its name
+- `GET {model}/autocomplete?field=&q=`: relation options searched on the server.
+  A foreign key onto a large table now stays usable instead of costing megabytes
+  of `<option>` markup, and it sits behind the same gate as every other view
+  because its answers are rows of the target table
+- Active filters are listed as chips above the table, each one a link that
+  removes just that filter
+- Numbered pagination, so page 12 is one click rather than eleven
+- Ctrl+K opens a command palette over every registered model
+- The buttons Django puts beside a foreign key: **add**, **change** and **view**.
+  Add opens the target's own form in a popup and drops the row it creates into
+  the picker; change and view open whatever is selected. Without them, "the
+  category does not exist yet" means abandoning the half-filled form you are on.
+  Many-to-many pickers get add, and leave change and view off — a multi-valued
+  control has no single subject
+- `?_popup=1` renders a form without the shell, and saving it returns the new row
+  instead of redirecting. The value is handed back in data attributes rather than
+  an inline script, because the admin's CSP is `script-src 'self'` with no nonce
+- A **Buttons** setting in the appearance panel: the primary action stays neutral
+  by default -- near-black on light, near-white on dark -- or takes the accent
+  colour. Neutral gives a page one focal point; wanting the brand colour anyway
+  is a preference rather than a mistake, so it is offered rather than argued with
+- Export to CSV, Excel or JSON from the list toolbar, downloading the current
+  view -- the same search, filters and ordering, not the whole model and not just
+  the page on screen. `ModelAdmin.exportable` opts a model out (enforced at the
+  endpoint, not by hiding the button) and `export_fields` widens the columns.
+  All three formats are produced without a dependency: CSV and JSON from the
+  standard library, and XLSX written directly, because openpyxl is a 3 MB install
+  carrying a formula parser and a chart engine that an admin export will never
+  call. JSON uses the types JSON already has -- `null` for an empty column and
+  `false` for a false boolean, rather than the `""` and `"false"` a spreadsheet
+  cell has to be given, since a string reading `"false"` is *true* in every
+  language with a truthiness rule
+- `AdminSettings.export_limit` and `export_chunk_size`, so a mis-clicked export
+  of a very large table is bounded rather than a request that never finishes
+
+- Editable controls for three column types that used to degrade to a read-only
+  row: an `Interval` (`HH:MM:SS`, or `2d HH:MM:SS`), a native array
+  (comma-separated), and a PostGIS geometry (`latitude, longitude`)
+- `FieldType.GEOMETRY`, detected without importing GeoAlchemy2 — a project that
+  does not use PostGIS pays nothing for this being supported. A point is decoded
+  from WKB with `struct`, so there is no Shapely dependency either; the admin
+  previously printed the raw hex at whoever opened the page
+- `test_api` runs on PostgreSQL with PostGIS by default
+  (`docker compose -f docker-compose.sandbox.yml up -d`) and carries an
+  `Everything` model holding one column of every type the spec layer knows. It
+  has already earned its place: it is what found the three gaps above and the
+  two fixes below
+
+- File and image fields. `FieldType.FILE`/`FieldType.IMAGE` existed in the spec
+  layer with nothing behind them; a project opts a `String` column into either
+  widget through `formfield_overrides`, exactly like `color` or `richtext`.
+  Uploads are stored under `MediaSettings.root` at a server-generated path --
+  never the browser's own filename, which is attacker-controlled input and a
+  perfectly ordinary place for `../../etc/passwd` to show up -- and served back
+  through `{admin}/media/…`, gated the same as every other view rather than
+  through an unauthenticated static mount. A stored value cannot be shown
+  inside a native file input (browsers refuse), so it renders beside it instead:
+  a thumbnail for an image, a link for anything else, and a "Clear" checkbox
+  that removes it without a replacement. `MediaSettings.upload_limit` bounds one
+  upload, checked by reading one byte past it rather than the whole thing, so a
+  rejected file is a validation error rather than however many gigabytes it
+  actually was sitting fully in memory first. Writing the new file and
+  deleting the old one both wait until the row itself has actually saved: a
+  replacement staged alongside some other field that fails validation must not
+  already have discarded the original over a save that never went through
+
 ### Changed
 
-- The language switcher is a menu of buttons carrying a flag, the language's own
-  name and its code, instead of a native `<select>`. A select opens the operating
-  system's own popup: unstyleable, unlike anything else on the page, and on a
-  phone it takes over the whole screen to offer three options. Each row is a
-  submit button, so it still works with JavaScript disabled.
+- The language switcher is a filterable menu of buttons carrying a flag, the
+  language's own name and its code, instead of a native `<select>`. A select
+  opens the operating system's own popup: unstyleable, unlike anything else on
+  the page, and on a phone it takes over the whole screen. Each row is a submit
+  button, so it still works with JavaScript disabled.
+- **Model and field names are no longer translated.** A model's name is the
+  project's word for its own domain, and FastFort has no business guessing it in
+  nine languages — the same reason Django does not translate your model names
+  either. FastFort translates its own interface: the buttons, the filters, the
+  messages, the dates. `verbose_name`, `verbose_name_plural`, `group_name` and
+  `field_labels` are plain strings again.
 - Switching language returns to the same page including its query string. It
   previously dropped the query, so changing language from a filtered, sorted,
   paginated list landed on page one of an unfiltered one.
@@ -99,15 +184,229 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   thing: the focus ring, links and the active navigation item.
 - Radius derives from a single `--ff-radius-base`, so a project can round the
   whole interface by changing one number.
-- Model names, field labels, filter labels and column headers now go through the
-  translator. They previously stayed English while the chrome was translated,
-  which read as broken rather than as untranslated.
+- Filter labels and column headers go through the translator.
 - Table headers, sidebar section labels and stat-tile labels are sentence case
   rather than uppercase, which reads as dated and mangles scripts where casing
   carries meaning or does not exist.
 - `UISettings.language` defaults to None, meaning "follow the browser". It
   previously defaulted to "en", which matched before `Accept-Language` was ever
   consulted and made browser negotiation dead code.
+- Every `<select>` in the admin -- filters, enumerations, foreign keys -- is a
+  searchable listbox drawn in the page. The native control opens the operating
+  system's own popup, which cannot be styled, cannot be searched, and looks like
+  nothing else on the page.
+- A many-to-many field is a set of removable chips with a picker, instead of a
+  `<select multiple>` and the instruction to hold Ctrl.
+- Row actions are icon buttons that are always drawn. They were text links at
+  `opacity: 0` until the row was hovered, so they were invisible until the mouse
+  found them and unreachable on a touch screen.
+- Deleting from the list asks in a dialog rather than navigating to a
+  confirmation page and back. The page is still there and is still what the link
+  points at, so this is an accelerator and not a requirement.
+- A date-range filter collapses behind a button. Two date inputs side by side
+  were as wide as the rest of the toolbar and are empty almost all of the time.
+- A relation filter with more rows than the cap becomes a searching control
+  rather than disappearing. Vanishing silently as a table grows is worse than it
+  sounds: the person who set it up saw it working.
+- The "sortable but not sorted" arrow appears on hover rather than on every
+  column at once, where it was a row of identical marks competing with the one
+  arrow that means something.
+
+- A rows-per-page control: 20, 50 or 100, and `AdminSettings.page_size_choices`
+  to change the offer. The default page size is now 20 rather than 25
+- Filters accept several values at once. Ticking Cancelled and Refunded is one
+  query over both, not two runs of the same report; the control submits
+  `field__in`, which the query layer already understood
+
+- Six more languages for the admin interface: Turkish, German, French, Spanish,
+  Chinese and Korean, each a complete catalogue rather than a partial one. The
+  switcher filters as you type, on the name or the code, because nine languages
+  is past the point where a list is scanned rather than read
+- Clicking anywhere in a row opens the record, the way Django admin behaves.
+  Hunting for a 16px pencil to open a row you have already pointed at is a step
+  with no purpose; the checkbox, the delete button and any link in a cell are
+  excluded, and a text selection is not a click
+- An **Appearance** panel: theme, twelve accent colours, density and the sidebar
+  state, all per-person in local storage. The swatches set a hue rather than a
+  hex code, because the whole palette derives from one number — so a swatch moves
+  every accent in the interface, including the ones dark mode computes at its own
+  lightness
+- Date and datetime filters offer presets — today, yesterday, last 7 or 30 days,
+  this week, this month, last month, this year — alongside the two bounds. Nobody
+  types two dates to ask "this month"
+- A default admin favicon, so the tab is findable without the project supplying
+  one
+
+### Changed
+
+- `test_api`, the sandbox application, has no routes, serialisers or queries left
+  in it — only the FastFort configuration and a seed. Anything it had to write by
+  hand was a gap in the library, which is the point of keeping it short. It went
+  from 674 lines to 147
+- Every filter lives behind one **Filters** button that opens a panel, instead of
+  a control per column across the top of the list. A box per filterable column
+  does not survive a model with eight of them: the toolbar wraps onto three
+  lines, the table is pushed off the screen, and there is still nowhere to put a
+  filter that needs more than a line. The button carries the number that are on.
+- Choice filters are checkbox lists rather than dropdowns. In a panel there is
+  room to show every value at once, and several can be on together.
+- Relation pickers always have a search box, whatever the option count. A picker
+  that offers search only past some threshold is one people learn is not
+  searchable.
+- Autocomplete matches the columns the target's own `ModelAdmin.search_fields`
+  names, falling back to the conventional ones. The label a person reads is the
+  target's `__str__`, which cannot be searched in SQL, so the columns it is built
+  from have to be named — and the target's admin is where a project has already
+  said which those are.
+- A false boolean is drawn in red rather than grey. "No" is an answer, and in an
+  admin it is usually the one being looked for.
+- A map beside a geometry field, drawn from tiles and written by hand — pan,
+  zoom, and click to drop a point. A pair of coordinates is a number nobody can
+  check: "51.5074, -0.1278" is either the right place or a transposed pair a
+  thousand miles away, and the only way to tell is to look. Off unless
+  `UISettings.map_tile_url` names a tile service, because turning it on means
+  the admin fetches images from somebody else's server — that host learns which
+  rows are being looked at and roughly where they are, and most tile services
+  have terms about it. Naming the URL is also what adds that one host to the
+  admin's `img-src`; `default-src 'none'` blocks it otherwise.
+  `map_attribution` renders the credit line those services require, and
+  `map_center` says where a map with no point yet opens. The coordinates stay
+  the control that submits, so typing or pasting them still works and the field
+  is unchanged with script off
+- A signups chart on the dashboard: new accounts per day over the last month.
+  The counts above it answer "how much is there"; this answers "is it growing",
+  which is the question anyone opening an admin every morning is asking. The
+  column is found by name (`date_joined`, `created_at`, ...), so a project that
+  has one gets the chart without configuring anything, and a project that does
+  not simply has no chart rather than an error. Drawn by the server as elements
+  with a height -- no canvas, no charting library, no second request — so it is
+  in the first paint, inherits the theme, and survives script being off. The
+  same numbers are also a visually-hidden table, because bars mean nothing read
+  one at a time. `AdminSettings.dashboard_days` sets the window (0 switches it
+  off; each day is one indexed count) and `signup_field` names the column when
+  it is called something unconventional
+- A calendar drawn by FastFort on every date and datetime field, replacing the
+  native picker. The platform ones are a different control on every operating
+  system and browser, and none of them can be made to match the admin around
+  them. Keyboard-navigable with the arrow keys, locale-aware — the first day of
+  the week and the month and weekday names come from `Intl` rather than being
+  assumed to be Monday and English. No library and no build step: the native
+  input stays the element that holds and submits the value, so with script off
+  it is exactly the control it always was.
+- A duration is four labelled boxes — days, hours, minutes, seconds — instead of
+  a text box with `HH:MM:SS — or 2d HH:MM:SS` written underneath it. Values
+  carry, so 90 minutes becomes an hour and a half rather than an error message.
+  The format hint is now script-only, since it describes a control that is no
+  longer on the page. A stored duration with a fractional second keeps the text
+  box rather than being rounded to fit boxes that cannot show it.
+
+### Fixed
+
+- **A rejected submission while editing an existing row was a 500.**
+  `change_submit` rolled the transaction back and only afterward built the
+  form's action URL from the instance's primary key. A rollback expires every
+  attribute on every object still in the session, and reading one back
+  afterward is a synchronous refresh attempt against an async session outside
+  the greenlet bridge that makes those work -- on every edit that failed
+  validation, not a fraction of them. The response is now rendered before the
+  rollback, while the instance is still fresh.
+- **Choosing an option in a multi-select combobox closed the whole picker
+  after the first pick.** Picking a tag rebuilds the option list, which
+  detaches the row that was just clicked from the document before the click
+  finishes bubbling to the document-level "close on an outside click" listener
+  -- so a click *inside* the panel looked like one *outside* it, the instant
+  the panel's own content changed in response to it. The date picker had the
+  same bug: choosing "next month" rebuilds its grid, detaching the button that
+  was clicked, and closed the calendar the same way. Every "click outside
+  closes this" check now reads `event.composedPath()`, captured before
+  dispatch, rather than walking up from `event.target` after the fact.
+- The map re-centred itself on every click. Dropping a pin dispatches a
+  `change` event so anything bound to the field's value learns it changed; the
+  map's own listener for that event was learning about its own dispatch and
+  recentring on the point that was just clicked, so a click both dropped a pin
+  and yanked the whole map to put it in the middle.
+- Zooming the map cleared every tile before the replacements had loaded, which
+  read as the whole map flashing blank and repainting on every scroll of the
+  wheel. Tiles from the zoom level being left now stay on screen as a
+  placeholder until the new ones have loaded (or failed), rather than being
+  removed on the spot.
+- "Cancel" in a popup navigated that same window to the parent's list instead
+  of closing it, leaving an abandoned form's window open on a page nothing
+  points back to. It now closes the window when one opened it, and falls back
+  to the link otherwise.
+- The map's zoom buttons kept their English labels in every language. The script
+  reads its strings off `<html>`, so `t("ZoomIn")` looks for `data-ff-t-zoom-in`
+  and the server was sending `data-ff-t-zoomin`. Nothing failed: the string was
+  in all nine catalogues, the test that checks they are complete passed, and the
+  label on screen stayed in English. Every string the script asks for is now
+  checked against the ones the server sends.
+- **`chevron-left` was drawn as a single diagonal stroke.** Its path retraced
+  the line it had just drawn (`m15 18-6-6 6 6`) instead of turning, so the arrow
+  had one arm. It was the "previous page" control on every list, visible to
+  anyone who reached page two, and invisible to a test suite that could only
+  check the markup was well-formed and the symbol was defined. Every icon is now
+  checked for a segment that cancels out the one before it.
+
+- **The admin flashed the wrong theme on every load**, and the collapsed sidebar
+  opened before snapping shut. Both were applied by the deferred main script,
+  which by definition runs after the first paint. A small `boot.js` now runs
+  blocking in the head, before the stylesheets, so the first paint is already
+  right. The collapsed state moved from `.ff-app` to the root element, which is
+  the only one that exists that early.
+- **A lost CSRF cookie left every form on every page dead.** The gate mints a
+  token when the browser has none and hands it to the templates, but nothing
+  wrote it back — and it is a session cookie, so closing the browser and
+  returning rendered pages whose forms all carried a token with no cookie behind
+  it. The failure said "reload the page and try again", which could not help:
+  the reload minted another token and dropped that one too. The only way out was
+  to sign out and back in. Pages now persist the token they rendered.
+- The sidebar drawer button showed at desktop widths, where it does nothing —
+  the drawer it opens only exists on narrow screens. `.ff-btn` declares its own
+  `display` from a stylesheet that loads after the one hiding the button, so the
+  hide lost the specificity tie.
+- **Twenty interface strings had no catalogue entry**, so an admin switched to
+  Uzbek or Russian showed "20 per page", "Filters" and "Apply" in English in the
+  middle of an otherwise translated page. A test now scans the templates and the
+  Python layer for every string passed through the translator and fails on any
+  the catalogues do not cover, so this fails on the commit that adds the string.
+- The form heading, the Save button and every flash message were built with
+  f-strings, so the catalogue could never match them — it carried translations
+  for "Save changes" and "Create {name}" that nothing could ever look up. They
+  go through the translator with placeholders now.
+- **A database constraint violation was a 500.** A duplicate value on a unique
+  column, a check constraint, a foreign key pointing at a row that had gone —
+  each showed a stack trace instead of the field to change, and lost everything
+  typed into the form. They render as a form error naming the constraint now.
+- A duration rendered as `2 days, 4:15:00` but only parsed `2d 04:15:00`, so
+  opening a row with a multi-day interval and pressing Save failed validation on
+  a field nobody had touched.
+- The `settings` icon was a circle with eight spokes, which at 18px is a sun --
+  so the appearance button and the theme toggle sat side by side in the topbar
+  looking identical. It is a toothed gear now.
+- A tooltip on a control at the edge of the window was clipped by the window.
+  They point downward in the topbar, where there is no room above, and pin to
+  the control's own edge rather than centring on it.
+- **A relation's target was named by a key nothing could look up.** Introspection
+  derives one from the model's module, and `FastFort` never told the backend
+  about its registry — so `Product.category`, registered as `shop.category`,
+  came back as `myapp.category`. Every feature that resolves a relation to the
+  admin behind it was therefore quietly doing nothing: the autocomplete fell back
+  to guessing which columns to search rather than reading the target's
+  `search_fields`, and the related-object buttons could not appear at all.
+  `Backend.set_key_resolver` now takes a rule that consults the registry, with
+  the derived key still used for a target that has no admin of its own.
+- Icons rendered as solid black silhouettes. A `<use>` clones its symbol into the
+  shadow tree of the *referencing* element, so `fill="none" stroke="currentColor"`
+  on the sprite root never reached the cloned paths; the properties now sit on
+  `.ff-icon`, which is also what lets an icon take its colour from `currentColor`.
+- Stylesheets and the script are re-read from disk when `debug` is on. They were
+  cached for the life of the process, so under `--reload` an edit to a stylesheet
+  did nothing until the server was restarted -- while the response it served
+  already declared itself uncacheable.
+- The stylesheet tests took their list of sheets from a second, hand-maintained
+  copy, so a newly added sheet was covered by none of them. They now read the
+  list the router uses. The budget test weighs the script as well as the CSS,
+  which is the half a front-end framework would actually arrive in.
 
 - The `mysql` extra installs `aiomysql` instead of `asyncmy`. PYSEC-2026-286 is an
   unfixed SQL injection affecting every released version of `asyncmy` (0.2.11 is

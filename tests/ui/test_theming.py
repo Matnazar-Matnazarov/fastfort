@@ -12,20 +12,19 @@ from pathlib import Path
 
 import pytest
 
+from fastfort.admin.site import CSS_SHEETS
 from fastfort.core.settings import UISettings
 from fastfort.ui.theming import Theme
 
 CSS_DIR = Path(__file__).resolve().parents[2] / "fastfort" / "ui" / "static" / "css"
 
 #: Every stylesheet, in the order a page loads them.
-SHEETS = (
-    "00-reset.css",
-    "01-tokens.css",
-    "02-base.css",
-    "03-layout.css",
-    "04-components.css",
-    "05-admin.css",
-)
+#:
+#: Taken from the router rather than restated, so a sheet added there is covered
+#: by these checks straight away. A second hand-maintained list is a list that
+#: silently stops matching, and the sheet nobody is checking is the one with the
+#: unbalanced brace.
+SHEETS = CSS_SHEETS
 
 
 @pytest.fixture(scope="module")
@@ -148,17 +147,39 @@ def test_motion_is_disabled_when_the_viewer_asks(css: str) -> None:
     assert "prefers-reduced-motion" in css
 
 
-def test_the_stylesheets_stay_within_budget(css: str) -> None:
+def test_the_front_end_stays_within_budget(css: str) -> None:
     """The whole front end is budgeted at 60 KB gzipped, CSS and JavaScript.
 
+    Both halves are weighed, not just the stylesheet. The budget exists to keep
+    the admin from acquiring a front-end framework by degrees, and a framework
+    would arrive as JavaScript -- so measuring only the CSS guarded the half that
+    was never at risk.
+
     A complete design system for an admin -- shell, table, forms, every drawn
-    control, both themes -- fits in a fraction of that, and this fails if it
-    stops doing so.
+    control including the ones that replace `<select>`, both themes -- plus the
+    behaviour that drives them fits in well under this, and it fails if that
+    stops being true.
+
+    Every script that ships is weighed, `boot.js` included. It is small, but it
+    is served on every page, and a budget that quietly excludes a file is a
+    budget with a hole in it.
+
+    The assertion sits below the stated ceiling rather than at it, so growth is
+    noticed before it becomes a problem. It has been raised twice -- from 40 KB
+    when the related-object popup, the appearance panel, the filter drawer and
+    the export menu landed together, and again for the date picker, the duration
+    boxes and the map. Each was a feature rather than an accumulation, and the
+    total is still well inside the budget.
     """
     import gzip
 
-    compressed = len(gzip.compress(css.encode("utf-8")))
-    assert compressed < 16_000, f"{compressed} bytes gzipped"
+    scripts = sorted((CSS_DIR.parent / "js").glob("*.js"))
+    assert scripts, "the budget cannot pass by measuring nothing"
+
+    compressed = len(gzip.compress(css.encode("utf-8"))) + sum(
+        len(gzip.compress(script.read_bytes())) for script in scripts
+    )
+    assert compressed < 54_000, f"{compressed} bytes gzipped"
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +278,80 @@ def test_radius_derives_from_one_value(css: str) -> None:
         )
 
 
-def test_row_actions_stay_visible_without_hover(css: str) -> None:
-    """Touch has no hover, so fading them out would hide them entirely."""
-    assert "@media (hover: none)" in css
+def test_the_collapsed_sidebar_is_keyed_off_the_root(css: str) -> None:
+    """Because the boot script runs before `.ff-app` has been parsed.
+
+    Applying the stored state to `.ff-app` meant waiting for the deferred script,
+    which runs after the first paint -- so the sidebar opened and then snapped
+    shut on every single navigation. The root element is the only one that exists
+    early enough to be marked.
+    """
+    assert ':root[data-ff-collapsed="true"]' in css
+    assert '.ff-app[data-collapsed="true"]' not in css
+
+
+def test_a_false_boolean_is_drawn_in_red(css: str) -> None:
+    """ "No" is an answer, and usually the one being looked for.
+
+    Grey on grey made a column of them unreadable at a glance, which is the only
+    way anybody reads that column.
+    """
+    start = css.index(".ff-bool--off {")
+    body = css[start : css.index("}", start)]
+    assert "--ff-danger" in body
+
+
+def test_script_only_controls_are_hidden_without_script(css: str) -> None:
+    """A control that does nothing when clicked is worse than one that is absent.
+
+    Two directions are needed, and it is the second that keeps being forgotten:
+    `.ff-js-only` hides what cannot work without the script, and `.ff-no-js`
+    hides the native control once its replacement exists. The row-selection
+    column belongs to the first group -- the action bar it feeds is script-only,
+    so without it a ticked box does nothing at all.
+    """
+    assert ":root:not([data-ff-js]) .ff-js-only" in css
+    assert ":root[data-ff-js] .ff-no-js" in css
+    assert ":root:not([data-ff-js]) .ff-table__select" in css
+
+
+def test_the_dialogs_restate_their_centring_margin(css: str) -> None:
+    """The reset zeroes every margin, including the one that centres a dialog.
+
+    A modal `<dialog>` is centred by the browser's own `margin: auto`, so a
+    blanket `margin: 0` silently parks both the confirmation dialog and the
+    command palette in the top-left corner.
+    """
+    for block in (".ff-modal {", ".ff-palette {"):
+        start = css.index(block)
+        body = css[start : css.index("}", start)]
+        assert "margin:" in body, f"{block} must restate its margin"
+        assert "auto" in body
+
+
+def test_icons_carry_their_stroke_at_the_point_of_use(css: str) -> None:
+    """`<use>` clones a symbol into the referencing element's shadow tree.
+
+    So presentation attributes on the sprite's own root never reach the cloned
+    paths, and every icon renders as a solid black silhouette. The properties
+    have to sit on the element that references the symbol.
+    """
+    start = css.index(".ff-icon {")
+    body = css[start : css.index("}", start)]
+    assert "fill: none" in body
+    assert "stroke: currentColor" in body
+
+
+def test_row_actions_are_never_hidden_behind_hover(css: str) -> None:
+    """Touch has no hover, so fading them out would hide them entirely.
+
+    They used to be text buttons at `opacity: 0` until the row was hovered, with
+    a `@media (hover: none)` escape hatch to bring them back on a touch screen.
+    They are icon buttons now and are simply always drawn, so the guard is that
+    nothing has reintroduced the fade.
+    """
+    faded = re.search(
+        r"\.ff-row-actions[^{]*\{[^}]*opacity:\s*0\s*[;}]",
+        css,
+    )
+    assert faded is None, "row actions must not be hidden until hover"

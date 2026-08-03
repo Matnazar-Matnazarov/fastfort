@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- The shield from the icon set, at favicon weight. An SVG rather than a PNG
+       so it stays sharp at every size and needs no second file, and it carries
+       its own colours because a favicon is drawn outside the page and inherits
+       nothing from the stylesheet. -->
+  <rect width="32" height="32" rx="7" fill="#18181b"/>
+  <path d="M16 7l7 2.6v5.2c0 4.4-3 7.1-7 7.8-4-.7-7-3.4-7-7.8V9.6Z"
+        fill="none" stroke="#fafafa" stroke-width="2.2"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

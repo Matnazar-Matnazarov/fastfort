@@ -46,14 +46,23 @@
   font-size: var(--ff-text-base);
 }
 
-/* The active item is lifted onto the page surface, so hierarchy is depth and not
+/* The active item is lifted onto its own surface, so hierarchy is depth and not
  * only colour -- and it takes a bar on its leading edge, because colour alone
- * fails for anyone who cannot distinguish it. */
+ * fails for anyone who cannot distinguish it.
+ *
+ * Tinted with the accent rather than left white. The accent means one thing in
+ * this interface, "where you are", and this is the largest place it says it; a
+ * white pill said the same thing in no colour at all, which left a chosen accent
+ * with almost nothing on screen to show for it. */
 .ff-nav-item[aria-current="page"] {
-  background: var(--ff-surface);
-  color: var(--ff-text);
+  background: var(--ff-accent-subtle);
+  color: var(--ff-accent);
   font-weight: var(--ff-weight-medium);
   box-shadow: var(--ff-shadow-xs);
+}
+
+.ff-nav-item[aria-current="page"] .ff-nav-item__icon {
+  color: var(--ff-accent);
 }
 
 .ff-nav-item[aria-current="page"]::before {
@@ -114,72 +123,21 @@
 }
 
 /* --- One panel per list --------------------------------------------------
- * The filter bar and the table are one surface. The gap between them was the
- * single thing that read as unfinished.
+ * The toolbar is its own surface, separated from the table below it. They were
+ * one panel before, which made the filters read as a header row of the table
+ * rather than as the controls that produced it -- and left nowhere to put the
+ * active-filter chips.
  */
 
-.ff-filters {
+.ff-listing {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
   gap: var(--ff-space-3);
-  padding: var(--ff-space-3) var(--ff-space-4);
-  background: var(--ff-surface);
-  border: 1px solid var(--ff-border);
-  border-bottom: 0;
-  border-radius: var(--ff-radius-xl) var(--ff-radius-xl) 0 0;
-  box-shadow: var(--ff-shadow-xs);
-}
-
-#ff-results > .ff-table-wrap {
-  border-radius: 0 0 var(--ff-radius-xl) var(--ff-radius-xl);
-  border-top: 0;
-}
-
-/* Inside the bar the controls recede: the rows below are the content, and a
- * strip of outlined boxes above them competes for attention. */
-.ff-filters .ff-input,
-.ff-filters .ff-select {
-  background-color: var(--ff-surface-sunken);
-  border-color: transparent;
-  box-shadow: none;
-}
-
-.ff-filters .ff-input:hover,
-.ff-filters .ff-select:hover {
-  border-color: var(--ff-border);
-}
-
-.ff-filters .ff-input:focus-visible,
-.ff-filters .ff-select:focus-visible {
-  background-color: var(--ff-surface);
-  border-color: var(--ff-accent);
-}
-
-.ff-filters .ff-field {
-  flex: 0 0 auto;
+  margin-top: var(--ff-space-5);
 }
 
 .ff-pagination {
   padding-inline: var(--ff-space-1);
-}
-
-/* --- Range filter --------------------------------------------------------- */
-
-.ff-range {
-  display: flex;
-  align-items: center;
-  gap: var(--ff-space-2);
-}
-
-.ff-range__label {
-  font-size: var(--ff-text-sm);
-  color: var(--ff-text-muted);
-  white-space: nowrap;
-}
-
-.ff-range__dash {
-  color: var(--ff-text-subtle);
 }
 
 .ff-input--sm {

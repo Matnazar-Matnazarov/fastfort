@@ -16,6 +16,7 @@ loud and cheap to fix.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
@@ -27,6 +28,7 @@ __all__ = [
     "AdminSettings",
     "AuthSettings",
     "FastFortSettings",
+    "MediaSettings",
     "SecuritySettings",
     "UISettings",
 ]
@@ -95,7 +97,12 @@ class AdminSettings(BaseModel):
     model_config = {"extra": "forbid"}
 
     url: str = "/admin"
-    page_size: Annotated[int, Field(ge=1, le=1000)] = 25
+    page_size: Annotated[int, Field(ge=1, le=1000)] = 20
+
+    #: The sizes the list view offers as a control. The active `page_size` is
+    #: added if it is not already here, so a project that configures 25 still
+    #: sees its own value in the menu rather than a list that cannot express it.
+    page_size_choices: tuple[int, ...] = (20, 50, 100)
 
     #: Hard ceiling on ``?ps=``. Without it a single request can ask the database
     #: for every row in the table.
@@ -109,6 +116,27 @@ class AdminSettings(BaseModel):
 
     #: Number of related rows an autocomplete endpoint may return per query.
     autocomplete_limit: Annotated[int, Field(ge=1, le=100)] = 20
+
+    #: Hard ceiling on one export. An export runs the current query with no
+    #: pagination, so without a cap a mis-clicked "export everything" on a table
+    #: of ten million rows is a request that never finishes and a database that
+    #: stops answering anyone else.
+    export_limit: Annotated[int, Field(ge=1, le=1_000_000)] = 50_000
+
+    #: Rows fetched per round trip while streaming an export.
+    export_chunk_size: Annotated[int, Field(ge=100, le=10_000)] = 1_000
+
+    #: Days covered by the dashboard's signups chart. Each day is one indexed
+    #: count, so this is also how many extra queries the dashboard runs; the
+    #: ceiling keeps a mistyped value from turning one page into a thousand.
+    #: Zero switches the chart off.
+    dashboard_days: Annotated[int, Field(ge=0, le=365)] = 30
+
+    #: The user-model column recording when an account was created. Detected
+    #: from the usual names (`date_joined`, `created_at`, ...) when left empty;
+    #: set it when the column is called something else. A name that is not a
+    #: date column leaves the chart off rather than raising.
+    signup_field: str = ""
 
     @field_validator("url")
     @classmethod
@@ -125,6 +153,30 @@ class AdminSettings(BaseModel):
                 f"page_size ({self.page_size}) cannot exceed max_page_size ({self.max_page_size})"
             )
         return self
+
+
+class MediaSettings(BaseModel):
+    """Where files uploaded through a file or image field are stored.
+
+    Local disk, because that is what every project can rely on without
+    provisioning anything first -- object storage is a project's own
+    integration to add, not something worth a dependency here. Uploaded files
+    are served through the admin itself, behind the same gate as every other
+    view, rather than through a separate unauthenticated static mount: an
+    uploaded file is a record like any other row, not a public asset.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    #: Directory files are written to and served from. Created on first use if
+    #: it does not exist yet.
+    root: Path = Path("media")
+
+    #: Hard ceiling on one upload, in bytes. A request reads at most one byte
+    #: past this before deciding the upload is over the limit, so an oversized
+    #: file is a validation error on the field rather than however many
+    #: gigabytes it actually was sitting fully in memory first.
+    upload_limit: Annotated[int, Field(ge=1, le=1_000_000_000)] = 10_000_000
 
 
 class UISettings(BaseModel):
@@ -145,8 +197,43 @@ class UISettings(BaseModel):
 
     logo_url: str | None = None
     favicon_url: str | None = None
+
+    #: A script that upgrades every `richtext` field into an editor.
+    #:
+    #: The editor itself is the project's choice: CKEditor, TinyMCE, Quill --
+    #: whichever it already uses or licences. FastFort renders the textarea and
+    #: marks it `data-ff-richtext`; this names the script that finds them. None
+    #: leaves a plain textarea, which is a working control rather than a broken
+    #: editor.
+    #:
+    #: Bundling one instead was the alternative, and it is the wrong trade: a
+    #: half-megabyte editor in the wheel for every project, most of which want a
+    #: different one or none at all. If the URL is on another origin, its origin
+    #: is added to the admin's CSP -- which is exactly why it is configuration
+    #: and not something a project can inject from a template.
+    richtext_url: str | None = None
     #: Extra stylesheet loaded after the built-in one, for per-project overrides.
     custom_css_url: str | None = None
+
+    #: Tile template for the map beside a geometry field, e.g.
+    #: ``"https://tile.openstreetmap.org/{z}/{x}/{y}.png"``. Empty means no map,
+    #: and the field stays the pair of coordinates it already was.
+    #:
+    #: Off by default and configuration rather than a bundled default, because
+    #: turning it on means the admin fetches images from somebody else's server:
+    #: that host learns which rows are being looked at and roughly where they
+    #: are, and most tile services have terms about it. Naming a URL is a project
+    #: saying it has read them. The host is added to the admin's CSP `img-src`,
+    #: which is why it cannot come from a template.
+    map_tile_url: str = ""
+
+    #: Credit line under the map. Tile services generally require one, and the
+    #: project is the party bound by that, so it writes it.
+    map_attribution: str = ""
+
+    #: Where a map with no coordinates yet opens, as ``latitude, longitude``.
+    #: Defaults to a whole-world view rather than to somebody's capital city.
+    map_center: str = "0, 0"
 
     #: None means "follow the browser". A project that wants its admin in one
     #: language regardless of who opens it sets this; leaving it unset must not
@@ -226,6 +313,7 @@ class FastFortSettings(BaseSettings):
     admin: AdminSettings = Field(default_factory=AdminSettings)
     ui: UISettings = Field(default_factory=UISettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
+    media: MediaSettings = Field(default_factory=MediaSettings)
 
     @field_validator("secret_key")
     @classmethod

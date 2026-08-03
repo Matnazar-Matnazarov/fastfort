@@ -3,7 +3,7 @@
 {% block content %}
   <div class="ff-page-header">
     <div class="ff-page-header__text">
-      <h1 class="ff-h1">{{ _("Delete {name}", name=_(admin.singular)|lower) }}</h1>
+      <h1 class="ff-h1">{{ _("Delete {name}", name=model_singular|lower) }}</h1>
       <p class="ff-muted ff-mt-2">{{ _("This cannot be undone.") }}</p>
     </div>
   </div>
@@ -30,7 +30,7 @@
       <form class="ff-row" method="post" action="{{ action_url }}">
         <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
         <button class="ff-btn ff-btn--danger" type="submit">
-          {{ _("Yes, delete this {name}", name=_(admin.singular)|lower) }}
+          {{ _("Yes, delete this {name}", name=model_singular|lower) }}
         </button>
         <a class="ff-btn ff-btn--ghost" href="{{ cancel_url }}">{{ _("Cancel") }}</a>
       </form>

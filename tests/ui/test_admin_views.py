@@ -195,9 +195,10 @@ async def test_a_filter_narrows_the_table(client: httpx.AsyncClient) -> None:
 
 async def test_declared_filters_get_a_control(client: httpx.AsyncClient) -> None:
     body = await html(client, "/admin/shop.product/")
-    assert 'name="is_active"' in body
+    # `__in`, because every value filter accepts more than one value.
+    assert 'name="is_active__in"' in body
     # An enum filter offers its members.
-    assert 'name="status"' in body
+    assert 'name="status__in"' in body
     assert "Archived" in body
 
 
@@ -222,6 +223,39 @@ async def test_pagination_reports_its_position(client: httpx.AsyncClient) -> Non
     assert "Page 1 of 2" in body
     assert "1–2 of 4" in body
     assert "p=2" in body
+
+
+async def test_the_page_size_can_be_chosen(client: httpx.AsyncClient) -> None:
+    """Twenty rows is a default, not a decision the admin gets to make for you."""
+    body = await html(client, "/admin/shop.product/")
+
+    assert "20 per page" in body
+    for size in (20, 50, 100):
+        assert f"ps={size}" in body, size
+
+
+async def test_choosing_a_page_size_returns_to_the_first_page(
+    client: httpx.AsyncClient,
+) -> None:
+    """Page 7 of 20-row pages is not page 7 of 100-row pages."""
+    import re as _re
+
+    body = await html(client, "/admin/shop.product/", ps="2", p="2")
+    # Scoped to the size control: the numbered page links legitimately carry a
+    # page, and they also carry the active `ps`.
+    start = body.index("ff-page-size")
+    control = body[start : body.index("ff-pages", start)]
+    links = _re.findall(r'href="([^"]*)"', control)
+
+    assert links, "the size control should offer links"
+    for link in links:
+        assert "p=" not in link.replace("ps=", ""), link
+
+
+async def test_the_active_size_is_always_offered(client: httpx.AsyncClient) -> None:
+    """A menu that cannot express the current state looks broken."""
+    body = await html(client, "/admin/shop.product/", ps="7")
+    assert "7 per page" in body
 
 
 async def test_a_model_with_no_rows_explains_itself(client: httpx.AsyncClient) -> None:

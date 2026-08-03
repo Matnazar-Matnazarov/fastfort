@@ -409,6 +409,7 @@
   inset-inline-start: var(--ff-space-3);
   top: 50%;
   translate: 0 -50%;
+  display: flex;
   color: var(--ff-text-subtle);
   pointer-events: none;
   line-height: 1;
@@ -583,33 +584,23 @@ a.ff-stat:hover {
   font-weight: var(--ff-weight-semibold);
 }
 
+/* The "sortable, but not sorted" arrow appears on hover and focus only. Drawn
+ * on every column at once it is a row of identical marks that say nothing about
+ * the table, and it competes with the one arrow that does mean something. */
 .ff-table__arrow {
-  font-size: 0.65em;
-  opacity: 0.4;
+  display: inline-flex;
+  opacity: 0;
+  transition: opacity var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-table__sort:hover .ff-table__arrow,
+.ff-table__sort:focus-visible .ff-table__arrow {
+  opacity: 0.45;
 }
 
 .ff-table__sort[aria-sort]:not([aria-sort="none"]) .ff-table__arrow {
   opacity: 1;
   color: var(--ff-accent);
-}
-
-/* Row actions stay quiet until the row is hovered, so a long table is not a wall
- * of buttons. They remain keyboard reachable at all times. */
-.ff-table tbody td:last-child .ff-btn {
-  opacity: 0;
-  transition: opacity var(--ff-duration-fast) var(--ff-ease);
-}
-
-.ff-table tbody tr:hover td:last-child .ff-btn,
-.ff-table tbody td:last-child .ff-btn:focus-visible {
-  opacity: 1;
-}
-
-/* Touch has no hover, so the actions would never appear. */
-@media (hover: none) {
-  .ff-table tbody td:last-child .ff-btn {
-    opacity: 1;
-  }
 }
 
 /* ===========================================================================
@@ -667,8 +658,18 @@ a.ff-stat:hover {
   color: var(--ff-success);
 }
 
+/* Red, not grey. "No" is an answer, and in an admin it is usually the one being
+ * looked for -- the inactive account, the unpaid order. Drawn in the same weight
+ * as the green tick so a column of them can be read down at a glance. */
 .ff-bool--off {
-  background: var(--ff-surface-sunken);
+  background: var(--ff-danger-subtle);
+  color: var(--ff-danger);
+}
+
+/* NULL is not the same answer as "no", and a table that draws them alike is
+ * hiding the distinction people came to the admin to check. */
+.ff-bool--unset {
+  background: none;
   color: var(--ff-text-subtle);
 }
 
@@ -1148,8 +1149,8 @@ a.ff-stat:hover {
   transition: opacity var(--ff-duration-fast) var(--ff-ease);
 }
 
-.htmx-request .ff-busy,
-.htmx-request.ff-busy {
+.ff-loading .ff-busy,
+.ff-loading.ff-busy {
   opacity: 1;
 }
 

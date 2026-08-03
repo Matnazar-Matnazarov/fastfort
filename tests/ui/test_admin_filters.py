@@ -75,14 +75,19 @@ async def page(client: httpx.AsyncClient, path: str, **kwargs: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def test_a_boolean_filter_is_a_dropdown(client: httpx.AsyncClient) -> None:
+async def test_a_boolean_filter_offers_both_answers(client: httpx.AsyncClient) -> None:
+    """`__in`, not a bare name: every value filter takes more than one value.
+
+    "Show me cancelled and refunded" is the normal question, and answering it
+    one value at a time means running the report twice.
+    """
     body = await page(client, "/admin/shop.product/")
-    assert 'name="is_active"' in body
+    assert 'name="is_active__in"' in body
 
 
 async def test_an_enum_filter_offers_its_members(client: httpx.AsyncClient) -> None:
     body = await page(client, "/admin/shop.product/")
-    assert 'name="status"' in body
+    assert 'name="status__in"' in body
     assert "Archived" in body
 
 
@@ -90,9 +95,23 @@ async def test_a_relation_filter_lists_its_targets(client: httpx.AsyncClient) ->
     """A foreign key column is only useful as a filter if it names the rows."""
     body = await page(client, "/admin/shop.product/")
 
-    assert 'name="category"' in body
+    assert 'name="category__in"' in body
     assert "Phones" in body
     assert "Laptops" in body
+
+
+async def test_several_values_of_one_filter_apply_together(
+    client: httpx.AsyncClient,
+) -> None:
+    """Two ticked boxes are one query, not two runs of the same report."""
+    both = await page(client, "/admin/shop.product/", params={"category__in": "1,2"})
+    assert "Pixel Phone" in both
+    assert "Retired Laptop" in both
+
+    # And the repeated form a plain checkbox group submits means the same thing.
+    repeated = await page(client, "/admin/shop.product/?category__in=1&category__in=2")
+    assert "Pixel Phone" in repeated
+    assert "Retired Laptop" in repeated
 
 
 async def test_a_date_filter_is_a_pair_of_bounds(client: httpx.AsyncClient) -> None:
@@ -104,12 +123,14 @@ async def test_a_date_filter_is_a_pair_of_bounds(client: httpx.AsyncClient) -> N
     assert 'type="date"' in body
 
 
-async def test_a_relation_with_too_many_rows_gets_no_control(
+async def test_a_relation_with_too_many_rows_is_searched_not_listed(
     backend: SQLAlchemyBackend, staff_user: StaffUser
 ) -> None:
-    """Better no control than a select with ten thousand options.
+    """Past the cap the control searches the server instead of listing rows.
 
-    The search box still reaches those rows, so nothing becomes unreachable.
+    It used to be dropped altogether, which is worse than it sounds: a filter
+    that silently disappears once the target table grows leaves the person who
+    set it up certain it worked, because when they tried it, it did.
     """
     from fastfort.admin.site import _filter_controls
 
@@ -120,13 +141,56 @@ async def test_a_relation_with_too_many_rows_gets_no_control(
     model_admin = Tiny(spec)
 
     class Crowded:
-        async def related_choices(self, field: str, term: str, *, limit: int) -> list[Any]:
+        async def related_choices(
+            self, field: str, term: str, *, limit: int, search_fields: Any = ()
+        ) -> list[Any]:
             from fastfort.orm.base import RelatedChoice
 
             return [RelatedChoice(value=n, label=str(n)) for n in range(limit)]
 
-    controls = await _filter_controls(spec, model_admin, {}, Crowded(), relation_limit=5)
-    assert controls == []
+    controls = await _filter_controls(
+        spec,
+        model_admin,
+        {},
+        Crowded(),
+        relation_limit=5,
+        autocomplete_url="/admin/shop.product/autocomplete",
+    )
+
+    assert len(controls) == 1
+    assert controls[0]["kind"] == "search"
+    assert controls[0]["url"] == "/admin/shop.product/autocomplete?field=category"
+    # Nothing is inlined: the whole point is that the rows do not travel.
+    assert controls[0]["choices"] == []
+
+
+async def test_a_searched_relation_filter_keeps_the_active_option(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> None:
+    """The chosen row still has to render, or the control shows an empty box."""
+    from fastfort.admin.site import _filter_controls
+
+    class Tiny(admin.ModelAdmin):
+        list_filter = ("category",)
+
+    spec = backend.introspect(Product, key="shop.product")
+    model_admin = Tiny(spec)
+
+    class Crowded:
+        async def related_choices(
+            self, field: str, term: str, *, limit: int, search_fields: Any = ()
+        ) -> list[Any]:
+            from fastfort.orm.base import RelatedChoice
+
+            return [RelatedChoice(value=n, label=f"Category {n}") for n in range(limit)]
+
+    controls = await _filter_controls(
+        spec, model_admin, {"category": "3"}, Crowded(), relation_limit=5
+    )
+
+    assert controls[0]["choices"] == [
+        {"value": "3", "label": "Category 3", "selected": True},
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -160,8 +224,12 @@ async def test_filters_combine(client: httpx.AsyncClient) -> None:
 
 async def test_a_filter_keeps_its_selection_visible(client: httpx.AsyncClient) -> None:
     """A filter that resets its own control after applying is unusable."""
-    body = await page(client, "/admin/shop.product/", params={"is_active": "0"})
-    assert re.search(r'<option value="0"[^>]*selected', body)
+    body = await page(client, "/admin/shop.product/", params={"is_active__in": "0"})
+    assert re.search(r'value="0"[^>]*checked', body)
+
+    # The single-value spelling older links carry still shows as applied.
+    legacy = await page(client, "/admin/shop.product/", params={"is_active": "0"})
+    assert re.search(r'value="0"[^>]*checked', legacy)
 
 
 async def test_a_malformed_date_bound_does_not_break_the_page(

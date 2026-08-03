@@ -80,8 +80,17 @@ class Product(Base):
         sa.DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC)
     )
 
+    # No browser has a control for a duration, so this is the column that
+    # proves the one FastFort draws is reachable from a real model.
+    warranty: Mapped[dt.timedelta | None] = mapped_column(sa.Interval(), default=None)
+
     public_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid(), default=uuid.uuid4)
     attributes: Mapped[dict | None] = mapped_column(sa.JSON(), default=None)
+
+    # A plain string column, exactly like `brand_colour` elsewhere: the database
+    # holds a path, never bytes. `formfield_overrides` is what says this one
+    # means "file" rather than "text".
+    attachment: Mapped[str | None] = mapped_column(sa.String(500), default=None)
 
     # Name-based detection must mark this sensitive without being told.
     api_secret: Mapped[str | None] = mapped_column(sa.String(64), default=None)
@@ -120,6 +129,13 @@ class StaffUser(Base):
     is_active: Mapped[bool] = mapped_column(default=True)
     is_staff: Mapped[bool] = mapped_column(default=True)
     is_superuser: Mapped[bool] = mapped_column(default=False)
+
+    # What the dashboard's signups chart counts. Every real user model records
+    # this; without it here the chart's only coverage would be its own unit
+    # tests, and never the path the dashboard actually takes.
+    created_at: Mapped[dt.datetime] = mapped_column(
+        sa.DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC)
+    )
 
     def __str__(self) -> str:
         return self.email

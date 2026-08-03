@@ -107,16 +107,25 @@ def display_value(value: Any) -> Any:
 
 
 def boolean_mark(value: Any) -> Markup:
-    """A tick or a dash, which reads faster in a table than the word "True".
+    """A tick or a cross, which reads faster in a table than the word "True".
+
+    Drawn from the sprite rather than written as `&check;` and `&times;`: those
+    are text, so they land in whatever the platform's font has, which on several
+    is a different weight and colour from every other mark on the page and on
+    some is a box.
 
     The only place the admin emits markup from a value, and it emits a fixed
     string chosen by a boolean -- the value itself never reaches the output.
     """
     if value is None:
-        return Markup('<span class="ff-bool ff-bool--off" title="Not set">&mdash;</span>')
-    if value:
-        return Markup('<span class="ff-bool ff-bool--on" title="Yes">&check;</span>')
-    return Markup('<span class="ff-bool ff-bool--off" title="No">&times;</span>')
+        return Markup('<span class="ff-bool ff-bool--unset" title="Not set">&mdash;</span>')
+    tone, title, mark = ("on", "Yes", "check") if value else ("off", "No", "close")
+    # Trusted markup: `tone`, `title` and `mark` are picked from the two literals
+    # above by a boolean. Neither the value nor anything from a request reaches
+    # this string.
+    return Markup(  # noqa: S704
+        f'<span class="ff-bool ff-bool--{tone}" title="{title}">{icon(mark, size=13)}</span>'
+    )
 
 
 def icon(name: str | None, *, size: int = 16) -> Markup:

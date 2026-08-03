@@ -115,11 +115,25 @@ class SecurityHeadersMiddleware:
         # 'unsafe-inline' for styles only: the theme is applied as an inline
         # `style` attribute on <html>, whose contents are numbers validated by
         # `Theme`. Scripts get no such allowance -- they are all external files.
+        # An editor the project pointed at needs to be loadable, and it is
+        # commonly a CDN build. Only that one origin is added, and only when the
+        # setting names one: the alternative people reach for is `unsafe-inline`,
+        # which turns the whole policy off.
+        editor = _origin_of(self.settings.ui.richtext_url)
+        script_src = f"'self' {editor}" if editor else "'self'"
+        style_src = f"'self' 'unsafe-inline' {editor}" if editor else "'self' 'unsafe-inline'"
+
+        # Likewise for map tiles: one named origin, added only when a project
+        # asked for a map. The whole point of the geometry field's map is images
+        # from a tile server, and `default-src 'none'` blocks every one of them.
+        tiles = _origin_of(self.settings.ui.map_tile_url)
+        img_src = f"'self' data: {tiles}" if tiles else "'self' data:"
+
         csp = (
             "default-src 'none'; "
-            "script-src 'self'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data:; "
+            f"script-src {script_src}; "
+            f"style-src {style_src}; "
+            f"img-src {img_src}; "
             "font-src 'self'; "
             "connect-src 'self'; "
             "form-action 'self'; "
@@ -142,6 +156,20 @@ class SecurityHeadersMiddleware:
                 )
             )
         return headers
+
+
+def _origin_of(url: str | None) -> str:
+    """The scheme and host of an absolute URL, or "" for anything same-origin.
+
+    A relative path is already covered by `'self'`, and anything unparseable is
+    treated as covered rather than widening the policy on a guess.
+    """
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 def set_session_cookie(response: Response, value: str, settings: FastFortSettings) -> None:

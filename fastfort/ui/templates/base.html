@@ -6,9 +6,14 @@
   wrong theme on load.
 #}
 <!doctype html>
+{# The widgets script produces a handful of strings of its own -- "No results",
+   "3 selected". They are handed over here rather than compiled into the script,
+   because the script is one cached file for every language and this page is
+   not. #}
 <html
   lang="{{ language }}"
   {% for name, value in theme.root_attributes().items() %}{{ name }}="{{ value }}" {% endfor %}
+  {% for name, value in ui_text.items() %}data-ff-t-{{ name }}="{{ value }}" {% endfor %}
 >
   <head>
     <meta charset="utf-8" />
@@ -17,16 +22,32 @@
     <meta name="robots" content="noindex, nofollow" />
     <meta name="referrer" content="same-origin" />
     <title>{% block title %}{{ page_title }}{% endblock %} · {{ _(settings.project_name) }}</title>
-    {% if theme.favicon_url %}
-      <link rel="icon" href="{{ theme.favicon_url }}" />
-    {% endif %}
+    {# A tab with no icon gets the browser's blank-page glyph, which is what
+       every other unremarkable tab has -- and an admin is a tab people keep open
+       and then hunt for. The project's own icon wins when it set one. #}
+    <link rel="icon" href="{{ theme.favicon_url or static_url + '/favicon.svg' }}" />
+    {# Blocking, and before the stylesheets, on purpose. It applies the stored
+       theme and sidebar state to <html> while the document is still parsing, so
+       the first paint is already correct. The main script is deferred -- it
+       should not block the page -- but that means anything it sets happens
+       after the first paint and is therefore a visible flash. #}
+    <script src="{{ static_url }}/js/boot.js"></script>
     {% for stylesheet in stylesheets %}
       <link rel="stylesheet" href="{{ stylesheet }}" />
     {% endfor %}
     <script src="{{ static_url }}/js/fastfort.js" defer></script>
+    {% if theme.richtext_url %}
+      {# The project's own editor, upgrading every `data-ff-richtext` textarea.
+         Deferred like the main script: an editor is an enhancement, and the
+         textarea underneath already works. #}
+      <script src="{{ theme.richtext_url }}" defer></script>
+    {% endif %}
   </head>
 
-  <body>
+  {# The CSRF pair, so a confirmed action can post without a form of its own.
+     No more exposed than it already is: the same value is a hidden input in
+     every form on the page. #}
+  <body data-ff-csrf-field="{{ csrf_field }}" data-ff-csrf="{{ csrf_token }}">
     {# Every icon on the page, once. Inline rather than a second request: an
        external <use> target blocks the first paint of every icon that needs it. #}
     {{ ff_sprite() }}
@@ -35,7 +56,15 @@
        whole sidebar to reach the table. #}
     <a class="ff-skip-link" href="#ff-main">{{ _("Skip to content") }}</a>
 
-    <div class="ff-app" id="ff-app" data-collapsed="false">
+    {# A popup is the same page without the shell: it was opened from a field on
+       another form, so a sidebar listing every other model is noise, and there is
+       nowhere for it to navigate to. One content block either way -- Jinja
+       cannot declare the same block twice, and two copies of the form would be
+       two copies to keep in step. #}
+    {% if not popup %}
+    {# The collapsed state lives on <html>, set by boot.js before the first
+       paint. It cannot live here: this element does not exist that early. #}
+    <div class="ff-app" id="ff-app">
       <aside class="ff-sidebar" id="ff-sidebar">
         <a class="ff-brand" href="{{ admin_url }}/">
           {% if theme.logo_url %}
@@ -101,6 +130,21 @@
           <span class="ff-sr-only">{{ _("Open navigation") }}</span>
         </button>
 
+        {# Collapsing the sidebar was reachable only by pressing "[", which is a
+           feature nobody finds. On a narrow desktop the width it returns is the
+           difference between six columns and four. #}
+        <button
+          class="ff-btn ff-btn--ghost ff-btn--icon ff-btn--sm ff-js-only ff-collapse-toggle"
+          type="button"
+          data-ff-collapse
+          data-ff-tip="{{ _("Collapse the sidebar") }}"
+          data-ff-tip-below
+          data-ff-tip-align="start"
+        >
+          {{ ff_icon("sidebar", size=18) }}
+          <span class="ff-sr-only">{{ _("Collapse the sidebar") }}</span>
+        </button>
+
         <nav class="ff-breadcrumbs" aria-label="{{ _("Breadcrumb") }}">
           <a class="ff-link" href="{{ admin_url }}/">{{ _("Home") }}</a>
           {% for crumb in breadcrumbs %}
@@ -115,6 +159,17 @@
 
         <span class="ff-topbar__spacer"></span>
 
+        {# Ctrl+K. In an admin with thirty models the sidebar stops being
+           navigation and becomes a list to read; typing three letters beats all
+           of it. Rendered only with script, because it opens a dialog rather
+           than being a form that could submit on its own. #}
+        <button class="ff-palette-trigger ff-js-only" type="button" data-ff-palette>
+          {{ ff_icon("search", size=14) }}
+          <span class="ff-palette-trigger__label">{{ _("Search…") }}</span>
+          <kbd class="ff-kbd">Ctrl</kbd>
+          <kbd class="ff-kbd">K</kbd>
+        </button>
+
         {% if theme.environment_label %}
           {# In the header rather than the footer: which of two open windows is
              production has to be answerable without scrolling. #}
@@ -124,6 +179,20 @@
         {% endif %}
 
         {% block topbar_actions %}{% endblock %}
+
+        <button
+          class="ff-btn ff-btn--ghost ff-btn--icon ff-btn--sm ff-js-only"
+          type="button"
+          data-ff-settings
+          aria-controls="ff-settings-panel"
+          aria-expanded="false"
+          data-ff-tip="{{ _("Appearance") }}"
+          data-ff-tip-below
+          data-ff-tip-align="end"
+        >
+          {{ ff_icon("settings", size=18) }}
+          <span class="ff-sr-only">{{ _("Appearance") }}</span>
+        </button>
 
         {# A one-click swap between light and dark. Which icon shows is decided by
            CSS from the theme attribute, so it is right on the first paint rather
@@ -141,7 +210,9 @@
         </button>
       </header>
 
-      <main class="ff-content" id="ff-main">
+    {% endif %}
+
+      <main class="ff-content {% if popup %}ff-popup{% endif %}" id="ff-main">
         <div class="ff-container">
           {% if messages %}
             {# role="status" so a screen reader announces the outcome of a save
@@ -157,6 +228,122 @@
           {% block content %}{% endblock %}
         </div>
       </main>
+
+    {% if not popup %}
     </div>
+    {% endif %}
+
+    {# Appearance. Every control here writes to local storage and applies to the
+       root element, so it is per-person rather than per-project: the settings
+       decide what a new visitor sees, and this decides what this one does.
+       Script-only, and not rendered without it -- there is nothing a form
+       submission could do with a preference the server does not store. #}
+    <aside class="ff-drawer ff-settings-panel" id="ff-settings-panel" hidden>
+      <div class="ff-drawer__head">
+        <span class="ff-drawer__title">{{ _("Appearance") }}</span>
+        <button
+          class="ff-btn ff-btn--ghost ff-btn--icon ff-btn--sm"
+          type="button"
+          data-ff-settings-close
+          aria-label="{{ _("Close") }}"
+        >
+          {{ ff_icon("close", size=16) }}
+        </button>
+      </div>
+
+      <div class="ff-drawer__body">
+        <div class="ff-setting">
+          <span class="ff-setting__label">{{ _("Theme") }}</span>
+          <div class="ff-segment" role="group" aria-label="{{ _("Theme") }}">
+            <button class="ff-segment__option" type="button" data-ff-theme-set="system">
+              {{ ff_icon("monitor", size=14) }} {{ _("System") }}
+            </button>
+            <button class="ff-segment__option" type="button" data-ff-theme-set="light">
+              {{ ff_icon("sun", size=14) }} {{ _("Light") }}
+            </button>
+            <button class="ff-segment__option" type="button" data-ff-theme-set="dark">
+              {{ ff_icon("moon", size=14) }} {{ _("Dark") }}
+            </button>
+          </div>
+        </div>
+
+        <div class="ff-setting">
+          <span class="ff-setting__label">{{ _("Accent colour") }}</span>
+          {# Hues, not hex. The whole palette is derived from one number, so a
+             swatch sets that number and every accent in the interface follows --
+             including the ones dark mode computes separately. #}
+          <div class="ff-swatches" role="group" aria-label="{{ _("Accent colour") }}">
+            {% for swatch in accents %}
+              <button
+                class="ff-swatch"
+                type="button"
+                data-ff-accent="{{ swatch.hue }}"
+                style="--ff-swatch: oklch(0.6 0.17 {{ swatch.hue }})"
+                title="{{ _(swatch.name) }}"
+                aria-label="{{ _(swatch.name) }}"
+                aria-pressed="false"
+              ></button>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="ff-setting">
+          <span class="ff-setting__label">{{ _("Buttons") }}</span>
+          {# The primary action is neutral by default so the page has one focal
+             point. Wanting it in the brand colour is a preference, not a
+             mistake, so it is offered rather than argued with. #}
+          <div class="ff-segment" role="group" aria-label="{{ _("Buttons") }}">
+            <button class="ff-segment__option" type="button" data-ff-primary-set="neutral">
+              {{ _("Neutral") }}
+            </button>
+            <button class="ff-segment__option" type="button" data-ff-primary-set="accent">
+              {{ _("Accent") }}
+            </button>
+          </div>
+        </div>
+
+        <div class="ff-setting">
+          <span class="ff-setting__label">{{ _("Density") }}</span>
+          <div class="ff-segment" role="group" aria-label="{{ _("Density") }}">
+            <button class="ff-segment__option" type="button" data-ff-density-set="comfortable">
+              {{ _("Comfortable") }}
+            </button>
+            <button class="ff-segment__option" type="button" data-ff-density-set="compact">
+              {{ _("Compact") }}
+            </button>
+          </div>
+        </div>
+
+        <div class="ff-setting">
+          <span class="ff-setting__label">{{ _("Sidebar") }}</span>
+          <div class="ff-segment" role="group" aria-label="{{ _("Sidebar") }}">
+            <button class="ff-segment__option" type="button" data-ff-collapse-set="false">
+              {{ _("Expanded") }}
+            </button>
+            <button class="ff-segment__option" type="button" data-ff-collapse-set="true">
+              {{ _("Collapsed") }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="ff-drawer__foot">
+        <button class="ff-btn ff-btn--sm" type="button" data-ff-appearance-reset>
+          {{ ff_icon("refresh", size=15) }}
+          {{ _("Reset to defaults") }}
+        </button>
+      </div>
+    </aside>
+
+    {# The palette's contents, as data rather than markup: it is the sidebar's
+       own list, a few hundred bytes, and a palette that has to wait for a
+       request before it can answer is one people stop reaching for. #}
+    <script
+      type="application/json"
+      id="ff-palette-data"
+      data-ff-placeholder="{{ _("Search…") }}"
+      data-ff-hint-move="{{ _("to move") }}"
+      data-ff-hint-open="{{ _("to open") }}"
+    >{{ palette|tojson }}</script>
   </body>
 </html>

@@ -68,6 +68,17 @@ _PYTHON_TYPE_MAP: dict[type, FieldType] = {
 }
 
 
+def _is_spatial(column_type: Any) -> bool:
+    """Whether a column holds a geometry, without importing GeoAlchemy2.
+
+    Detected by where the type class comes from rather than by `isinstance`,
+    because the library must not depend on GeoAlchemy2 to recognise that a
+    project is using it -- and a project that is not must not pay an import for
+    a package it never installed.
+    """
+    return type(column_type).__module__.split(".", 1)[0] == "geoalchemy2"
+
+
 def is_sqlalchemy_model(model: type) -> bool:
     """Whether `model` is a mapped SQLAlchemy class."""
     try:
@@ -161,6 +172,13 @@ def _column_field(mapper: Mapper[Any], name: str, column: sa.Column[Any]) -> Fie
     generated = bool(column.computed) or (is_pk and _is_autoincrement(mapper, column))
     has_default = column.default is not None or column.server_default is not None
 
+    # A UUID the application mints is an identity, not a value someone fills in.
+    # Offering a box for it invites a typo into a column other rows point at, and
+    # there is nothing useful a person could type there instead -- the same
+    # reasoning that already keeps a generated primary key off the form.
+    if field_type is FieldType.UUID and has_default:
+        generated = True
+
     max_length = getattr(column.type, "length", None)
     precision = getattr(column.type, "scale", None)
 
@@ -220,6 +238,8 @@ def _classify(column: sa.Column[Any]) -> tuple[FieldType, tuple[Choice, ...]]:
         return FieldType.STRING, ()
     if isinstance(column_type, sa.ARRAY):
         return FieldType.ARRAY, ()
+    if _is_spatial(column_type):
+        return FieldType.GEOMETRY, ()
 
     try:
         python_type = column_type.python_type

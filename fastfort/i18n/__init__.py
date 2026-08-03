@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from .catalog import (
     DEFAULT_LANGUAGE,
+    LANGUAGE_ENGLISH_NAMES,
     LANGUAGE_FLAGS,
     LANGUAGES,
     LanguageChoice,
@@ -26,6 +27,7 @@ from .catalog import (
 __all__ = [
     "DEFAULT_LANGUAGE",
     "LANGUAGES",
+    "LANGUAGE_ENGLISH_NAMES",
     "LANGUAGE_FLAGS",
     "LanguageChoice",
     "Translator",

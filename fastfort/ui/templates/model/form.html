@@ -9,9 +9,25 @@
       {% endif %}
     </div>
     <div class="ff-page-header__actions">
-      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">{{ _("Back to {name}", name=_(admin.title)|lower) }}</a>
+      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">
+        {{ ff_icon("arrow-left", size=15) }}
+        {{ _("Back to {name}", name=model_title|lower) }}
+      </a>
       {% if delete_url %}
-        <a class="ff-btn ff-btn--ghost" href="{{ delete_url }}">{{ _("Delete") }}</a>
+        <a
+          class="ff-btn ff-btn--ghost"
+          href="{{ delete_url }}"
+          data-ff-method="post"
+          data-ff-confirm="{{ _("Delete {name}?", name=object_label) }}"
+          data-ff-confirm-body="{{ _("This action cannot be undone.") }}"
+          {% if cascades %}
+            data-ff-confirm-detail="{{ _("These will be deleted too:") }} {{ cascades|join(", ") }}"
+          {% endif %}
+          data-ff-confirm-label="{{ _("Delete") }}"
+        >
+          {{ ff_icon("trash", size=15) }}
+          {{ _("Delete") }}
+        </a>
       {% endif %}
     </div>
   </div>
@@ -36,7 +52,13 @@
     </div>
   {% endif %}
 
-  <form class="ff-mt-4" method="post" action="{{ action_url }}" novalidate>
+  <form
+    class="ff-mt-4"
+    method="post"
+    action="{{ action_url }}"
+    {% if form.needs_multipart %}enctype="multipart/form-data"{% endif %}
+    novalidate
+  >
     <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
     {% if version_token %}
       {# Carries the row's state at load time, so a save that would silently
@@ -48,9 +70,13 @@
       <div class="ff-card__body ff-form-grid">
         {% for field in form.fields %}
           {# Long controls span both columns: a textarea squeezed into half a
-             page is worse than a taller form. #}
+             page is worse than a taller form. A map earns the width only when
+             there is one -- without a tile URL the field is a short text box
+             and a full-width row of nothing beside it. #}
+          {% set wide = field.widget in ('textarea', 'json', 'relations')
+                        or (field.widget == 'point' and settings.ui.map_tile_url) %}
           <div
-            class="ff-field{% if field.widget in ('textarea', 'json', 'relations') %} ff-field--wide{% endif %}"
+            class="ff-field{% if wide %} ff-field--wide{% endif %}"
             {% if field.errors %}data-invalid="true"{% endif %}
           >
             <label class="ff-label" for="ff-{{ field.name }}">
@@ -73,6 +99,122 @@
                 {% if field.required %}required{% endif %}
                 {% if field.errors %}aria-invalid="true"{% endif %}
               >{{ field.raw }}</textarea>
+
+            {% elif field.widget == "point" %}
+              {# The pair of coordinates stays the control that holds and submits
+                 the value; the map only writes into it. Typing "41.2995,
+                 69.2401" still works, pasting from anywhere still works, and
+                 with script off or no tile URL configured this is exactly the
+                 text box it has always been. #}
+              <input
+                class="ff-input ff-mono"
+                id="ff-{{ field.name }}"
+                name="{{ field.name }}"
+                type="text"
+                value="{{ field.raw }}"
+                spellcheck="false"
+                placeholder="41.2995, 69.2401"
+                {% if field.required %}required{% endif %}
+                {% if field.errors %}aria-invalid="true"{% endif %}
+                {% if settings.ui.map_tile_url %}
+                  data-ff-map="{{ settings.ui.map_tile_url }}"
+                  data-ff-map-center="{{ settings.ui.map_center }}"
+                {% endif %}
+              />
+              {% if settings.ui.map_attribution %}
+                <span class="ff-help ff-js-only">{{ settings.ui.map_attribution }}</span>
+              {% endif %}
+
+            {% elif field.widget in ("file", "image") %}
+              {# A native file input cannot be prefilled -- browsers refuse, for
+                 good reason -- so a stored value is shown as a link (or a
+                 thumbnail, for an image) beside the input rather than inside
+                 it. Choosing a new file replaces it on save; the "Clear"
+                 checkbox removes it without replacing it, and only appears when
+                 there is something to remove. #}
+              {% if field.value %}
+                <div class="ff-file-current">
+                  {% if field.widget == "image" %}
+                    <img class="ff-file-current__thumb" src="{{ media_url }}/{{ field.value }}" alt="" />
+                  {% endif %}
+                  <a
+                    class="ff-file-current__link"
+                    href="{{ media_url }}/{{ field.value }}"
+                    target="_blank"
+                    rel="noopener"
+                  >{{ field.value.rsplit("/", 1)[-1] }}</a>
+                  <label class="ff-checkbox ff-file-current__clear">
+                    <input type="checkbox" name="{{ field.clear_name }}" value="1" />
+                    <span>{{ _("Clear") }}</span>
+                  </label>
+                </div>
+              {% endif %}
+              <input
+                class="ff-input"
+                id="ff-{{ field.name }}"
+                name="{{ field.name }}"
+                type="file"
+                accept="{{ 'image/*' if field.widget == 'image' else '' }}"
+                {% if field.errors %}aria-invalid="true"{% endif %}
+              />
+
+            {% elif field.widget == "color" %}
+              {# A swatch and the hex beside it, kept in step. The native picker
+                 alone cannot be typed into and cannot be read aloud; the text
+                 box alone cannot be pointed at. Both, bound together, is the
+                 only version that serves everyone. #}
+              <div class="ff-color" data-ff-color>
+                <input
+                  class="ff-color__swatch"
+                  type="color"
+                  value="{{ field.raw or "#000000" }}"
+                  aria-hidden="true"
+                  tabindex="-1"
+                />
+                <input
+                  class="ff-input ff-color__hex ff-mono"
+                  id="ff-{{ field.name }}"
+                  name="{{ field.name }}"
+                  type="text"
+                  value="{{ field.raw }}"
+                  placeholder="#000000"
+                  spellcheck="false"
+                  {% if field.errors %}aria-invalid="true"{% endif %}
+                />
+              </div>
+
+            {% elif field.widget == "richtext" %}
+              {# The editor is the project's to choose. FastFort renders the
+                 textarea and marks it; `UISettings.richtext_url` names a script
+                 that upgrades it -- CKEditor, TinyMCE, whatever the project
+                 already licences. Without one this is a textarea, which is a
+                 working control rather than a broken editor. #}
+              <textarea
+                class="ff-textarea"
+                id="ff-{{ field.name }}"
+                name="{{ field.name }}"
+                rows="10"
+                data-ff-richtext
+                {% if field.required %}required{% endif %}
+                {% if field.errors %}aria-invalid="true"{% endif %}
+              >{{ field.raw }}</textarea>
+
+            {% elif field.widget == "nullboolean" %}
+              {# Three states, because the column has three. A checkbox would
+                 turn "not answered yet" into "answered no" the first time
+                 anyone pressed Save. #}
+              <select
+                class="ff-select"
+                id="ff-{{ field.name }}"
+                name="{{ field.name }}"
+                data-ff-combo
+                data-ff-clearable="false"
+                {% if field.errors %}aria-invalid="true"{% endif %}
+              >
+                <option value="" {% if field.raw == "" %}selected{% endif %}>{{ _("Unknown") }}</option>
+                <option value="1" {% if field.raw == "1" %}selected{% endif %}>{{ _("Yes") }}</option>
+                <option value="0" {% if field.raw == "0" %}selected{% endif %}>{{ _("No") }}</option>
+              </select>
 
             {% elif field.widget == "checkbox" %}
               <label class="ff-checkbox">
@@ -107,10 +249,24 @@
               />
 
             {% elif field.widget == "select" or field.widget == "relation" %}
+              <div class="ff-with-related">
+              {# A real <select>, upgraded in place to a searchable listbox.
+                 `data-ff-url` is set when the target table has more rows than
+                 can be sent to the browser, and the control then searches the
+                 server as you type instead of listing everything. #}
               <select
                 class="ff-select"
                 id="ff-{{ field.name }}"
                 name="{{ field.name }}"
+                data-ff-combo
+                {# Relations always get a search box, whatever the count. The
+                   target table is the one that grows, and a picker that offers
+                   search only past some threshold is one people learn is not
+                   searchable. #}
+                {% if field.spec.is_relation %}data-ff-search="always"{% endif %}
+                data-ff-placeholder="{{ _("Choose…") }}"
+                data-ff-clearable="{{ "false" if field.required else "true" }}"
+                {% if field.remote %}data-ff-url="{{ autocomplete_url }}?field={{ field.name }}"{% endif %}
                 {% if field.errors %}aria-invalid="true"{% endif %}
               >
                 {% if not field.required %}
@@ -124,13 +280,58 @@
                 {% endfor %}
               </select>
 
+              {% if relation_links.get(field.name) %}
+                {# The buttons Django puts beside a foreign key. `add` opens the
+                   target's own form in a popup and drops the row it creates into
+                   this control; `change` and `view` open whatever is selected.
+                   Script-only: a popup that hands its result back has no
+                   meaning without one, and the picker works fine without them. #}
+                <div
+                  class="ff-related ff-js-only"
+                  data-ff-related="{{ field.name }}"
+                  data-ff-related-add="{{ relation_links[field.name].add }}"
+                  data-ff-related-base="{{ relation_links[field.name].base }}"
+                >
+                  <button
+                    class="ff-action"
+                    type="button"
+                    data-ff-related-action="change"
+                    data-ff-tip="{{ _("Edit") }}"
+                    disabled
+                  >{{ ff_icon("edit", size=15) }}</button>
+                  <button
+                    class="ff-action"
+                    type="button"
+                    data-ff-related-action="add"
+                    data-ff-tip="{{ _("Add") }}"
+                  >{{ ff_icon("plus", size=15) }}</button>
+                  <button
+                    class="ff-action"
+                    type="button"
+                    data-ff-related-action="view"
+                    data-ff-tip="{{ _("View") }}"
+                    data-ff-tip-align="end"
+                    disabled
+                  >{{ ff_icon("eye", size=15) }}</button>
+                </div>
+              {% endif %}
+              </div>
+
             {% elif field.widget == "relations" %}
+              <div class="ff-with-related">
+              {# Many-to-many, drawn as removable chips. The native control this
+                 replaces asked people to hold Ctrl to attach three tags to a
+                 product, which is not a thing anyone should have to know. #}
               <select
                 class="ff-select"
                 id="ff-{{ field.name }}"
                 name="{{ field.name }}[]"
                 multiple
                 size="{{ [field.choices|length, 6]|min if field.choices else 3 }}"
+                data-ff-combo
+                data-ff-search="always"
+                data-ff-placeholder="{{ _("Choose…") }}"
+                {% if field.remote %}data-ff-url="{{ autocomplete_url }}?field={{ field.name }}"{% endif %}
               >
                 {% for choice in field.choices %}
                   <option
@@ -139,7 +340,44 @@
                   >{{ choice.label }}</option>
                 {% endfor %}
               </select>
-              <span class="ff-help">{{ _("Hold Ctrl (or Cmd) to select more than one.") }}</span>
+
+              {% if relation_links.get(field.name) %}
+                {# The buttons Django puts beside a foreign key. `add` opens the
+                   target's own form in a popup and drops the row it creates into
+                   this control; `change` and `view` open whatever is selected.
+                   Script-only: a popup that hands its result back has no
+                   meaning without one, and the picker works fine without them. #}
+                <div
+                  class="ff-related ff-js-only"
+                  data-ff-related="{{ field.name }}"
+                  data-ff-related-add="{{ relation_links[field.name].add }}"
+                  data-ff-related-base="{{ relation_links[field.name].base }}"
+                >
+                  <button
+                    class="ff-action"
+                    type="button"
+                    data-ff-related-action="change"
+                    data-ff-tip="{{ _("Edit") }}"
+                    disabled
+                  >{{ ff_icon("edit", size=15) }}</button>
+                  <button
+                    class="ff-action"
+                    type="button"
+                    data-ff-related-action="add"
+                    data-ff-tip="{{ _("Add") }}"
+                  >{{ ff_icon("plus", size=15) }}</button>
+                  <button
+                    class="ff-action"
+                    type="button"
+                    data-ff-related-action="view"
+                    data-ff-tip="{{ _("View") }}"
+                    data-ff-tip-align="end"
+                    disabled
+                  >{{ ff_icon("eye", size=15) }}</button>
+                </div>
+              {% endif %}
+              </div>
+              <span class="ff-help ff-no-js">{{ _("Hold Ctrl (or Cmd) to select more than one.") }}</span>
 
             {% else %}
               <input
@@ -148,6 +386,14 @@
                 name="{{ field.name }}"
                 type="{{ input_types[field.widget] }}"
                 value="{{ field.raw }}"
+                {# Upgraded in place to a calendar drawn in the page. The native
+                   input stays the element that holds and submits the value, so
+                   without script it is exactly the control it has always been --
+                   only the picker is replaced. #}
+                {% if field.widget in ("date", "datetime") %}data-ff-date{% endif %}
+                {# Likewise: split into days/hours/minutes/seconds boxes, which
+                   is the format the text box was asking people to type out. #}
+                {% if field.widget == "duration" %}data-ff-duration{% endif %}
                 {% if field.widget == "decimal" %}step="{{ field.spec.decimal_places|step }}"{% endif %}
                 {% if field.spec.max_length %}maxlength="{{ field.spec.max_length }}"{% endif %}
                 {% if field.spec.placeholder %}placeholder="{{ field.spec.placeholder }}"{% endif %}
@@ -158,7 +404,7 @@
             {% endif %}
 
             {% if field.help_text and field.widget != "checkbox" %}
-              <span class="ff-help">{{ field.help_text }}</span>
+              <span class="ff-help{% if field.help_is_for_no_script %} ff-no-js{% endif %}">{{ field.help_text }}</span>
             {% endif %}
             {% for message in field.errors %}
               <span class="ff-error" role="alert">{{ message }}</span>
@@ -169,8 +415,21 @@
     </div>
 
     <div class="ff-form-actions">
-      <button class="ff-btn ff-btn--primary" type="submit">{{ submit_label }}</button>
-      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">{{ _("Cancel") }}</a>
+      <button class="ff-btn ff-btn--primary" type="submit">
+        {{ ff_icon("check", size=15) }}
+        {{ submit_label }}
+      </button>
+      <a
+        class="ff-btn ff-btn--ghost"
+        href="{{ list_url }}"
+        {# In a popup, "Cancel" should close the window it was opened as, not
+           navigate that same window to the parent's list -- which is what a
+           plain link does, leaving a popup open on a page nothing points back
+           to. Script-only: without it, closing a window from a click needs
+           `window.close()` regardless, so the link is the best available
+           fallback and simply shows the list in the popup instead. #}
+        {% if popup %}data-ff-popup-cancel{% endif %}
+      >{{ _("Cancel") }}</a>
     </div>
   </form>
 {% endblock %}

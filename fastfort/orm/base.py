@@ -111,9 +111,15 @@ class ModelAdapter(Protocol):
         ...
 
     async def related_choices(
-        self, field: str, term: str, *, limit: int
+        self, field: str, term: str, *, limit: int, search_fields: Sequence[str] = ()
     ) -> Sequence[RelatedChoice]:
-        """Search the target of a relation field, for autocomplete widgets."""
+        """Search the target of a relation field, for autocomplete widgets.
+
+        `search_fields` names the target's own text columns to match `term`
+        against. The caller supplies them from the target's `ModelAdmin`, which
+        is the only place that knows which columns identify a row to a person.
+        Empty falls back to a guess from conventional column names.
+        """
         ...
 
     # -- writing ------------------------------------------------------------

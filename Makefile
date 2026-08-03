@@ -49,3 +49,17 @@ services-down:  ## Stop the local test databases and drop their data
 clean:  ## Remove caches and build artefacts
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage coverage.xml dist build
 	find . -type d -name __pycache__ -not -path './.venv/*' -exec rm -rf {} +
+
+# --- Sandbox -----------------------------------------------------------------
+# The scratch application in test_api/, on PostgreSQL with PostGIS.
+
+.PHONY: sandbox-up sandbox-down sandbox
+
+sandbox-up:
+	docker compose -f docker-compose.sandbox.yml up -d
+
+sandbox-down:
+	docker compose -f docker-compose.sandbox.yml down
+
+sandbox: sandbox-up
+	uv run uvicorn test_api.main:app --reload

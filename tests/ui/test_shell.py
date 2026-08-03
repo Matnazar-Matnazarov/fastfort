@@ -8,6 +8,7 @@ the system" silently pins the admin the first time it is touched.
 
 from __future__ import annotations
 
+import itertools
 import re
 from collections.abc import AsyncIterator
 from typing import Any
@@ -105,6 +106,90 @@ def test_every_icon_is_drawn_on_the_same_grid() -> None:
     assert str(sprite()).count('viewBox="0 0 24 24"') == len(ICONS)
 
 
+#: How many numbers each path command takes, per repetition.
+_ARITY = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "S": 4, "Q": 4, "T": 2, "A": 7, "Z": 0}
+
+
+def _line_runs(d: str) -> list[list[tuple[float, float]]]:
+    """The straight-line runs in a path, as lists of steps taken.
+
+    Steps are absolute offsets whichever form the path is written in, so `H`
+    and `h` are comparable. Only moves and lines are followed: a curve or an arc
+    ends the run being collected, because "the pen came back to where it was"
+    says nothing about a shape that got there along a different route.
+    """
+    tokens = re.findall(r"[MmLlHhVvCcSsQqTtAaZz]|-?\d*\.?\d+", d)
+    runs: list[list[tuple[float, float]]] = []
+    current: list[tuple[float, float]] = []
+    command = "M"
+    x = y = 0.0
+    index = 0
+
+    while index < len(tokens):
+        if tokens[index].isalpha():
+            command = tokens[index]
+            index += 1
+            if command in "Zz":
+                runs.append(current)
+                current = []
+            continue
+
+        upper = command.upper()
+        relative = command.islower()
+        numbers = [float(n) for n in tokens[index : index + _ARITY[upper]]]
+        index += _ARITY[upper]
+
+        if upper in {"M", "L"}:
+            step = (numbers[0], numbers[1]) if relative else (numbers[0] - x, numbers[1] - y)
+        elif upper == "H":
+            step = (numbers[0], 0.0) if relative else (numbers[0] - x, 0.0)
+        elif upper == "V":
+            step = (0.0, numbers[0]) if relative else (0.0, numbers[0] - y)
+        else:
+            # A curve or an arc: the run stops here, and the pen lands on the
+            # last coordinate pair the command carries.
+            runs.append(current)
+            current = []
+            end = numbers[-2:] if upper != "A" else numbers[5:7]
+            x, y = (x + end[0], y + end[1]) if relative else (end[0], end[1])
+            continue
+
+        x, y = x + step[0], y + step[1]
+
+        if upper == "M":
+            # A move starts a new subpath -- and after the first pair, further
+            # pairs are implicit lines, which is how the chevron below was
+            # written and how a parser that ignores them misses the bug.
+            runs.append(current)
+            current = []
+            command = "l" if relative else "L"
+        else:
+            current.append(step)
+
+    runs.append(current)
+    return runs
+
+
+@pytest.mark.parametrize("name", icon_names())
+def test_an_icon_never_retraces_the_line_it_just_drew(name: str) -> None:
+    """Two consecutive steps that cancel out paint over the segment before them.
+
+    `chevron-left` shipped as `m15 18-6-6 6 6`: down-left, then back up-right
+    along the same line. It drew one diagonal stroke rather than a chevron, and
+    it was the "previous page" arrow on every list -- visible on every screen
+    with more than one page of rows, and still invisible to every test, because
+    the markup was perfectly well-formed and the sprite defined the symbol.
+    """
+    # Only the paths: an icon's `<circle>` and `<rect>` carry attributes whose
+    # letters and numbers read as perfectly plausible path commands.
+    for d in re.findall(r'\bd="([^"]+)"', ICONS[name]):
+        for run in _line_runs(d):
+            for before, after in itertools.pairwise(run):
+                assert (before[0] + after[0], before[1] + after[1]) != (0.0, 0.0), (
+                    f"{name} retraces {before} with {after} in {d!r}"
+                )
+
+
 def test_is_icon_rejects_the_empty_name() -> None:
     assert not is_icon("")
     assert not is_icon(None)
@@ -183,6 +268,51 @@ async def test_the_theme_control_offers_all_three_modes(client: httpx.AsyncClien
     body = await page(client, "/admin/")
     for mode in ("light", "dark", "system"):
         assert f'data-ff-theme-set="{mode}"' in body, mode
+
+
+async def test_the_stored_theme_is_applied_before_the_first_paint(
+    client: httpx.AsyncClient,
+) -> None:
+    """The anti-flash script must block, and must run before the stylesheets.
+
+    Everything else on the page is deferred, correctly -- but a deferred script
+    runs *after* the first paint, so anything it sets is a visible change. The
+    admin flashed dark and then turned light on every load, and the sidebar
+    opened before snapping shut. Only a blocking script in the head can set the
+    theme early enough for the first paint to be the right one.
+    """
+    body = await page(client, "/admin/")
+    head = body[: body.index("</head>")]
+
+    boot = re.search(r"<script src=\"([^\"]*boot\.js)\"([^>]*)>", head)
+    assert boot, "boot.js must be in the head"
+    assert "defer" not in boot.group(2), "boot.js must not be deferred"
+    assert "async" not in boot.group(2), "boot.js must not be async"
+
+    # Before the stylesheets, so the attributes it sets are already in place when
+    # the first rule is matched.
+    assert head.index(boot.group(0)) < head.index('<link rel="stylesheet"')
+
+    # And the main script stays deferred: it must not block the page.
+    main = re.search(r"<script src=\"([^\"]*fastfort\.js)\"([^>]*)>", head)
+    assert main, "the main script should be in the head"
+    assert "defer" in main.group(2)
+
+
+async def test_the_boot_script_is_served(client: httpx.AsyncClient) -> None:
+    response = await client.get("/admin/static/js/boot.js")
+    assert response.status_code == 200
+    assert "ff:theme" in response.text
+
+
+async def test_the_script_route_serves_only_what_it_ships(
+    client: httpx.AsyncClient,
+) -> None:
+    """The name comes from the URL, so it is an allow-list rather than a path."""
+    for name in ("../../admin/site.py", "nope.js", "%2e%2e%2fsite.py"):
+        response = await client.get(f"/admin/static/js/{name}", follow_redirects=True)
+        assert response.status_code == 404, name
+        assert "build_admin_router" not in response.text, name
 
 
 async def test_the_theme_control_is_hidden_without_javascript(client: httpx.AsyncClient) -> None:
