@@ -41,10 +41,68 @@
         </a>
       {% endfor %}
     </div>
+
+    {% if signups %}
+      {# Drawn by the server, not by a charting library. Bars are elements with a
+         height, so the chart is in the first paint, works with script disabled,
+         inherits the theme's own colours, and costs nothing to download. #}
+      <div class="ff-card ff-mt-6">
+        <div class="ff-card__header">
+          <div class="ff-grow">
+            <h2 class="ff-card__title">{{ _("New accounts") }}</h2>
+            <p class="ff-muted ff-mt-2">
+              {{ _("{count} in the last {days} days",
+                   count=signups.total, days=signups.bars|length) }}
+            </p>
+          </div>
+          {% if signups_url %}
+            <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ signups_url }}">
+              {{ _("View all") }}
+              {{ ff_icon("arrow-right", size=14) }}
+            </a>
+          {% endif %}
+        </div>
+
+        <div class="ff-card__body">
+          {# `role="img"` with a label, because the bars mean nothing read one by
+             one. The table below carries the same numbers for anyone who wants
+             them exactly, and is what a screen reader is offered. #}
+          <div
+            class="ff-chart"
+            role="img"
+            aria-label="{{ _("{count} in the last {days} days",
+                             count=signups.total, days=signups.bars|length) }}"
+          >
+            {% for bar in signups.bars %}
+              <div class="ff-chart__slot" data-ff-tip="{{ bar.iso }} · {{ bar.count }}">
+                <div class="ff-chart__bar" style="height: {{ signups.height(bar) }}%"></div>
+              </div>
+            {% endfor %}
+          </div>
+
+          <div class="ff-chart__axis" aria-hidden="true">
+            <span>{{ signups.bars[0].iso }}</span>
+            <span>{{ signups.bars[-1].iso }}</span>
+          </div>
+
+          <table class="ff-sr-only">
+            <caption>{{ _("New accounts") }}</caption>
+            <thead>
+              <tr><th scope="col">{{ _("Date") }}</th><th scope="col">{{ _("Count") }}</th></tr>
+            </thead>
+            <tbody>
+              {% for bar in signups.bars %}
+                <tr><th scope="row">{{ bar.iso }}</th><td>{{ bar.count }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% endif %}
   {% else %}
     <div class="ff-card ff-mt-6">
       <div class="ff-empty">
-        <div class="ff-empty__icon" aria-hidden="true">◇</div>
+        <div class="ff-empty__icon" aria-hidden="true">{{ ff_icon("database", size=22) }}</div>
         <div class="ff-empty__title">{{ _("No models are registered") }}</div>
         <p class="ff-empty__body">
           Register one with <code class="ff-mono">@admin.register(Model)</code>, then make
