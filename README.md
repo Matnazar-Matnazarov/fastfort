@@ -66,6 +66,15 @@ class ProductAdmin(admin.ModelAdmin):
     ordering = ("-created_at",)
     select_related = ("category",)
     icon = "box"  # drawn beside the sidebar entry
+
+    # Offered once rows are selected. "delete" is built in; this adds another.
+    actions = ("delete", "archive")
+
+    @admin.action("Archive", icon="box")
+    async def archive(self, adapter, objects):
+        for product in objects:
+            await adapter.update(product, {"is_active": False})
+        return f"{len(objects)} products archived."
 ```
 
 Create the first account and start the server:
@@ -78,7 +87,14 @@ uv run uvicorn main:app
 ```
 
 Open `http://127.0.0.1:8000/admin`, sign in, and you have a list, a search box,
-filters, sortable columns, pagination and working create, edit and delete pages.
+filters, sortable columns, numbered pagination, row selection with bulk actions,
+and working create, edit and delete pages. Foreign keys become searchable
+pickers -- backed by an autocomplete endpoint once the target table outgrows a
+dropdown -- and many-to-many fields become removable chips.
+
+None of it needs JavaScript to work. Every control is a real form input and
+every sort header a real link; the browser-side code upgrades them in place and
+gets out of the way when it is not there.
 
 Field names are checked against the model when the admin is built, so a typo in
 `list_display` is a start-up error naming every problem at once -- not a 500 the
@@ -97,8 +113,9 @@ first time someone opens that page.
 | 📝 **Audit log** | Who changed what and when, with an old → new diff |
 | 🗄 **Three databases** | SQLite · PostgreSQL · MySQL, with identical behaviour |
 | 🔌 **ORM-agnostic** | SQLAlchemy 2.0 (async and sync) and Tortoise ORM behind one adapter contract |
-| 🌍 **Three languages** | English, Uzbek and Russian, switchable per person from any page, negotiated from the browser |
+| 🌍 **Nine languages** | English, Uzbek, Russian, Turkish, German, French, Spanish, Chinese and Korean. The catalogues ship in the package, so the admin is already translated the moment you install it — there is nothing to configure |
 | ⌨️ **A CLI that matters** | `createsuperuser` so a fresh install has a way in, and `check --deploy` that exits non-zero |
+| 📤 **Export** | The current view as CSV or Excel — filters, search and ordering included. No openpyxl, no pandas |
 | 📦 **No Node.js** | CSS and JavaScript ship pre-built inside the package |
 
 ---

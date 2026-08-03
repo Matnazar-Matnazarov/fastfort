@@ -224,3 +224,6 @@ package_plan/*
 test_api/
 # Its SQLite file is written into the repository root, not into test_api/.
 test_api.db
+# MediaSettings.root defaults to a relative "media", written wherever the
+# process's cwd happens to be -- the sandbox's own uploads, not a deliverable.
+media/

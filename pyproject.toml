@@ -38,7 +38,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "fastapi>=0.115",
+    "fastapi[standard]>=0.115",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
     "jinja2>=3.1.4",
@@ -102,6 +102,9 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "uvicorn>=0.30",
+    "geoalchemy2>=0.20.0",
+    "asyncpg>=0.31.0",
+    "openpyxl>=3.1.5",
 ]
 
 # ---------------------------------------------------------------------------
