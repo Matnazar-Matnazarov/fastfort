@@ -14,8 +14,9 @@ Roles & permissions · Audit logging · SQLAlchemy & Tortoise · **No Node.js re
 </div>
 
 > [!WARNING]
-> **Early stage.** The core and spec layers are still being built and the public API
-> is not stable yet. Watch the repository for the first release.
+> **Early stage.** `0.1.0` is the first release and the public API is not stable
+> yet — before 1.0, a minor release may contain breaking changes, each one listed
+> under a **Breaking** heading in [the changelog](CHANGELOG.md). Pin a version.
 
 ---
 
