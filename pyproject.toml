@@ -8,32 +8,57 @@ dynamic = ["version"]
 description = "Batteries-included authentication and admin framework for FastAPI."
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
-authors = [{ name = "Matnazar" }]
+authors = [{ name = "Matnazar", email = "matnazarmatnazarov3@gmail.com" }]
+maintainers = [{ name = "Matnazar", email = "matnazarmatnazarov3@gmail.com" }]
 keywords = [
     "fastapi",
     "admin",
     "admin-panel",
     "authentication",
+    "authorization",
     "jwt",
+    "orm",
     "sqlalchemy",
     "tortoise-orm",
     "starlette",
+    "asgi",
+    "async",
+    "crud",
+    "dashboard",
+    "i18n",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Web Environment",
+    "Framework :: AsyncIO",
     "Framework :: FastAPI",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: System Administrators",
+    # No "License ::" classifier: the SPDX `license` field above supersedes it
+    # (PEP 639), and PyPI rejects a distribution that carries both.
+    "Natural Language :: Arabic",
+    "Natural Language :: Chinese (Simplified)",
+    "Natural Language :: English",
+    "Natural Language :: French",
+    "Natural Language :: German",
+    "Natural Language :: Japanese",
+    "Natural Language :: Korean",
+    "Natural Language :: Russian",
+    "Natural Language :: Spanish",
+    "Natural Language :: Turkish",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Database :: Front-Ends",
     "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: System :: Systems Administration",
     "Typing :: Typed",
 ]
 
@@ -55,12 +80,17 @@ sqlite = ["aiosqlite>=0.20"]
 postgres = ["asyncpg>=0.29"]
 mysql = ["aiomysql>=0.3.2"]
 cli = ["typer>=0.12", "rich>=13.7"]
+# Brotli for the admin's own CSS and JavaScript. Optional because a project
+# behind a proxy that already compresses needs nothing here, and because a
+# missing package should mean "gzip, then" rather than a failed import.
+compression = ["brotli>=1.1"]
 all = [
     "fastfort[sqlalchemy]",
     "fastfort[sqlite]",
     "fastfort[postgres]",
     "fastfort[mysql]",
     "fastfort[cli]",
+    "fastfort[compression]",
 ]
 
 [project.urls]

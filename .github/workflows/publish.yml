@@ -1,0 +1,143 @@
+# Publishing a release to PyPI.
+#
+# Runs only on a version tag, and publishes through PyPI's Trusted Publishing:
+# GitHub mints a short-lived OIDC token for this exact workflow in this exact
+# repository, and PyPI exchanges it for an upload token that expires in fifteen
+# minutes. There is no API token anywhere -- not in the repository, not in the
+# secrets, not in a maintainer's keyring -- so there is nothing to leak, rotate
+# or accidentally print in a log.
+#
+# One-time setup on PyPI, under the project's "Publishing" settings:
+#
+#   Owner:              Matnazar-Matnazarov
+#   Repository name:    fastfort
+#   Workflow name:      publish.yml
+#   Environment name:   pypi
+#
+# See RELEASING.md for the whole procedure.
+
+name: Publish
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+# Nothing is granted by default; each job asks for exactly what it needs.
+permissions: {}
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build once, here, and hand the exact files to the publish job. Building in
+  # the job that publishes would mean the artefacts nobody checked are the ones
+  # that go out.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build and check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install
+        run: uv sync --all-extras
+
+      # A release is not the moment to discover the suite is red. The full
+      # matrix already ran on `main`; this is the fast half of it, against the
+      # code the tag actually points at.
+      - name: Lint and types
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run mypy fastfort
+
+      - name: Tests
+        run: uv run pytest --db=sqlite -q
+
+      - name: Build
+        run: uv build
+
+      # The tag says one version and the package another is a mistake nobody
+      # notices until PyPI has the wrong number on it -- and a version can never
+      # be reused. Cheaper to fail here.
+      - name: Tag matches the package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          built=$(ls dist/*.tar.gz | sed -E 's|.*/fastfort-(.*)\.tar\.gz|\1|')
+          echo "tag=$tag built=$built"
+          if [ "$tag" != "$built" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match built version $built."
+            echo "::error::Update fastfort/_version.py, or retag."
+            exit 1
+          fi
+
+      - name: Check the metadata renders on PyPI
+        run: uv run --with twine python -m twine check --strict dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------
+  # The upload. Separated so that `id-token: write` -- the permission that can
+  # obtain a PyPI credential -- is held by a job that runs no project code and
+  # has no dependencies installed.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    # The environment is what makes this reviewable: PyPI's trusted publisher is
+    # bound to it, and GitHub can be told to require an approval before any job
+    # in it starts.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/fastfort
+    permissions:
+      # Mint the OIDC token PyPI exchanges for an upload token. Nothing else.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # Publishes, and signs what it publishes: the action generates PEP 740
+      # attestations from the same OIDC identity, so anyone can verify these
+      # files were built by this workflow in this repository.
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  # ---------------------------------------------------------------------------
+  # A GitHub release carrying the same files, so the tag page is not empty and
+  # the artefacts are downloadable without PyPI.
+  # ---------------------------------------------------------------------------
+  release:
+    name: GitHub release
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          # A pre-release tag (v0.2.0rc1, v0.1.0b2) is marked as one rather than
+          # becoming the release people are shown by default.
+          prerelease: ${{ contains(github.ref_name, 'a') || contains(github.ref_name, 'b') || contains(github.ref_name, 'rc') || contains(github.ref_name, 'dev') }}
