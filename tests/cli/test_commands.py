@@ -7,13 +7,14 @@ the line that caused it instead of at a captured stdout blob.
 from __future__ import annotations
 
 import sys
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 import pytest
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from tests.orm.models import Product, StaffUser
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
+from tests.orm.models import Base, Product, StaffUser
 from typer.testing import CliRunner
 
 from fastfort import FastFort, FastFortSettings, admin
@@ -29,28 +30,40 @@ runner = CliRunner()
 
 
 @pytest.fixture
-def own_loop(db_backend: str) -> None:
-    """Restrict a test to SQLite because the command opens its own event loop.
+async def cli_engine(
+    engine: sa.ext.asyncio.AsyncEngine, db_url: str
+) -> AsyncIterator[sa.ext.asyncio.AsyncEngine]:
+    """An engine of its own for the command to reach the database through.
 
-    `createsuperuser` calls `asyncio.run`, so it runs against a loop of its own --
-    which is exactly what happens in production, where the CLI is a separate
-    process. In-process, that loop is not the one the test's engine was created
-    on, and asyncpg and aiomysql bind connections to a loop.
+    `createsuperuser` calls `asyncio.run`, so it runs on a loop that is not the
+    one the test was started on -- which is exactly what happens in production,
+    where the CLI is a separate process. asyncpg and aiomysql bind a connection
+    to the loop it was opened on, so an engine whose pool is holding connections
+    from the test's loop cannot serve one from the command's, and these tests
+    used to be skipped on both databases because of it.
 
-    This is an artefact of sharing an engine across loops in a test, not a
-    difference in behaviour: the command reaches the database through the same
-    adapter that the ORM suite already exercises on all three.
+    `NullPool` is what makes it work: nothing is held between calls, so the
+    command opens a fresh connection on whatever loop it is running on. The
+    schema still comes from the `engine` fixture, which this depends on for
+    exactly that reason -- both point at the same database.
     """
-    if db_backend != "sqlite":
-        pytest.skip("the command opens its own event loop; see the fixture docstring")
+    created = create_async_engine(db_url, poolclass=NullPool)
+    try:
+        yield created
+    finally:
+        # Nothing pooled, so this closes nothing that belongs to another loop.
+        await created.dispose()
 
 
 @pytest.fixture
-def fort(backend: SQLAlchemyBackend) -> Iterator[FastFort]:
+def fort(cli_engine: sa.ext.asyncio.AsyncEngine) -> Iterator[FastFort]:
     """A configured instance, exposed where the CLI can import it."""
     instance = FastFort(
         FastFortSettings(secret_key=SECRET, project_name="Test Shop"),  # type: ignore[call-arg]
-        backend=backend,
+        backend=SQLAlchemyBackend(
+            session_factory=async_sessionmaker(cli_engine, expire_on_commit=False),
+            base=Base,
+        ),
     )
     instance.set_user_model(StaffUser)
     instance.register(Product, admin.ModelAdmin, key="shop.product")
@@ -201,7 +214,7 @@ def test_registered_models_says_so_when_there_are_none(fort: FastFort) -> None:
 
 
 async def test_it_creates_an_account_that_can_sign_in(
-    own_loop: None, fort: FastFort, session_factory: async_sessionmaker[AsyncSession]
+    fort: FastFort, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """The point of the command: a fresh install has no way in without it."""
     from fastfort.auth import verify_password
@@ -233,7 +246,7 @@ async def test_it_creates_an_account_that_can_sign_in(
 
 
 async def test_the_password_is_never_stored_as_typed(
-    own_loop: None, fort: FastFort, session_factory: async_sessionmaker[AsyncSession]
+    fort: FastFort, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     await run_async(
         "createsuperuser",
@@ -256,7 +269,7 @@ async def test_the_password_is_never_stored_as_typed(
     assert PASSWORD not in created.hashed_password
 
 
-def test_a_weak_password_is_refused(own_loop: None, fort: FastFort) -> None:
+def test_a_weak_password_is_refused(fort: FastFort) -> None:
     """The same policy the admin's own form applies."""
     result = run(
         "createsuperuser",
@@ -273,7 +286,7 @@ def test_a_weak_password_is_refused(own_loop: None, fort: FastFort) -> None:
     assert result.exit_code == 1
 
 
-def test_a_duplicate_identity_is_refused(own_loop: None, fort: FastFort) -> None:
+def test_a_duplicate_identity_is_refused(fort: FastFort) -> None:
     for _ in range(2):
         result = run(
             "createsuperuser",
@@ -291,7 +304,7 @@ def test_a_duplicate_identity_is_refused(own_loop: None, fort: FastFort) -> None
     assert "already exists" in result.output
 
 
-def test_an_unset_password_variable_is_reported(own_loop: None, fort: FastFort) -> None:
+def test_an_unset_password_variable_is_reported(fort: FastFort) -> None:
     result = run(
         "createsuperuser",
         "--app",
@@ -308,7 +321,7 @@ def test_an_unset_password_variable_is_reported(own_loop: None, fort: FastFort) 
 
 
 @pytest.mark.parametrize("missing", ["identity", "password"])
-def test_no_input_refuses_to_prompt(own_loop: None, fort: FastFort, missing: str) -> None:
+def test_no_input_refuses_to_prompt(fort: FastFort, missing: str) -> None:
     """A pipeline that hangs on a hidden prompt is worse than one that fails."""
     args = ["createsuperuser", "--app", TARGET, "--no-input"]
     env = {}
@@ -323,7 +336,7 @@ def test_no_input_refuses_to_prompt(own_loop: None, fort: FastFort, missing: str
 
 
 async def test_it_prompts_when_run_interactively(
-    own_loop: None, fort: FastFort, session_factory: async_sessionmaker[AsyncSession]
+    fort: FastFort, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     import asyncio
 
@@ -343,7 +356,7 @@ async def test_it_prompts_when_run_interactively(
         ).scalar_one_or_none() is not None
 
 
-def test_a_password_on_the_command_line_is_warned_about(own_loop: None, fort: FastFort) -> None:
+def test_a_password_on_the_command_line_is_warned_about(fort: FastFort) -> None:
     """It is visible in shell history and in `ps`, so the safer route is named."""
     result = runner.invoke(
         app,
