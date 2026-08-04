@@ -14,8 +14,11 @@
         {{ _("Back to {name}", name=model_title|lower) }}
       </a>
       {% if delete_url %}
+        {# Red, because it is the one action on this page that cannot be undone.
+           Ghost rather than solid: it is not what the page is for, and a slab of
+           red beside "Save changes" competes with it. #}
         <a
-          class="ff-btn ff-btn--ghost"
+          class="ff-btn ff-btn--ghost ff-btn--danger"
           href="{{ delete_url }}"
           data-ff-method="post"
           data-ff-confirm="{{ _("Delete {name}?", name=object_label) }}"
@@ -119,11 +122,13 @@
                 {% if settings.ui.map_tile_url %}
                   data-ff-map="{{ settings.ui.map_tile_url }}"
                   data-ff-map-center="{{ settings.ui.map_center }}"
+                  {# Drawn on the map itself, where every other map puts its
+                     credit and where it stays attached to the tiles it is
+                     crediting. Under the field it read as help text for the
+                     input rather than as a notice about the pictures. #}
+                  data-ff-map-credit="{{ settings.ui.map_attribution }}"
                 {% endif %}
               />
-              {% if settings.ui.map_attribution %}
-                <span class="ff-help ff-js-only">{{ settings.ui.map_attribution }}</span>
-              {% endif %}
 
             {% elif field.widget in ("file", "image") %}
               {# A native file input cannot be prefilled -- browsers refuse, for
@@ -131,7 +136,12 @@
                  thumbnail, for an image) beside the input rather than inside
                  it. Choosing a new file replaces it on save; the "Clear"
                  checkbox removes it without replacing it, and only appears when
-                 there is something to remove. #}
+                 there is something to remove.
+
+                 This is also the whole control with script off. With it, the
+                 uploader reads this block for the stored value and the clear
+                 checkbox, adopts both, and replaces the pair with a drop target
+                 that previews what is there and what is about to replace it. #}
               {% if field.value %}
                 <div class="ff-file-current">
                   {% if field.widget == "image" %}
@@ -155,6 +165,10 @@
                 name="{{ field.name }}"
                 type="file"
                 accept="{{ 'image/*' if field.widget == 'image' else '' }}"
+                data-ff-file="{{ field.widget }}"
+                {# The server enforces this either way; saying it up front is the
+                   difference between a rejected upload and one nobody started. #}
+                data-ff-file-limit="{{ settings.media.upload_limit }}"
                 {% if field.errors %}aria-invalid="true"{% endif %}
               />
 

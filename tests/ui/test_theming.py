@@ -148,7 +148,7 @@ def test_motion_is_disabled_when_the_viewer_asks(css: str) -> None:
 
 
 def test_the_front_end_stays_within_budget(css: str) -> None:
-    """The whole front end is budgeted at 60 KB gzipped, CSS and JavaScript.
+    """The whole front end is budgeted at 72 KB gzipped, CSS and JavaScript.
 
     Both halves are weighed, not just the stylesheet. The budget exists to keep
     the admin from acquiring a front-end framework by degrees, and a framework
@@ -158,18 +158,25 @@ def test_the_front_end_stays_within_budget(css: str) -> None:
     A complete design system for an admin -- shell, table, forms, every drawn
     control including the ones that replace `<select>`, both themes -- plus the
     behaviour that drives them fits in well under this, and it fails if that
-    stops being true.
+    stops being true. For comparison, React and ReactDOM alone are about twice
+    this before a single component is written.
 
     Every script that ships is weighed, `boot.js` included. It is small, but it
     is served on every page, and a budget that quietly excludes a file is a
     budget with a hole in it.
 
     The assertion sits below the stated ceiling rather than at it, so growth is
-    noticed before it becomes a problem. It has been raised twice -- from 40 KB
-    when the related-object popup, the appearance panel, the filter drawer and
-    the export menu landed together, and again for the date picker, the duration
-    boxes and the map. Each was a feature rather than an accumulation, and the
-    total is still well inside the budget.
+    noticed before it becomes a problem. It has been raised three times: from
+    40 KB when the related-object popup, the appearance panel, the filter drawer
+    and the export menu landed together; again for the date picker, the duration
+    boxes and the map; and again for the upload card, the date picker's month and
+    year views and its clock, and the map's own controls. Each was a feature
+    rather than an accumulation.
+
+    The gap between the assertion and the ceiling is deliberate headroom. Raising
+    this number by fifty bytes every time something lands is the failure mode the
+    budget exists to catch, so a raise should be one considered step with room
+    left in it -- and trimming the comments to squeeze under is never the fix.
     """
     import gzip
 
@@ -179,7 +186,7 @@ def test_the_front_end_stays_within_budget(css: str) -> None:
     compressed = len(gzip.compress(css.encode("utf-8"))) + sum(
         len(gzip.compress(script.read_bytes())) for script in scripts
     )
-    assert compressed < 54_000, f"{compressed} bytes gzipped"
+    assert compressed < 68_000, f"{compressed} bytes gzipped"
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +320,28 @@ def test_script_only_controls_are_hidden_without_script(css: str) -> None:
     assert ":root:not([data-ff-js]) .ff-js-only" in css
     assert ":root[data-ff-js] .ff-no-js" in css
     assert ":root:not([data-ff-js]) .ff-table__select" in css
+
+
+def test_the_stylesheet_is_written_in_logical_directions(css: str) -> None:
+    """Arabic turns the whole admin around from one `dir` attribute, and that
+    only works because nothing here is written in physical directions.
+
+    Two exceptions are deliberate and are what this counts around. A tick inside
+    a checkbox is a tick in any language -- mirroring it would draw it backwards.
+    The map is a coordinate space rather than a layout: its tiles are placed by
+    script in physical pixels, so `left: 0` there means what it says.
+    """
+    physical = re.findall(
+        r"^\s+(?:left|right|padding-left|padding-right|margin-left|margin-right"
+        r"|border-left|border-right):",
+        css,
+        re.M,
+    )
+
+    # `.ff-check::after` (the tick), the tooltip's `left: auto` resets, and the
+    # map's tile and marker origins. Anything past that is a rule that will not
+    # flip, and the way to write it is `inset-inline-*` / `padding-inline-*`.
+    assert len(physical) <= 8, f"{len(physical)} physical direction properties: {physical}"
 
 
 def test_the_dialogs_restate_their_centring_margin(css: str) -> None:

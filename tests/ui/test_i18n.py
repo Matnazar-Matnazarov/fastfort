@@ -15,6 +15,7 @@ from tests.conftest import sign_in
 from tests.orm.models import Product, StaffUser
 
 from fastfort import FastFort, FastFortSettings, admin
+from fastfort.admin.security import LANGUAGE_COOKIE
 from fastfort.i18n import (
     DEFAULT_LANGUAGE,
     LANGUAGES,
@@ -330,6 +331,35 @@ async def test_the_switcher_is_not_a_native_select(client: httpx.AsyncClient) ->
     assert not re.search(r'<select[^>]*name="language"', body)
     # One button per language, however many there are.
     assert len(re.findall(r'<button\b[^>]*?name="language"', body, re.DOTALL)) == len(LANGUAGES)
+
+
+@pytest.mark.parametrize(
+    ("language", "direction"),
+    [("ar", "rtl"), ("en", "ltr"), ("ja", "ltr"), ("uz", "ltr")],
+)
+async def test_the_page_declares_which_way_it_reads(
+    client: httpx.AsyncClient, language: str, direction: str
+) -> None:
+    """One attribute turns the whole admin around. The stylesheet is written in
+    logical properties throughout, so `dir` is the only thing standing between a
+    right-to-left language and a layout laid out backwards.
+    """
+    await sign_in(client)
+    client.cookies.set(LANGUAGE_COOKIE, language)
+    tag = re.search(r"<html[^>]*>", await page(client, "/admin/"))
+
+    assert tag
+    assert f'dir="{direction}"' in tag.group(0)
+
+
+async def test_the_sign_in_page_reads_the_same_way(client: httpx.AsyncClient) -> None:
+    """It is not built on the shell, so it is the page that gets forgotten --
+    and it is the only one an anonymous visitor ever sees."""
+    client.cookies.set(LANGUAGE_COOKIE, "ar")
+    tag = re.search(r"<html[^>]*>", await page(client, "/admin/login"))
+
+    assert tag
+    assert 'dir="rtl"' in tag.group(0)
 
 
 async def test_the_switcher_can_be_filtered(client: httpx.AsyncClient) -> None:

@@ -33,8 +33,9 @@ from fastfort.core.exceptions import (
     ValidationError,
 )
 from fastfort.core.registry import default_model_key
-from fastfort.i18n import Translator, negotiate_language
-from fastfort.spec import Choice, FieldType, ListQuery, SortSpec
+from fastfort.i18n import Translator, is_rtl, negotiate_language
+from fastfort.spec import Choice, DeletionPlan, FieldType, ListQuery, SortSpec
+from fastfort.ui.compression import compress_asset
 from fastfort.ui.renderer import Renderer
 from fastfort.ui.theming import Theme
 
@@ -187,6 +188,11 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         return {
             "_": translator,
             "language": translator.language,
+            # Arabic reads right to left, and the whole layout follows from this
+            # one attribute: the stylesheet is written in logical properties
+            # throughout, so the sidebar, the table, the chevrons and every
+            # popover turn around without a mirrored rule anywhere.
+            "text_direction": "rtl" if is_rtl(translator.language) else "ltr",
             "languages": translator.choices(),
             "current_language": translator.choice,
             "language_url": f"{admin_url}/language",
@@ -311,15 +317,36 @@ def build_admin_router(fort: FastFort) -> APIRouter:
 
     # -- assets -------------------------------------------------------------
 
-    @public.get("/static/fastfort.css", include_in_schema=False)
-    async def stylesheet() -> Response:
-        return Response(
-            _bundled_css(debug=settings.debug),
-            media_type="text/css",
+    def asset(request: Request, text: str, media_type: str) -> Response:
+        """A static asset, compressed to whatever the browser reads.
+
+        Brotli first, gzip after it, the bytes themselves for anything that asks
+        for neither -- and `Vary`, without which a cache in front of this serves
+        one browser's Brotli to another browser that cannot read it.
+
+        Both are produced once per process and kept: these files ship in the
+        wheel and cannot change while it is running, so this is not per-request
+        work. Compression is off in debug, where the files *are* changing and
+        the saving is on a request to localhost.
+        """
+        body, encoding = compress_asset(
+            text,
+            request.headers.get("accept-encoding", ""),
+            enabled=not settings.debug,
+        )
+        headers = {
             # Long-lived, because the URL changes with the package version in a
             # release. During development auto-reload matters more than caching.
-            headers={"Cache-Control": "no-cache" if settings.debug else "public, max-age=86400"},
-        )
+            "Cache-Control": "no-cache" if settings.debug else "public, max-age=86400",
+            "Vary": "Accept-Encoding",
+        }
+        if encoding:
+            headers["Content-Encoding"] = encoding
+        return Response(body, media_type=media_type, headers=headers)
+
+    @public.get("/static/fastfort.css", include_in_schema=False)
+    async def stylesheet(request: Request) -> Response:
+        return asset(request, _bundled_css(debug=settings.debug), "text/css")
 
     @public.post("/language", name="fastfort:language")
     async def set_language(request: Request) -> Any:
@@ -348,31 +375,23 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         return response
 
     @public.get("/static/favicon.svg", include_in_schema=False)
-    async def favicon() -> Response:
+    async def favicon(request: Request) -> Response:
         """The default admin icon, for projects that have not supplied one.
 
         A tab with no icon gets the browser's blank page glyph, which is what
         every other unremarkable tab has -- and an admin is a tab people keep
         open and hunt for. `UISettings.favicon_url` still wins.
         """
-        return Response(
-            _read_favicon(),
-            media_type="image/svg+xml",
-            headers={"Cache-Control": "no-cache" if settings.debug else "public, max-age=86400"},
-        )
+        return asset(request, _read_favicon(), "image/svg+xml")
 
     @public.get("/static/js/{name}", include_in_schema=False)
-    async def script(name: str) -> Response:
+    async def script(request: Request, name: str) -> Response:
         # An allow-list, not a path join: `name` comes from the URL, and
         # anything that reads a file by a name a request chose is one `..` away
         # from serving the rest of the disk.
         if name not in {"fastfort.js", "boot.js"}:
             raise HTTPException(status_code=404, detail="No such script.")
-        return Response(
-            _bundled_js(name, debug=settings.debug),
-            media_type="text/javascript",
-            headers={"Cache-Control": "no-cache" if settings.debug else "public, max-age=86400"},
-        )
+        return asset(request, _bundled_js(name, debug=settings.debug), "text/javascript")
 
     # -- uploaded files -------------------------------------------------------
 
@@ -748,6 +767,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         *,
         instance: Any = None,
         label: str = "",
+        pk: tuple[Any, ...] | None = None,
     ) -> dict[str, Any]:
         # A popup is the same form without the shell: it is opened from a field
         # on another form, so a sidebar full of other models is noise, and there
@@ -763,8 +783,14 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 {POPUP_PARAM: "1", "_field": request.query_params.get("_field", "")}
             )
         editing = instance is not None
-        key = model_admin.spec.primary_key
-        pk = tuple(getattr(instance, name) for name in key) if editing else ()
+        # Read off the instance only when the caller did not already have it. A
+        # rollback expires every attribute in the session, so a view rendering
+        # this page on an error path passes the key it read while the row was
+        # still live -- reading it here instead is a synchronous refresh against
+        # an async session, which crashes rather than returning a stale value.
+        if pk is None:
+            key = model_admin.spec.primary_key
+            pk = tuple(getattr(instance, name) for name in key) if editing else ()
 
         # Built through the translator with a placeholder, not with an f-string.
         # An f-string produces a sentence the catalogue can never match, which is
@@ -863,6 +889,12 @@ def build_admin_router(fort: FastFort) -> APIRouter:
 
             try:
                 created = await adapter.create(cleaned)
+                label = adapter.label_for(created)
+                key = adapter.primary_key_of(created)
+                # Explicit rather than left to the context manager: a constraint
+                # the database checks at commit has to be catchable here, or it
+                # surfaces as a 500 on a save that looked like any other.
+                await uow.commit()
             except (ValidationError, AdapterError) as exc:
                 await uow.rollback()
                 form.non_field_errors.append(exc.message)
@@ -872,11 +904,10 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                     form_context(request, model_key, model_admin, form),
                 )
 
-            # After the write, not before: a file staged during `bind()` must
-            # not reach disk over a row that then fails to save.
+            # After the row is durable, not merely flushed: a file staged during
+            # `bind()` must not be left on disk by a transaction that then rolls
+            # back, which is a stored path pointing at nothing.
             form.commit_files()
-            label = adapter.label_for(created)
-            key = adapter.primary_key_of(created)
 
         if request.query_params.get(POPUP_PARAM) == "1":
             return _popup_result(request, renderer, base_context, model_key, key, label)
@@ -958,48 +989,54 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 media=settings.media,
             )
             cleaned = form.bind(submitted)
+            # Read while the row is live. A rollback expires every attribute on
+            # every object in the session, `instance` included, and reading one
+            # afterwards is a synchronous refresh against an async session
+            # outside the greenlet bridge that makes those work -- a crash on
+            # every edit that failed, which is the path that most needs to work.
             label = adapter.label_for(instance)
+            key = adapter.primary_key_of(instance)
 
-            if not form.is_valid:
-                # Rendered before the rollback, not after: a rollback expires
-                # every attribute on every object in the session, `instance`
-                # included, and the template reads its primary key to build the
-                # form's own action URL. Read afterward, that access is a
-                # synchronous refresh attempt against an async session outside
-                # the greenlet bridge that makes those work -- a crash on every
-                # edit that failed validation, not just this one.
-                response = page(
+            def invalid() -> HTMLResponse:
+                return page(
                     request,
                     "model/form.html",
                     form_context(
-                        request, model_key, model_admin, form, instance=instance, label=label
+                        request,
+                        model_key,
+                        model_admin,
+                        form,
+                        instance=instance,
+                        label=label,
+                        pk=key,
                     ),
                 )
+
+            if not form.is_valid:
+                response = invalid()
                 await uow.rollback()
                 return response
 
             try:
                 await adapter.update(instance, cleaned)
+                label = adapter.label_for(instance)
+                key = adapter.primary_key_of(instance)
+                # Explicit rather than left to the context manager: a constraint
+                # the database checks at commit has to be catchable here, or it
+                # surfaces as a 500 on a save that looked like any other. It
+                # rolls back before it raises, which is why nothing below reads
+                # the instance again.
+                await uow.commit()
             except (ValidationError, AdapterError) as exc:
                 form.non_field_errors.append(exc.message)
-                # Same ordering as above, and for the same reason: `uow.rollback()`
-                # would expire `instance` before the template reads its primary
-                # key back out of it.
-                response = page(
-                    request,
-                    "model/form.html",
-                    form_context(
-                        request, model_key, model_admin, form, instance=instance, label=label
-                    ),
-                )
+                response = invalid()
                 await uow.rollback()
                 return response
 
-            # After the write, not before: a file staged during `bind()` must
-            # not reach disk over a row that then fails to save.
+            # After the row is durable, not merely flushed: a file staged during
+            # `bind()` must not be left on disk by a transaction that then rolls
+            # back, which is a stored path pointing at nothing.
             form.commit_files()
-            label = adapter.label_for(instance)
-            key = adapter.primary_key_of(instance)
 
         if request.query_params.get(POPUP_PARAM) == "1":
             return _popup_result(request, renderer, base_context, model_key, key, label)
@@ -1028,6 +1065,10 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             instance = await _require_object(adapter, parse_key(model_admin.spec, object_key))
             label = adapter.label_for(instance)
             key = adapter.primary_key_of(instance)
+            # What else this takes with it, counted before anything is written.
+            # "This cannot be undone" is not a confirmation on its own; the
+            # question people have is what happens to the rows underneath.
+            plan = await adapter.deletion_plan([instance])
 
         delete_translate = translator_for(request)
         delete_model_title = model_admin.title
@@ -1049,6 +1090,8 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 "admin": model_admin,
                 "label": label,
                 "cascades": _cascades(model_admin),
+                "related": _related_groups(fort, plan, admin_url),
+                "blocked": plan.blocked,
                 "action_url": f"{object_url(model_key, key)}delete",
                 "cancel_url": object_url(model_key, key),
             },
@@ -1064,20 +1107,36 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         except SecurityError as exc:
             return redirect(list_url(model_key), notices.danger(exc.message))
 
+        translate = translator_for(request)
+
         async with fort.backend.unit_of_work() as uow:
             adapter = fort.backend.adapter(entry.model, uow, key=model_key)
             instance = await _require_object(adapter, parse_key(model_admin.spec, object_key))
+            # Read before any write. A rollback expires every attribute on every
+            # object in the session, and reading one afterwards is a synchronous
+            # refresh against an async session -- a crash on the error path,
+            # which is the path that most needs to work.
             label = adapter.label_for(instance)
+            back = object_url(model_key, adapter.primary_key_of(instance))
+
+            # Checked again here, not only on the confirmation page: the page may
+            # have been open for an hour, and the row that protects this one may
+            # have arrived since. Without it the delete fails inside the flush and
+            # the person gets a constraint violation instead of a sentence.
+            plan = await adapter.deletion_plan([instance])
+            if plan.blocked:
+                return redirect(back, notices.danger(_protected_message(fort, plan, translate)))
+
             try:
                 await adapter.delete(instance)
+                # Explicit, inside the guard: a constraint the database only
+                # checks at commit would otherwise be raised on the way out of
+                # this block, past every handler that could explain it.
+                await uow.commit()
             except AdapterError as exc:
                 await uow.rollback()
-                return redirect(
-                    object_url(model_key, adapter.primary_key_of(instance)),
-                    notices.danger(f"Could not delete this row: {exc.message}"),
-                )
+                return redirect(back, notices.danger(f"Could not delete this row: {exc.message}"))
 
-        translate = translator_for(request)
         return redirect(
             list_url(model_key),
             notices.success(
@@ -1134,6 +1193,16 @@ def build_admin_router(fort: FastFort) -> APIRouter:
 
             try:
                 if name == "delete":
+                    # The same check the single-row delete makes. A bulk delete
+                    # is where it matters most: half the rows going and the rest
+                    # failing on a foreign key is the worst possible outcome, and
+                    # it is what happens without this.
+                    plan = await adapter.deletion_plan(objects)
+                    if plan.blocked:
+                        return redirect(
+                            target,
+                            notices.danger(_protected_message(fort, plan, translator_for(request))),
+                        )
                     for obj in objects:
                         await adapter.delete(obj)
                     message = notices.success(
@@ -1149,6 +1218,11 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                         )
                     outcome = await handler(adapter, tuple(objects))
                     message = notices.success(str(outcome) if outcome else "Done.")
+                # Inside the guard, so a constraint the database defers to commit
+                # is reported as a failed action rather than raised on the way
+                # out of this block, where nothing is left to explain it. An
+                # action either applies to every selected row or to none.
+                await uow.commit()
             except (AdapterError, ValidationError) as exc:
                 await uow.rollback()
                 return redirect(target, notices.danger(f"The action failed: {exc.message}"))
@@ -1245,14 +1319,73 @@ async def _form_data(request: Request, media: MediaSettings) -> dict[str, Any]:
 
 
 def _cascades(admin: ModelAdmin) -> tuple[str, ...]:
-    """Relations whose rows go with this one.
+    """Relations whose rows go with this one, as the *spec* declares them.
 
-    Naming them is the difference between a confirmation and a trap.
+    A hint, printed on the buttons that delete without leaving the page. It costs
+    no query, which is why it is what the list and the form can afford; the
+    counted, per-row answer is on the confirmation page, from `deletion_plan`.
     """
     return tuple(
         field.label
         for field in admin.spec
         if field.relation is not None and field.relation.cascade_delete
+    )
+
+
+def _related_groups(fort: FastFort, plan: DeletionPlan, admin_url: str) -> list[dict[str, Any]]:
+    """A deletion plan as the confirmation page renders it.
+
+    A related model's own admin has the better name for it -- read off the
+    registered class rather than by instantiating one, which would cost an
+    introspection per group. A model with no admin page keeps the name the
+    adapter derived and gets no link, which is normal: plenty of tables are
+    pointed at without having a page.
+    """
+    groups: list[dict[str, Any]] = []
+
+    for row in plan.related:
+        entry = fort.registry.get_by_key(row.model_key) if row.model_key else None
+        groups.append(
+            {
+                "effect": row.effect.value,
+                "title": _title_of(entry.admin, entry.key) if entry else row.label,
+                "field": row.field,
+                "count": row.count,
+                # A count that stopped at the cap is shown as "1000+", never as a
+                # total: a warning that understates what it is warning about is
+                # worse than no number at all.
+                "truncated": row.truncated,
+                "samples": list(row.samples),
+                "more": row.more,
+                "url": f"{admin_url}/{row.model_key}/" if entry else "",
+            }
+        )
+
+    return groups
+
+
+def _protected_message(fort: FastFort, plan: DeletionPlan, translate: Translator) -> str:
+    """Why a delete was refused, naming what is holding it.
+
+    "Integrity error" tells nobody which row to go and fix. This names the model
+    and how many of its rows require this one, which is the whole of what has to
+    happen before the delete can go through.
+    """
+    named: list[str] = []
+    for row in plan.protected:
+        entry = fort.registry.get_by_key(row.model_key) if row.model_key else None
+        # "1 products" is what naming the model only in the plural reads as, and
+        # a count of one is the commonest case there is.
+        if row.count == 1 and not row.truncated:
+            name = _singular_of(entry.admin, entry.key) if entry else row.singular
+            named.append(f"1 {name.lower()}")
+            continue
+        plural = _title_of(entry.admin, entry.key) if entry else row.label
+        named.append(f"{row.count}{'+' if row.truncated else ''} {plural.lower()}")
+
+    return translate(
+        "This cannot be deleted while other records require it: {records}.",
+        records=", ".join(named),
     )
 
 
@@ -1386,8 +1519,12 @@ def _ui_text(translate: Translator) -> dict[str, str]:
         "choose": translate("Choose…"),
         "showing": translate("Showing the first {n}. Keep typing to narrow it down."),
         # The calendar draws its own month and weekday names from `Intl`, but
-        # these three are ours.
+        # these are ours.
         "today": translate("Today"),
+        # A datetime picker sets the clock too, and "Today" is the wrong word
+        # for a button that does that.
+        "now": translate("Now"),
+        "done": translate("Done"),
         "previous": translate("Previous"),
         "next": translate("Next"),
         "days": translate("Days"),
@@ -1396,6 +1533,17 @@ def _ui_text(translate: Translator) -> dict[str, str]:
         "seconds": translate("Seconds"),
         "zoom-in": translate("Zoom in"),
         "zoom-out": translate("Zoom out"),
+        "my-location": translate("My location"),
+        # The upload card. A file's size is rendered as a number and a unit the
+        # script formats itself, because "MB" is one of the few strings that is
+        # the same in every language the admin speaks.
+        "choose-file": translate("Choose a file"),
+        "or-drop-it": translate("or drop it here"),
+        "replace": translate("Click to replace"),
+        "remove": translate("Remove"),
+        "undo": translate("Undo"),
+        "too-large": translate("Too large"),
+        "wrong-type": translate("Not an image"),
     }
 
 
@@ -1405,6 +1553,14 @@ def _title_of(admin: Any, key: str) -> str:
     if isinstance(declared, str) and declared:
         return declared
     return key.split(".", 1)[-1].replace("_", " ").title() + "s"
+
+
+def _singular_of(admin: Any, key: str) -> str:
+    """`_title_of`'s counterpart, for a sentence that names one row."""
+    declared = getattr(admin, "verbose_name", None)
+    if isinstance(declared, str) and declared:
+        return declared
+    return key.split(".", 1)[-1].replace("_", " ").title()
 
 
 def _group_of(admin: Any, name: str) -> str:

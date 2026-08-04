@@ -8,6 +8,7 @@
 <!doctype html>
 <html
   lang="{{ language }}"
+  dir="{{ text_direction }}"
   {% for name, value in theme.root_attributes().items() %}{{ name }}="{{ value }}" {% endfor %}
 >
   <head>

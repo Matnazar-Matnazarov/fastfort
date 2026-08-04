@@ -12,6 +12,7 @@
    not. #}
 <html
   lang="{{ language }}"
+  dir="{{ text_direction }}"
   {% for name, value in theme.root_attributes().items() %}{{ name }}="{{ value }}" {% endfor %}
   {% for name, value in ui_text.items() %}data-ff-t-{{ name }}="{{ value }}" {% endfor %}
 >

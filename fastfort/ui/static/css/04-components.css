@@ -92,6 +92,25 @@
   color: var(--ff-text);
 }
 
+/* A destructive action that is not the page's main one: red, but not a slab of
+ * red competing with Save for the eye. Drawn in the same grey as every other
+ * ghost button, "Delete" reads as one more thing you might do -- and the one
+ * button on the page that cannot be undone is the one that should not be
+ * indistinguishable from "Back to products". */
+.ff-btn--ghost.ff-btn--danger {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ff-danger);
+  box-shadow: none;
+}
+
+.ff-btn--ghost.ff-btn--danger:hover {
+  background: var(--ff-danger-subtle);
+  border-color: color-mix(in oklab, var(--ff-danger) 30%, transparent);
+  color: var(--ff-danger);
+  filter: none;
+}
+
 .ff-btn--sm {
   height: var(--ff-control-height-sm);
   padding-inline: var(--ff-space-3);
@@ -766,6 +785,50 @@ a.ff-stat:hover {
 
 .ff-alert__title {
   font-weight: var(--ff-weight-semibold);
+}
+
+/* ---------------------------------------------------------------------------
+ * What a delete would take with it
+ *
+ * One entry per related model, each carrying a count and a few of the rows by
+ * name. Names rather than a number alone: "412 order lines" is a statistic, and
+ * the four it lists are what tell somebody whether this is the category they
+ * meant.
+ * ------------------------------------------------------------------------ */
+
+.ff-related-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ff-space-2);
+  margin-top: var(--ff-space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.ff-related-list__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ff-space-2);
+}
+
+.ff-related-list__model {
+  font-weight: var(--ff-weight-medium);
+}
+
+a.ff-related-list__model {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--ff-border-strong);
+}
+
+.ff-related-list__names {
+  /* Indented under the model it belongs to, and quieter: the heading is the
+   * thing to read first, these are the evidence for it. */
+  margin-top: var(--ff-space-1);
+  color: var(--ff-text-muted);
+  font-size: var(--ff-text-sm);
+  overflow-wrap: anywhere;
 }
 
 .ff-messages {

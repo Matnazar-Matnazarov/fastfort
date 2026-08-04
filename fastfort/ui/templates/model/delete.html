@@ -1,5 +1,34 @@
 {% extends "base.html" %}
 
+{#- What a delete would take with it, counted before anything is written.
+
+    A confirmation that only says "this cannot be undone" asks a question nobody
+    can answer. The one people actually have is what happens to the rows
+    underneath, and that is the difference between a confirmation and a trap. -#}
+
+{% macro related_list(groups) %}
+  <ul class="ff-related-list">
+    {% for group in groups %}
+      <li class="ff-related-list__item">
+        <div class="ff-related-list__head">
+          {% if group.url %}
+            <a class="ff-related-list__model" href="{{ group.url }}">{{ group.title }}</a>
+          {% else %}
+            <span class="ff-related-list__model">{{ group.title }}</span>
+          {% endif %}
+          <span class="ff-badge">{{ group.count }}{% if group.truncated %}+{% endif %}</span>
+        </div>
+        {% if group.samples %}
+          <p class="ff-related-list__names">
+            {{ group.samples|join(", ") }}{% if group.more %},
+              {{ _("and {n} more", n=group.more) }}{% if group.truncated %}+{% endif %}{% endif %}
+          </p>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+{% endmacro %}
+
 {% block content %}
   <div class="ff-page-header">
     <div class="ff-page-header__text">
@@ -12,9 +41,50 @@
     <div class="ff-card__body ff-stack">
       <p>{{ _("Delete {name}?", name=label) }}</p>
 
-      {% if cascades %}
-        {# Naming what else disappears is the difference between a confirmation
-           and a trap. #}
+      {% set protected = related | selectattr("effect", "equalto", "protect") | list %}
+      {% set cascaded = related | selectattr("effect", "equalto", "delete") | list %}
+      {% set cleared = related | selectattr("effect", "equalto", "clear") | list %}
+
+      {% if protected %}
+        {# The database would refuse this, so the button is not offered. Failing
+           here with a sentence beats failing inside the transaction with a
+           constraint violation nobody can act on. #}
+        <div class="ff-alert ff-alert--danger">
+          <div>
+            <div class="ff-alert__title">{{ _("Other records require this one") }}</div>
+            <p class="ff-mt-2">
+              {{ _("Remove or reassign these first, then delete this record.") }}
+            </p>
+            {{ related_list(protected) }}
+          </div>
+        </div>
+      {% endif %}
+
+      {% if cascaded %}
+        <div class="ff-alert ff-alert--warning">
+          <div>
+            <div class="ff-alert__title">{{ _("These records will be deleted too") }}</div>
+            {{ related_list(cascaded) }}
+          </div>
+        </div>
+      {% endif %}
+
+      {% if cleared %}
+        {# Not a deletion. Saying so plainly is the point: a nullable foreign key
+           means the rows survive with the column emptied, and warning that they
+           will be deleted would be a lie in the other direction. #}
+        <div class="ff-alert ff-alert--info">
+          <div>
+            <div class="ff-alert__title">{{ _("These records will be kept, without the link") }}</div>
+            {{ related_list(cleared) }}
+          </div>
+        </div>
+      {% endif %}
+
+      {% if not related and cascades %}
+        {# Nothing points at this row today, but the model declares relations
+           that would go with it. Worth saying, so the absence of a warning is
+           not read as a promise. #}
         <div class="ff-alert ff-alert--warning">
           <div>
             <div class="ff-alert__title">{{ _("Related records will be deleted too") }}</div>
@@ -29,10 +99,14 @@
 
       <form class="ff-row" method="post" action="{{ action_url }}">
         <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
-        <button class="ff-btn ff-btn--danger" type="submit">
-          {{ _("Yes, delete this {name}", name=model_singular|lower) }}
-        </button>
-        <a class="ff-btn ff-btn--ghost" href="{{ cancel_url }}">{{ _("Cancel") }}</a>
+        {% if not blocked %}
+          <button class="ff-btn ff-btn--danger" type="submit">
+            {{ _("Yes, delete this {name}", name=model_singular|lower) }}
+          </button>
+        {% endif %}
+        <a class="ff-btn ff-btn--ghost" href="{{ cancel_url }}">
+          {{ _("Cancel") if not blocked else _("Back") }}
+        </a>
       </form>
     </div>
   </div>

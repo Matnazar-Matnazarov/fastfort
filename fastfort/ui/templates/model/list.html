@@ -205,7 +205,7 @@
               {{ ff_icon("download", size=15) }}
               {{ _("Export") }}
             </button>
-            <div class="ff-pop ff-dropdown__panel">
+            <div class="ff-pop ff-dropdown__panel" hidden>
               {% for entry in exports %}
                 <a class="ff-item" href="{{ entry.url }}" download>
                   <span class="ff-item__icon">{{ ff_icon("file", size=15) }}</span>

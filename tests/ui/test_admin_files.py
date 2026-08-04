@@ -150,6 +150,63 @@ async def test_an_empty_file_field_has_no_current_value_shown(client: httpx.Asyn
     assert "ff-file-current" not in body
 
 
+async def test_the_input_carries_what_the_uploader_needs(client: httpx.AsyncClient) -> None:
+    """The card is built in the browser, but everything it needs to know comes
+    from the server: which kind of field this is, and the ceiling on one upload.
+    """
+    body = await form_body(client)
+    box = re.search(r'<input[^>]*\bname="attachment"[^>]*>', body)
+
+    assert box
+    assert 'data-ff-file="file"' in box.group(0)
+    assert "data-ff-file-limit=" in box.group(0)
+
+
+async def test_the_stored_value_block_survives_for_the_uploader_to_adopt(
+    client: httpx.AsyncClient,
+) -> None:
+    """The card takes the stored file's link and its "Clear" checkbox out of
+    this block rather than rebuilding them. The name of that checkbox belongs to
+    the form layer, and a second copy in the script would be one rename away
+    from a control that silently never clears anything.
+    """
+    path = "/admin/shop.product/1/"
+    stored = await client.post(
+        path,
+        data={**other_fields(await form_body(client, path)), "_csrf": await token(client, path)},
+        files={"attachment": ("keep.txt", b"stored", "text/plain")},
+    )
+    assert stored.status_code == 303, stored.text
+
+    body = await form_body(client)
+
+    assert "ff-file-current" in body
+    assert 'name="attachment__clear"' in body
+
+
+async def test_a_preview_of_the_chosen_file_is_allowed_by_the_policy(
+    client: httpx.AsyncClient,
+) -> None:
+    """The card shows the file before it is uploaded, which is a `blob:` URL of
+    the person's own selection. Under `default-src 'none'` that is blocked
+    unless it is named -- and blocked, the control cannot show the one thing it
+    exists to show. A video needs `media-src` for the same reason.
+    """
+    response = await client.get("/admin/shop.product/1/")
+    directives = (piece.strip() for piece in response.headers["content-security-policy"].split(";"))
+    policy = {
+        part.split(" ", 1)[0]: part.split(" ", 1)[1] if " " in part else ""
+        for part in directives
+        if part
+    }
+
+    assert "blob:" in policy["img-src"]
+    assert "blob:" in policy["media-src"]
+    # And it is still no host at all: `blob:` is a handle to a local file, not
+    # somewhere anything can be fetched from.
+    assert not [source for source in policy["media-src"].split() if "//" in source]
+
+
 async def test_the_form_declares_multipart_when_it_has_a_file_field(
     client: httpx.AsyncClient,
 ) -> None:

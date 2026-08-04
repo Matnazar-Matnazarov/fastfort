@@ -68,6 +68,24 @@
   top: calc(100% + var(--ff-space-1));
 }
 
+/* Rendered closed, rather than opened and then shut by the script.
+ *
+ * The panel used to arrive without `hidden`, and the bundle that hides it is
+ * deferred -- so on every page with an export or a page-size menu, the menu was
+ * on screen, fully drawn and mid-animation, for the frame before the script
+ * ran. Marking it `hidden` in the template moves that to the server, and this
+ * is the other half: with no script there is nothing to open it, so it becomes
+ * a plain list under the button instead of a popover nobody can reach. */
+:root:not([data-ff-js]) .ff-dropdown__panel[hidden] {
+  display: block;
+  position: static;
+  min-width: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  animation: none;
+}
+
 /* Opening upward when there is no room below. Set by script, which measures. */
 .ff-dropdown__panel[data-ff-place="above"] {
   top: auto;
@@ -1232,12 +1250,13 @@
  * clipped by the left edge of the window. */
 [data-ff-tip][data-ff-tip-align="end"]::after {
   left: auto;
-  right: 0;
+  inset-inline-end: 0;
   translate: 0 0;
 }
 
 [data-ff-tip][data-ff-tip-align="start"]::after {
-  left: 0;
+  left: auto;
+  inset-inline-start: 0;
   translate: 0 0;
 }
 
@@ -1686,6 +1705,34 @@
   display: none;
 }
 
+/* --- Waiting to be upgraded ------------------------------------------------
+ *
+ * `.ff-no-js` covers a control that has a separate replacement in the markup.
+ * These are the other kind: a native element the script upgrades *in place*,
+ * which therefore has no counterpart to hide it while it waits.
+ *
+ * The bundle is deferred, correctly -- it must not block the page -- so it runs
+ * after the browser has already painted. For that first frame the native
+ * control is what is on screen: a `<select>` in the operating system's own grey,
+ * a duration as a text box reading "1d 02:00:00". Then the script runs and both
+ * are gone. On every navigation, on every page, the form visibly assembled
+ * itself, and a select that went from native to custom looked like it had
+ * opened and shut.
+ *
+ * Hidden rather than restyled to match: `visibility` keeps the box, so the row
+ * does not move when the real control lands in it, and there is no second copy
+ * of the combobox's appearance here to drift out of step with the real one.
+ * Each rule lifts the moment the widget marks the element as upgraded, so a
+ * control the script never reached -- an unparseable duration keeps its text
+ * box on purpose -- comes back rather than staying invisible for good.
+ * ------------------------------------------------------------------------ */
+
+:root[data-ff-js] select[data-ff-combo]:not([data-ff-combo-ready]),
+:root[data-ff-js] input[data-ff-duration]:not([data-ff-duration-ready]),
+:root[data-ff-js] input[data-ff-file]:not([data-ff-file-ready]) {
+  visibility: hidden;
+}
+
 /* ===========================================================================
  * Related objects
  *
@@ -1858,10 +1905,117 @@
   padding-bottom: var(--ff-space-2);
 }
 
-.ff-datepicker__month {
+/* The title is the way out of the current month. Drawn as a button, because it
+ * is one: pressing it zooms out to the months, and again to a decade of years.
+ * Without that, reaching a date of birth is four hundred clicks on an arrow. */
+.ff-datepicker__title {
+  padding: var(--ff-space-1) var(--ff-space-2);
+  border: 0;
+  border-radius: var(--ff-radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
   font-size: var(--ff-text-base);
   font-weight: var(--ff-weight-medium);
   text-transform: capitalize;
+}
+
+button.ff-datepicker__title {
+  cursor: pointer;
+}
+
+button.ff-datepicker__title:hover {
+  background: var(--ff-surface-hover);
+}
+
+/* Months and years share one grid: three columns of twelve, which is a year of
+ * months and a decade of years without either needing a layout of its own. */
+.ff-datepicker__cells {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--ff-space-1);
+  padding: var(--ff-space-1) 0;
+}
+
+.ff-datepicker__cell {
+  padding: var(--ff-space-2) 0;
+  border: 0;
+  border-radius: var(--ff-radius-sm);
+  background: none;
+  color: var(--ff-text);
+  font: inherit;
+  font-size: var(--ff-text-sm);
+  font-variant-numeric: tabular-nums;
+  text-transform: capitalize;
+  cursor: pointer;
+}
+
+.ff-datepicker__cell:hover {
+  background: var(--ff-surface-hover);
+}
+
+.ff-datepicker__cell[aria-selected="true"] {
+  background: var(--ff-accent);
+  color: var(--ff-accent-text);
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-datepicker__cell:focus-visible {
+  outline: var(--ff-focus-width) solid var(--ff-focus-color);
+  outline-offset: -1px;
+}
+
+/* The clock, for a column that stores one. Only rendered for datetime-local:
+ * a date field has no time to set, and a row of dropdowns reading 00:00 under
+ * it would be an invitation to change something that does not exist.
+ *
+ * Three of the admin's own comboboxes rather than number boxes: a spinner is
+ * drawn differently by every browser, shows none of the options, and cannot say
+ * whether 9 means morning or evening. The last of the three only exists in
+ * locales that write the time that way. */
+.ff-datepicker--with-time {
+  width: 20rem;
+}
+
+.ff-datepicker__clock {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+  padding-top: var(--ff-space-3);
+  margin-top: var(--ff-space-2);
+  border-top: 1px solid var(--ff-border);
+  color: var(--ff-text-subtle);
+}
+
+/* Each unit takes an equal share of what is left, so the row does not reflow
+ * when the hour goes from "9" to "12". */
+.ff-datepicker__clock .ff-combo {
+  flex: 1;
+  min-width: 0;
+}
+
+.ff-datepicker__clock .ff-combo__button {
+  padding-inline: var(--ff-space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The control is narrow; its list is not. A combobox panel is pinned to both
+ * edges of its trigger, which on a box this size gave a list four characters
+ * wide -- "12" came out as "1..", every minute as "3.", and the search box as
+ * "Searc". The list unpins from the far edge and takes the width it needs. */
+.ff-datepicker__clock .ff-combo__panel {
+  inset-inline: auto;
+  inset-inline-start: 0;
+  min-width: 7rem;
+}
+
+.ff-datepicker__clock .ff-combo__option {
+  font-variant-numeric: tabular-nums;
+}
+
+.ff-datepicker__colon {
+  color: var(--ff-text);
+  font-weight: var(--ff-weight-medium);
 }
 
 .ff-datepicker__week,
@@ -1934,21 +2088,57 @@
  * the value and the name; these only write into it.
  * ======================================================================== */
 
+/* One control, not four boxes that happen to be next to each other.
+ *
+ * Four separate inputs in a row read as four questions -- and next to a form of
+ * single bordered fields, as four fields whose relationship you have to work
+ * out. Boxed together with hairlines between them, it reads the way a duration
+ * is written: one value with four parts. */
 .ff-duration {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--ff-space-2);
+  width: fit-content;
+  min-width: min(100%, 20rem);
+  overflow: hidden;
+  border: 1px solid var(--ff-border-strong);
+  border-radius: var(--ff-radius-md);
+  background: var(--ff-surface);
 }
 
 .ff-duration__part {
   display: grid;
-  gap: var(--ff-space-1);
+  gap: 0;
+  padding: var(--ff-space-2) 0 var(--ff-space-1);
+  border-inline-start: 1px solid var(--ff-border);
+  cursor: text;
 }
 
+.ff-duration__part:first-child {
+  border-inline-start: 0;
+}
+
+.ff-duration__part:focus-within {
+  background: var(--ff-accent-subtle);
+}
+
+/* The border and the background belong to the group now, so each box is just
+ * the number: no field inside a field, and nothing to align against nothing. */
 .ff-duration__box {
   width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ff-text);
+  font: inherit;
+  font-size: var(--ff-text-md);
   font-variant-numeric: tabular-nums;
+  font-weight: var(--ff-weight-medium);
   text-align: center;
+}
+
+.ff-duration__box:focus {
+  outline: none;
 }
 
 /* The spinners are a second way to change a number that is half the width of a
@@ -1967,6 +2157,8 @@
   color: var(--ff-text-subtle);
   font-size: var(--ff-text-xs);
   text-align: center;
+  text-transform: lowercase;
+  user-select: none;
 }
 
 /* ===========================================================================
@@ -2041,18 +2233,51 @@
 
 .ff-map__canvas {
   position: relative;
-  height: 16rem;
+  height: 18rem;
   background: var(--ff-surface-sunken);
   /* Panning is a drag, so the browser must not claim the gesture for scrolling
    * first -- without this the map barely moves on a touchscreen. */
   touch-action: none;
-  cursor: crosshair;
+  /* An open hand, closing while the map is being dragged. This was a crosshair,
+   * which says "click to place a point" and says nothing at all about the map
+   * being draggable -- so the one gesture that makes a map a map was invisible.
+   * It is still click-to-place; the hand is what advertises the other half. */
+  cursor: grab;
   user-select: none;
 }
 
+.ff-map__canvas[data-ff-dragging="true"] {
+  cursor: grabbing;
+}
+
+/* Inert, so the canvas underneath is what every pointer event lands on.
+ *
+ * This is what makes the map draggable at all. Tiles are `<img>`, and an image
+ * is draggable by default: pressing on one and moving started the browser's own
+ * drag-and-drop, which fires `pointercancel` and hands back a ghost of the tile
+ * instead of a map that moves. Every drag died two pixels in, on every tile, in
+ * every browser -- and the clamp arithmetic that looked like the cause was a
+ * second, quieter bug sitting behind this one. */
 .ff-map__tiles {
   position: absolute;
   inset: 0;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+/* One per zoom level. Tiles sit at their own level's coordinates and the layer
+ * carries the pan and the scale, so a zoom moves one element rather than every
+ * image -- and the level already on screen can be scaled to line up with the new
+ * one while its tiles load, instead of the map going blank and repainting.
+ *
+ * `transform-origin` must be the top-left corner: the coordinates inside are
+ * absolute pixels of a world that starts there, and scaling about the centre
+ * would put every one of them somewhere else. */
+.ff-map__layer {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
 }
 
 .ff-map__tile {
@@ -2074,32 +2299,95 @@
   opacity: 1;
 }
 
+/* A pin, not a dot. The transform positions the element's top-left corner, and
+ * the place is where the pin's point touches the map -- so the whole height and
+ * half the width are taken back off, and the marker hangs above its coordinate
+ * the way a pin stuck in a paper map does. */
 .ff-map__marker {
   position: absolute;
   top: 0;
   left: 0;
-  width: 14px;
-  height: 14px;
-  /* The transform positions the marker's top-left, and the point is its centre. */
-  margin: -7px 0 0 -7px;
-  border: 2px solid var(--ff-surface);
-  border-radius: var(--ff-radius-full);
-  background: var(--ff-danger);
-  box-shadow: var(--ff-shadow-sm);
+  width: 30px;
+  height: 30px;
+  margin: -30px 0 0 -15px;
+  color: var(--ff-danger);
   pointer-events: none;
+  /* Against a light street map a red outline alone disappears; the shadow is
+   * what lifts it off whatever is underneath. */
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 45%));
 }
 
+.ff-map__marker svg {
+  width: 100%;
+  height: 100%;
+  fill: var(--ff-surface);
+}
+
+/* Stacked, boxed and joined, the way every map draws its zoom -- one control
+ * rather than two buttons that happen to be near each other. */
 .ff-map__controls {
   position: absolute;
   top: var(--ff-space-2);
-  inset-inline-end: var(--ff-space-2);
-  display: grid;
-  gap: var(--ff-space-1);
+  inset-inline-start: var(--ff-space-2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--ff-border-strong);
+  border-radius: var(--ff-radius-md);
+  box-shadow: var(--ff-shadow-sm);
 }
 
-.ff-map__controls .ff-action {
+.ff-map__button {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--ff-border);
   background: var(--ff-surface);
-  box-shadow: var(--ff-shadow-sm);
+  color: var(--ff-text);
+  cursor: pointer;
+}
+
+.ff-map__button:last-child {
+  border-bottom: 0;
+}
+
+.ff-map__button:hover {
+  background: var(--ff-surface-hover);
+}
+
+.ff-map__button:focus-visible {
+  outline: var(--ff-focus-width) solid var(--ff-focus-color);
+  outline-offset: -2px;
+}
+
+/* Waiting on the browser's permission prompt and then on a fix. */
+.ff-map[data-ff-locating="true"] .ff-map__button:last-child {
+  color: var(--ff-text-subtle);
+  animation: ff-pulse 1.2s var(--ff-ease) infinite;
+}
+
+@keyframes ff-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* The credit line the tile service asks for, on the map rather than under the
+ * field -- where every other map puts it, and where it reads as a notice about
+ * the pictures instead of as help text for the input. */
+.ff-map__credit {
+  position: absolute;
+  bottom: 0;
+  inset-inline-end: 0;
+  padding: 1px var(--ff-space-2);
+  border-start-start-radius: var(--ff-radius-sm);
+  background: color-mix(in oklab, var(--ff-surface) 82%, transparent);
+  color: var(--ff-text-muted);
+  font-size: var(--ff-text-xs);
+  pointer-events: none;
 }
 
 /* ===========================================================================
@@ -2139,4 +2427,151 @@
   margin-inline-start: auto;
   color: var(--ff-text-subtle);
   font-size: var(--ff-text-sm);
+}
+
+/* ---------------------------------------------------------------------------
+ * The upload card
+ *
+ * What replaces the native file input once script is on: one target that can be
+ * clicked or dropped onto, showing what is there and what is about to replace
+ * it. The native input is still inside it and still what submits -- hidden the
+ * accessible way rather than with `display: none`, so it keeps its name, its
+ * validity and its place in the form.
+ * ------------------------------------------------------------------------ */
+
+.ff-upload {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 4.5rem;
+  padding: var(--ff-space-3);
+  border: 1px dashed var(--ff-border-strong);
+  border-radius: var(--ff-radius-lg);
+  background: var(--ff-surface-sunken);
+  cursor: pointer;
+  transition:
+    border-color var(--ff-duration-fast) var(--ff-ease),
+    background var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-upload:hover {
+  border-color: var(--ff-accent-border);
+}
+
+/* Something is in it, so it stops advertising itself as an empty target. */
+.ff-upload[data-ff-state="chosen"],
+.ff-upload[data-ff-state="stored"],
+.ff-upload[data-ff-state="cleared"] {
+  border-style: solid;
+  background: var(--ff-surface);
+}
+
+.ff-upload[data-ff-state="invalid"] {
+  border-color: var(--ff-danger);
+  background: var(--ff-danger-subtle);
+}
+
+/* Held over the card. Deliberately loud: a drop target that does not react is
+ * one people let go over and hope. */
+.ff-upload[data-ff-drop="true"] {
+  border-color: var(--ff-accent);
+  border-style: solid;
+  background: var(--ff-accent-subtle);
+}
+
+.ff-upload__body {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: var(--ff-space-3);
+  min-width: 0;
+}
+
+/* The native input and the "clear this" checkbox both still submit, so neither
+ * can be `display: none` -- they are hidden the way a skip link is, present to
+ * the form and to assistive technology, absent from the layout. */
+.ff-upload__input,
+.ff-upload__flag {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.ff-upload__icon {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--ff-radius-full);
+  background: var(--ff-surface);
+  color: var(--ff-text-muted);
+}
+
+.ff-upload__choose {
+  color: var(--ff-text);
+  font-size: var(--ff-text-sm);
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-upload__hint,
+.ff-upload__meta {
+  color: var(--ff-text-subtle);
+  font-size: var(--ff-text-sm);
+}
+
+/* Pushed to the end, so the name in the middle takes whatever room is left
+ * rather than the size and the remove button fighting it for space. */
+.ff-upload__meta {
+  margin-inline-start: auto;
+  white-space: nowrap;
+}
+
+.ff-upload[data-ff-state="invalid"] .ff-upload__meta {
+  color: var(--ff-danger);
+  font-weight: var(--ff-weight-medium);
+}
+
+/* The preview. A square, because a form full of fields whose height depends on
+ * the aspect ratio of whatever was uploaded is a form that jumps around. */
+.ff-upload__thumb {
+  flex: none;
+  width: 3rem;
+  height: 3rem;
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-md);
+  background: var(--ff-surface-sunken);
+  object-fit: cover;
+}
+
+.ff-upload__thumb--icon {
+  display: grid;
+  place-items: center;
+  color: var(--ff-text-subtle);
+}
+
+.ff-upload__name {
+  overflow: hidden;
+  color: var(--ff-text);
+  font-size: var(--ff-text-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+a.ff-upload__name {
+  text-decoration: underline;
+  text-decoration-color: var(--ff-border-strong);
+}
+
+.ff-upload__name--gone {
+  color: var(--ff-text-subtle);
+  text-decoration: line-through;
+}
+
+.ff-upload__remove {
+  flex: none;
 }
