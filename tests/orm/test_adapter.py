@@ -15,7 +15,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from fastfort.core.exceptions import ObjectNotFound, ValidationError
+from fastfort.core.exceptions import AdapterError, ObjectNotFound, ValidationError
 from fastfort.orm.sqlalchemy import SQLAlchemyAdapter, SQLAlchemyBackend
 from fastfort.spec import Filter, FilterOperator, ListQuery, SortSpec
 
@@ -459,6 +459,29 @@ async def test_listing_with_relations_does_not_issue_a_query_per_row(
 async def test_dialect_profile_matches_the_connection(backend: SQLAlchemyBackend) -> None:
     assert backend.profile.name == backend.dialect
     await backend.check_connection()
+
+
+async def test_an_unreachable_database_says_which_one() -> None:
+    """The driver reports the address it dialled and nothing else, which leaves
+    nobody able to tell which of a project's databases refused them or what was
+    supposed to be listening there.
+    """
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    engine = create_async_engine(
+        "postgresql+asyncpg://someone:hunter2@127.0.0.1:1/nowhere",
+        connect_args={"timeout": 2},
+    )
+    unreachable = SQLAlchemyBackend(session_factory=async_sessionmaker(engine))
+
+    with pytest.raises(AdapterError) as raised:
+        await unreachable.check_connection()
+    await engine.dispose()
+
+    assert "127.0.0.1:1/nowhere" in raised.value.message
+    # Masked, or every log that catches this error now holds the password.
+    assert "hunter2" not in str(raised.value)
+    assert raised.value.hint
 
 
 async def test_created_at_survives_the_round_trip(products: SQLAlchemyAdapter) -> None:

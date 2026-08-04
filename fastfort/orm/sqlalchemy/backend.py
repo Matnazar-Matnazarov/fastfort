@@ -19,7 +19,7 @@ from fastfort.core.exceptions import AdapterError, ImproperlyConfigured
 from fastfort.core.registry import default_model_key
 from fastfort.spec import ModelSpec
 
-from .adapter import SQLAlchemyAdapter
+from .adapter import SQLAlchemyAdapter, constraint_message
 from .dialects import DialectProfile, profile_for
 from .introspect import introspect_model, is_sqlalchemy_model
 
@@ -62,7 +62,7 @@ class SQLAlchemyUnitOfWork:
             return
         try:
             if exc_type is None:
-                await session.commit()
+                await self.commit()
             else:
                 await session.rollback()
         finally:
@@ -70,7 +70,21 @@ class SQLAlchemyUnitOfWork:
             self._session = None
 
     async def commit(self) -> None:
-        await self.session.commit()
+        """Make the work durable, or roll it back and say why.
+
+        A constraint the database only checks at commit -- a deferred one, or a
+        cascade that turns out to violate a foreign key -- fails here rather than
+        at the flush the adapter already translated. Left raw it reached the
+        browser as a 500 on a write that looked like every other. Rolling back
+        first is what makes the message safe to act on: the session is usable
+        again, so the view that catches this can re-render the form instead of
+        failing a second time on the way out.
+        """
+        try:
+            await self.session.commit()
+        except sa.exc.IntegrityError as exc:
+            await self.session.rollback()
+            raise AdapterError(constraint_message(exc)) from exc
 
     async def rollback(self) -> None:
         await self.session.rollback()
@@ -190,6 +204,9 @@ class SQLAlchemyBackend:
             select_related=select_related,
             prefetch_related=prefetch_related,
             count_cap=self._count_cap,
+            # So a deletion plan can name a related model by the key it is
+            # registered under, which is what the page needs to link to it.
+            resolve_key=self._resolve_key,
         )
 
     def unit_of_work(self) -> SQLAlchemyUnitOfWork:
@@ -203,7 +220,26 @@ class SQLAlchemyBackend:
             async with self._session_factory() as session:
                 await session.execute(sa.text("SELECT 1"))
         except Exception as exc:
+            # The driver reports the address it dialled and nothing else, which
+            # leaves "Connection refused, 127.0.0.1:55433" as the whole of what
+            # anyone has to go on -- true, and no help in working out which of
+            # the project's databases that is or what was meant to be listening
+            # there. Naming the configured URL is the difference between reading
+            # the error and going to look for the setting behind it.
             raise AdapterError(
-                f"Cannot reach the database: {exc}",
+                f"Cannot reach the database at {self._safe_url()}: {exc}",
                 hint="Check the connection URL, that the server is running, and the credentials.",
             ) from exc
+
+    def _safe_url(self) -> str:
+        """The connection URL with the password masked, for an error message.
+
+        Masked by SQLAlchemy rather than by string surgery here: an error that
+        prints a password puts it in every log that catches it.
+        """
+        try:
+            return str(self.engine.url.render_as_string(hide_password=True))
+        except Exception:
+            # A session factory with no bind, which `engine` already reports
+            # against with a message of its own. Nothing to add here.
+            return "the configured URL"
