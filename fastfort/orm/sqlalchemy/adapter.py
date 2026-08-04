@@ -8,7 +8,7 @@ that fails halfway therefore leaves nothing behind.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
 import sqlalchemy as sa
@@ -16,13 +16,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
 from fastfort.core.exceptions import AdapterError, ObjectNotFound, ValidationError
+from fastfort.core.registry import default_model_key
 from fastfort.orm.base import PrimaryKey, RelatedChoice
-from fastfort.spec import ListQuery, ModelSpec, Page
+from fastfort.spec import DeletionPlan, ListQuery, ModelSpec, Page
 
+from .deletion import collect_deletion
 from .dialects import DialectProfile, icontains
 from .query import QueryBuilder
 
-__all__ = ["SQLAlchemyAdapter"]
+__all__ = ["SQLAlchemyAdapter", "constraint_message"]
 
 #: Rows touched per statement in a bulk operation. Bounded so that an action over
 #: a large selection cannot pull the whole table into memory.
@@ -43,11 +45,13 @@ class SQLAlchemyAdapter:
         select_related: Sequence[str] = (),
         prefetch_related: Sequence[str] = (),
         count_cap: int | None = None,
+        resolve_key: Callable[[type], str] = default_model_key,
     ) -> None:
         self.model = model
         self.session = session
         self._spec = spec
         self._count_cap = count_cap
+        self._resolve_key = resolve_key
         self._builder = QueryBuilder(
             model,
             spec,
@@ -147,6 +151,23 @@ class SQLAlchemyAdapter:
         await self.session.delete(obj)
         await self._flush()
 
+    async def deletion_plan(self, objects: Sequence[Any]) -> DeletionPlan:
+        """What deleting `objects` would do to everything pointing at them.
+
+        Read-only, and read *before* the delete: the confirmation page needs it
+        to say what else goes, and the delete view needs it to refuse a write the
+        database would reject anyway -- a foreign key that is `NOT NULL` with no
+        cascade behind it turns an ordinary delete into an IntegrityError, and a
+        stack trace is not an answer to "can I remove this category".
+        """
+        return await collect_deletion(
+            self.session,
+            self.model,
+            objects,
+            resolve_key=self._resolve_key,
+            label_of=_row_label,
+        )
+
     async def _flush(self) -> None:
         """Flush, turning a constraint violation into something a form can show.
 
@@ -160,7 +181,7 @@ class SQLAlchemyAdapter:
         try:
             await self.session.flush()
         except sa.exc.IntegrityError as exc:
-            raise AdapterError(_constraint_message(exc)) from exc
+            raise AdapterError(constraint_message(exc)) from exc
 
     async def bulk_update(self, query: ListQuery, data: Mapping[str, Any]) -> int:
         writable = self._writable(data)
@@ -286,7 +307,7 @@ class SQLAlchemyAdapter:
         return cast("InstrumentedAttribute[Any]", getattr(self.model, name))
 
 
-def _constraint_message(error: sa.exc.IntegrityError) -> str:
+def constraint_message(error: sa.exc.IntegrityError) -> str:
     """What to tell someone whose save the database refused.
 
     The driver's text names the constraint and often the column, which is more
@@ -317,6 +338,26 @@ def _identity(obj: Any) -> Any:
     if identity is None:
         return None
     return identity[0] if len(identity) == 1 else identity
+
+
+def _row_label(obj: Any) -> str:
+    """Name a row of *any* model, for a deletion plan.
+
+    `label_for` knows one model and reads its spec; this one is handed rows from
+    across the schema, so it falls back to the class name and the identity. The
+    `__str__` it calls belongs to the project and may reach for a relation that
+    was never loaded, which raises rather than returning a bad string -- and a
+    confirmation page must not 500 because one related model's `__str__` is
+    chatty.
+    """
+    try:
+        text = _display(obj)
+    except Exception:
+        text = ""
+    if text:
+        return text
+    identity = _identity(obj)
+    return f"{type(obj).__name__} {identity}" if identity is not None else type(obj).__name__
 
 
 def _display(obj: Any) -> str:

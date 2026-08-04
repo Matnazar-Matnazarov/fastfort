@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from types import TracebackType
 from typing import Any, Protocol, TypeAlias, runtime_checkable
 
-from fastfort.spec import ListQuery, ModelSpec, Page
+from fastfort.spec import DeletionPlan, ListQuery, ModelSpec, Page
 
 __all__ = [
     "Backend",
@@ -137,6 +137,17 @@ class ModelAdapter(Protocol):
         ...
 
     async def delete(self, obj: Any) -> None: ...
+
+    async def deletion_plan(self, objects: Sequence[Any]) -> DeletionPlan:
+        """Describe what deleting `objects` would do, without doing it.
+
+        Part of the contract rather than an extra, because only an adapter can
+        see a foreign key's nullability and whether anything cascades -- and
+        without that the confirmation in front of a delete is decoration. A
+        plan whose `blocked` is true is one the database would refuse; the views
+        stop there instead of letting it fail mid-transaction.
+        """
+        ...
 
     async def bulk_update(self, query: ListQuery, data: Mapping[str, Any]) -> int:
         """Update every row matching `query`, returning how many were affected.

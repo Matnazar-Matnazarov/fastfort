@@ -28,7 +28,7 @@ from fastfort.core.exceptions import AdapterError
 from fastfort.core.registry import default_model_key
 from fastfort.spec import Choice, FieldSpec, FieldType, ModelSpec, RelationSpec
 
-__all__ = ["introspect_model", "is_sqlalchemy_model"]
+__all__ = ["humanise", "introspect_model", "is_sqlalchemy_model", "pluralise"]
 
 #: Length past which a VARCHAR is treated as prose and gets a textarea.
 _TEXTAREA_THRESHOLD = 512
@@ -124,12 +124,12 @@ def introspect_model(
         if (prop := mapper.get_property_by_column(column)) is not None
     )
 
-    verbose = _humanise(model.__name__)
+    verbose = humanise(model.__name__)
     return ModelSpec(
         key=key,
         name=model.__name__,
         verbose_name=verbose,
-        verbose_name_plural=_pluralise(verbose),
+        verbose_name_plural=pluralise(verbose),
         fields=tuple(fields),
         primary_key=primary_key,
     )
@@ -185,7 +185,7 @@ def _column_field(mapper: Mapper[Any], name: str, column: sa.Column[Any]) -> Fie
     return FieldSpec(
         name=name,
         type=field_type,
-        label=_humanise(name),
+        label=humanise(name),
         help_text=column.doc,
         required=not column.nullable and not has_default and not generated,
         nullable=bool(column.nullable),
@@ -251,8 +251,8 @@ def _classify(column: sa.Column[Any]) -> tuple[FieldType, tuple[Choice, ...]]:
 def _enum_choices(column_type: sa.Enum) -> tuple[Choice, ...]:
     native = column_type.enum_class
     if native is not None and issubclass(native, enum.Enum):
-        return tuple(Choice(value=member.value, label=_humanise(member.name)) for member in native)
-    return tuple(Choice(value=item, label=_humanise(item)) for item in column_type.enums)
+        return tuple(Choice(value=member.value, label=humanise(member.name)) for member in native)
+    return tuple(Choice(value=item, label=humanise(item)) for item in column_type.enums)
 
 
 def _is_autoincrement(mapper: Mapper[Any], column: sa.Column[Any]) -> bool:
@@ -320,7 +320,7 @@ def _relation_field(
     return FieldSpec(
         name=rel.key,
         type=field_type,
-        label=_humanise(rel.key),
+        label=humanise(rel.key),
         required=False,
         nullable=True,
         editable=not rel.viewonly,
@@ -354,7 +354,7 @@ def _relation_type(rel: RelationshipProperty[Any]) -> FieldType:
 # ---------------------------------------------------------------------------
 
 
-def _humanise(name: str) -> str:
+def humanise(name: str) -> str:
     """``created_at``, ``CreatedAt`` and ``CREATED_AT`` all become ``Created at``."""
     # SHOUTING_CASE carries no word boundaries for the camel pattern to find, so
     # it is folded first. Enum members are the usual source.
@@ -367,7 +367,7 @@ def _humanise(name: str) -> str:
     return spaced[0].upper() + spaced[1:]
 
 
-def _pluralise(word: str) -> str:
+def pluralise(word: str) -> str:
     """Good enough for English labels; anything else is set explicitly."""
     if word.endswith(("s", "x", "z", "ch", "sh")):
         return f"{word}es"
