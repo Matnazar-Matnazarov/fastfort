@@ -147,8 +147,97 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   replacement staged alongside some other field that fails validation must not
   already have discarded the original over a save that never went through
 
+- **An upload control worth using.** `<input type="file">` is the worst thing the
+  platform ships: a grey button reading "No file chosen", drawn differently by
+  every browser, unstyleable, undroppable-onto, and once something is chosen it
+  shows a truncated filename and nothing else — so the commonest question about
+  an upload, "is that the right picture", is one it cannot answer. It is now a
+  card that can be clicked or dropped onto, previewing what is stored and what
+  is about to replace it: the image itself, a video's first frame, the file's
+  name, its size, and whether it is over the limit before anything is sent. The
+  native input is still inside it, still named, and still what carries the bytes
+  — hidden the accessible way rather than with `display: none` — so with script
+  off the field is exactly the input and stored-value block it always was. No
+  library: the preview is a `URL.createObjectURL` of the file the person just
+  picked, which is the browser drawing their own selection with nothing uploaded
+  and no request made
+- **Brotli, with gzip behind it**, on the admin's own CSS and JavaScript — the
+  two largest things it serves and the two that are on every page. The
+  stylesheet goes out at 24 KB instead of 138 KB, the script at 29 KB instead of
+  122 KB, and a browser that asks for gzip instead gets 30 KB and 34 KB. Both
+  are produced once per process and kept, because these files ship in the wheel
+  and cannot change while it is running; `Vary: Accept-Encoding` is set so a
+  cache in front of the admin cannot serve one browser's Brotli to another that
+  cannot read it. Brotli is an optional dependency
+  (`pip install "fastfort[compression]"`), because a project behind a proxy that
+  already compresses needs nothing here and a missing package should mean "gzip,
+  then" rather than a failed import.
+
+  Rendered pages are deliberately **not** compressed. A page carries a CSRF
+  token *and* text the request chose — a search term, a filter value — and
+  compressing a response holding both is the BREACH side channel: the compressed
+  length leaks how much of a guess at the secret matched. A proxy in front of an
+  admin should be configured the same way.
+- The duration field is one bordered control with hairlines between its parts,
+  rather than four separate number boxes in a row that read as four questions
+- Japanese and Arabic, taking the admin to eleven languages. Arabic is the first
+  right-to-left one, and the whole layout turns around from a single `dir`
+  attribute — the stylesheet was already written in logical properties
+  throughout, so there is no second sheet and no mirrored rule. A test counts
+  the physical direction properties left in the CSS and fails when one is added
+- The date picker's title is now a button, and it zooms out: days to months to a
+  decade of years. Paging a month at a time is fine for "next Tuesday" and
+  useless for a date of birth, which was four hundred clicks on one arrow
+- A `datetime-local` field gets a clock: hours, minutes and — in locales that
+  write the time that way — AM or PM, as three of the admin's own dropdowns
+  rather than a control of the picker's own. The panel drew a calendar and
+  nothing else, so the time half of the column could only be reached by typing
+  into the input behind it, around a value the picker had just written. Whether
+  the clock runs to twelve or to twenty-four comes from `Intl`, and so do the
+  names of the two halves of the day, because both are properties of the locale
+  rather than interface strings. Choosing a day no longer closes the panel on
+  those fields, because the answer is not complete until the time is set;
+  "Today" becomes "Now" and sets both, and a "Done" button says when to put it
+  away
+- The map now behaves like a map. The cursor is an open hand that closes while
+  the map is being dragged — it was a crosshair, which says "click to place a
+  point" and says nothing about the map moving, so the one gesture that makes a
+  map a map was invisible. The marker is a pin anchored at its point rather than
+  a dot whose centre had to be guessed at. The zoom controls are one boxed,
+  stacked control instead of two floating buttons, and there is a third:
+  "My location", which centres on where the browser says the device is, offered
+  only where `navigator.geolocation` exists. The tile service's credit line
+  moved onto the map, where every other map puts it and where it reads as a
+  notice about the pictures instead of as help text for the field
+
+- A delete confirmation that says what a delete would actually do.
+  `ModelAdapter.deletion_plan` walks the rows pointing at the one being removed
+  and reports, per related model, which of three things happens to them:
+  **deleted** (an ORM cascade, or `ON DELETE CASCADE`), **kept with the link
+  cleared** (a nullable foreign key, which is what SQLAlchemy does by default and
+  what nobody writes down), or **protected** — a `NOT NULL` foreign key with
+  nothing cascading, which the database will refuse. The page names them, counts
+  them and lists a few by name; a protected relation blocks the delete with a
+  sentence saying what is holding it, instead of a constraint violation from
+  inside the transaction. Relations are found from the child side, so a foreign
+  key whose model never declared a back reference is not missed, and cascades are
+  followed, because "4 categories" is not a useful warning when what goes is the
+  six hundred products under them. Both the depth and the rows read are capped:
+  confirming a delete must not scan the table. The same check runs before a bulk
+  delete, where half the selection going and the rest failing is the worst
+  available outcome — and again at the point of the write, since a confirmation
+  page may have been open for an hour
+
 ### Changed
 
+- The CLI suite runs against all three databases instead of being skipped on
+  two. `createsuperuser` calls `asyncio.run`, so it reaches the database from a
+  loop that is not the test's — which is exactly what happens in production,
+  where the CLI is a separate process — and asyncpg and aiomysql bind a
+  connection to the loop it was opened on. Giving the command an engine with
+  `NullPool` is what makes that work: nothing is held between calls, so it dials
+  a fresh connection on whatever loop it is running on. `uv run pytest --db=all`
+  now reports no skips at all.
 - The language switcher is a filterable menu of buttons carrying a flag, the
   language's own name and its code, instead of a native `<select>`. A select
   opens the operating system's own popup: unstyleable, unlike anything else on
@@ -302,6 +391,62 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The map could not be dragged, and two rounds of arithmetic fixes changed
+  nothing anybody could see.** A tile is an `<img>`, and an image is draggable by
+  default — so pressing on one and moving started the browser's own
+  drag-and-drop, which fires `pointercancel` and hands back a ghost of the tile.
+  Every pan died two pixels in, on every tile, in every browser. The tile layer
+  is now inert (`pointer-events: none`), the images carry `draggable="false"`
+  for the browsers that only honour the attribute, and `dragstart` is cancelled
+  on the canvas.
+- **The clock's dropdowns were unreadable.** A combobox panel is pinned to both
+  edges of its trigger, and on a box sized for two digits that gave a list four
+  characters wide: "12" came out as "1..", every minute as "3.", and the search
+  box as "Searc". The list now unpins from the far edge and takes the width it
+  needs. The hours and the AM/PM control lost their search box as well — twelve
+  options fit on screen, and a search above them is a control to walk past
+  rather than a shortcut.
+- **Every page visibly assembled itself for a frame.** `data-ff-js` — the "script
+  is on" flag half the stylesheet keys off — was set by the main bundle, which is
+  deferred and therefore runs *after* the browser has painted. So on every
+  navigation the theme switch, the settings button and the command palette
+  blinked into existence a moment late, every `<select>` about to become a
+  combobox was drawn in the operating system's own styling and then swapped, and
+  the export and page-size menus were rendered fully open before being shut. The
+  flag now comes from `boot.js`, which runs before the first paint and is itself
+  the proof that scripting is on; the dropdown panels are rendered `hidden` by
+  the server; and a control waiting to be upgraded reserves its box without
+  drawing the native one, so nothing moves when the real control lands in it.
+- **The map would not pan.** Longitude was clamped to the width of the world
+  minus the canvas — and at the zoom levels the field opens on, that bound is
+  *smaller* than the canvas, so the low end came out above the high end, `clamp`
+  returned the high one whatever it was given, and every drag snapped the centre
+  to the same spot. East and west are now unbounded, because the world is: the
+  tile column already wrapped, so panning past the anti-meridian arrives back
+  where it started, and the marker is drawn in whichever copy of the world the
+  view is over. North and south stay bounded, since the world does end there.
+- **An unreachable database did not say which database.** `check_connection`
+  passed the driver's own text through, and the driver reports the address it
+  dialled and nothing else — "Connection refused, 127.0.0.1:55433" is true and no
+  help in working out which of a project's databases that is or what was supposed
+  to be listening there. The message now names the configured URL, with the
+  password masked by SQLAlchemy rather than by string surgery, because an error
+  that prints a password puts it in every log that catches it. `test_api`'s
+  start-up also checks the connection before creating the schema, so an unstarted
+  container is that sentence instead of sixty lines of connection-pool internals.
+- **A failed commit was a 500 on every write path.** Adapters translate a
+  constraint violation at flush into something a form can show, but a constraint
+  the database only checks at commit — a deferred one, or a cascade that turns
+  out to violate a foreign key — was raised on the way out of the unit of work,
+  past every handler that could have explained it. Create, change, delete and
+  bulk actions now commit explicitly, inside the guard that already catches the
+  flush, and the unit of work rolls back before translating so the session is
+  usable for the response.
+- **Deleting a row and then failing crashed while reporting the failure.**
+  `delete_submit` rolled back and only afterward read the instance's primary key
+  to build the URL to send the person back to — the same expired-attribute crash
+  that was fixed in `change_submit`, on the path that exists to explain what went
+  wrong. Everything the error path needs is now read while the row is live.
 - **A rejected submission while editing an existing row was a 500.**
   `change_submit` rolled the transaction back and only afterward built the
   form's action URL from the instance's primary key. A rollback expires every
@@ -330,6 +475,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   wheel. Tiles from the zoom level being left now stay on screen as a
   placeholder until the new ones have loaded (or failed), rather than being
   removed on the spot.
+- **Zooming the map still stalled, then jumped.** Keeping the previous level's
+  tiles was only half of it: they stayed at the *old* level's positions, so the
+  view was frozen at the zoom it was leaving until the last new tile arrived and
+  the whole thing snapped to the new one. Tiles now live in a layer per zoom
+  level, and a layer carries the scale — so the level already on screen is
+  scaled to line up with the new one in the same frame the button was pressed,
+  and the sharp tiles fade in over it as they arrive. This is what every slippy
+  map does, and it is why one feels immediate. A tile that is discarded before
+  it loads is accounted for too, so a pan mid-zoom cannot leave the old level
+  stranded underneath the new one for good.
 - "Cancel" in a popup navigated that same window to the parent's list instead
   of closing it, leaving an abandoned form's window open on a page nothing
   points back to. It now closes the window when one opened it, and falls back

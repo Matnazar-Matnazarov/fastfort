@@ -107,16 +107,17 @@ first time someone opens that page.
 | | |
 |---|---|
 | 🎛 **Django-style admin** | `@admin.register`, `list_display`, `list_filter`, `search_fields`, `fieldsets`, `actions` |
+| 🗑 **Deletes you can trust** | The confirmation counts what actually goes: rows that cascade, rows kept with the link cleared, and rows that block the delete outright — refused with a sentence instead of a constraint violation |
 | 🎨 **A UI you will not want to replace** | Light and dark themes, brand colour from a single setting, ⌘K command palette, full keyboard navigation, real mobile layout |
 | 🔐 **Production-grade auth** | Argon2id hashing, JWT access/refresh, token rotation with reuse detection, login lockout, CSRF protection |
 | 👥 **Roles and permissions** | Object-level, row-level and field-level access control |
 | 📝 **Audit log** | Who changed what and when, with an old → new diff |
 | 🗄 **Three databases** | SQLite · PostgreSQL · MySQL, with identical behaviour |
 | 🔌 **ORM-agnostic** | SQLAlchemy 2.0 (async and sync) and Tortoise ORM behind one adapter contract |
-| 🌍 **Nine languages** | English, Uzbek, Russian, Turkish, German, French, Spanish, Chinese and Korean. The catalogues ship in the package, so the admin is already translated the moment you install it — there is nothing to configure |
+| 🌍 **Eleven languages** | English, Uzbek, Russian, Turkish, German, French, Spanish, Chinese, Japanese, Korean and Arabic — the last of them right-to-left, which turns the whole layout around from one attribute. The catalogues ship in the package, so the admin is already translated the moment you install it — there is nothing to configure |
 | ⌨️ **A CLI that matters** | `createsuperuser` so a fresh install has a way in, and `check --deploy` that exits non-zero |
 | 📤 **Export** | The current view as CSV or Excel — filters, search and ordering included. No openpyxl, no pandas |
-| 📦 **No Node.js** | CSS and JavaScript ship pre-built inside the package |
+| 📦 **No Node.js** | CSS and JavaScript ship pre-built inside the package, served Brotli-compressed with a gzip fallback — 24 KB of CSS and 29 KB of JavaScript on the wire |
 
 ---
 
