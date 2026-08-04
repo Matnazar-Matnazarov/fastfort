@@ -137,8 +137,9 @@ jobs:
       - run: uv sync --all-extras
 
       # The audit runs against the locked third-party dependencies only.
-      # `--no-emit-project` leaves fastfort itself out: it is not published yet,
-      # and pip-audit treats a package it cannot find on PyPI as a hard failure.
+      # `--no-emit-project` leaves fastfort itself out: what is being tested here
+      # is the working tree, not whatever version of it PyPI happens to hold, and
+      # a version that is not published yet is a hard failure for pip-audit.
       - name: Export locked dependencies
         run: >-
           uv export --all-extras --no-emit-project --no-hashes

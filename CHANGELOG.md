@@ -10,6 +10,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-04
+
+The first release. Everything below is new, because there was nothing before it.
+
 ### Added
 
 - Project foundation: `uv`-managed package layout on the hatchling build backend
@@ -572,4 +576,5 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/main...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Matnazar-Matnazarov/fastfort/releases/tag/v0.1.0
