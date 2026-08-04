@@ -133,7 +133,7 @@
           <span>{{ _("{n} per page", n=page.page_size) }}</span>
           {{ ff_icon("chevron-down", size=13) }}
         </button>
-        <div class="ff-pop ff-dropdown__panel">
+        <div class="ff-pop ff-dropdown__panel" hidden>
           {% for choice in page_sizes %}
             <a
               class="ff-item"

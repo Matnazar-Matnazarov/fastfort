@@ -126,14 +126,25 @@ class SecurityHeadersMiddleware:
         # Likewise for map tiles: one named origin, added only when a project
         # asked for a map. The whole point of the geometry field's map is images
         # from a tile server, and `default-src 'none'` blocks every one of them.
+        #
+        # `blob:` is the file field showing what was just chosen. The preview is
+        # a `URL.createObjectURL` of a file the person picked seconds ago, in
+        # this tab -- a handle to their own selection, not an origin anything can
+        # be fetched from. Without it the policy blocks the page from displaying
+        # the file it is about to upload, which is the one thing the control is
+        # for. It admits no host, so it widens nothing.
         tiles = _origin_of(self.settings.ui.map_tile_url)
-        img_src = f"'self' data: {tiles}" if tiles else "'self' data:"
+        img_src = f"'self' data: blob: {tiles}".rstrip()
 
         csp = (
             "default-src 'none'; "
             f"script-src {script_src}; "
             f"style-src {style_src}; "
             f"img-src {img_src}; "
+            # A stored video, and a chosen one before it is uploaded. Same
+            # reasoning as `img-src`, for the fields that hold a video rather
+            # than a picture.
+            "media-src 'self' blob:; "
             "font-src 'self'; "
             "connect-src 'self'; "
             "form-action 'self'; "

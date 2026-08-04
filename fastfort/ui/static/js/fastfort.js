@@ -53,10 +53,11 @@
 
   const root = document.documentElement;
 
-  /* Marks the document as scripted, so controls that only work with JavaScript
-   * are hidden from anyone who does not have it rather than sitting there doing
-   * nothing when clicked -- and so the native controls these widgets replace can
-   * be hidden only once their replacement actually exists. */
+  /* `data-ff-js` -- the "scripting is on" flag every progressive-enhancement
+   * rule keys off -- is set by boot.js, which runs before the first paint. Set
+   * from here it would be a frame late, and a frame late is exactly the blink
+   * of native controls it exists to prevent. Kept as a fallback for a page that
+   * somehow loaded this bundle without that one. */
   root.dataset.ffJs = "1";
 
   const el = (tag, attributes = {}, children = []) => {
@@ -110,14 +111,24 @@
     Choose: "Choose…",
     Showing: "Showing the first {n}. Keep typing to narrow it down.",
     Today: "Today",
+    Now: "Now",
+    Done: "Done",
     Previous: "Previous",
     Next: "Next",
+    ChooseFile: "Choose a file",
+    OrDropIt: "or drop it here",
+    Replace: "Click to replace",
+    Remove: "Remove",
+    Undo: "Undo",
+    TooLarge: "Too large",
+    WrongType: "Not an image",
     Days: "Days",
     Hours: "Hours",
     Minutes: "Minutes",
     Seconds: "Seconds",
     ZoomIn: "Zoom in",
     ZoomOut: "Zoom out",
+    MyLocation: "My location",
   };
 
   /* Every widget registers here. Called once on load and again on any fragment
@@ -564,8 +575,14 @@
       this.multiple = select.multiple;
       this.url = select.dataset.ffUrl || null;
       this.placeholder = select.dataset.ffPlaceholder || t("Choose");
+      // "never" is for a list that is short and already sorted -- the hours of a
+      // clock, say, where a search box is a second control to walk past on the
+      // way to twelve options anybody can see at once.
       this.searchable =
-        select.dataset.ffSearch === "always" || Boolean(this.url) || select.options.length > 7;
+        select.dataset.ffSearch !== "never" &&
+        (select.dataset.ffSearch === "always" ||
+          Boolean(this.url) ||
+          select.options.length > 7);
       this.clearable = select.dataset.ffClearable !== "false" && !this.multiple;
       this.id = uid("ff-combo");
       this.options = [];
@@ -1070,10 +1087,27 @@
 
   const DAY_MS = 86_400_000;
 
+  /* Three views, not one. A calendar that only pages a month at a time is fine
+   * for "next Tuesday" and useless for a date of birth: reaching 1987 from here
+   * is four hundred and some clicks on the same arrow. The title is a button,
+   * and it zooms out -- days to months to a decade of years -- which is the
+   * shape every date picker worth using has, and the shortest route to a year
+   * that is nowhere near this one. */
+  const DAY_VIEW = "days";
+  const MONTH_VIEW = "months";
+  const YEAR_VIEW = "years";
+  const YEARS_PER_PAGE = 12;
+
+  const pad = (value) => String(value).padStart(2, "0");
+
   const iso = (date) =>
-    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-      date.getDate()
-    ).padStart(2, "0")}`;
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+
+  /* The time half of a `datetime-local` value, defaulting to midnight. */
+  const clockOf = (text) => {
+    const match = /T(\d{1,2}):(\d{2})/.exec(text || "");
+    return match ? { hour: Number(match[1]), minute: Number(match[2]) } : { hour: 0, minute: 0 };
+  };
 
   /* Parsed as local time on purpose. `new Date("2026-03-01")` is parsed as UTC
    * and lands on the previous day for anyone west of Greenwich, which is the
@@ -1124,7 +1158,13 @@
       );
       wrapper.append(this.trigger);
 
-      this.panel = el("div", { class: "ff-pop ff-datepicker", role: "dialog", hidden: true });
+      this.panel = el("div", {
+        // Wider when it carries a clock: three dropdowns and a colon do not fit
+        // in the width a calendar needs.
+        class: `ff-pop ff-datepicker${this.withTime ? " ff-datepicker--with-time" : ""}`,
+        role: "dialog",
+        hidden: true,
+      });
       wrapper.append(this.panel);
 
       this.trigger.addEventListener("click", (event) => {
@@ -1141,52 +1181,262 @@
       return parseISO(this.input.value);
     }
 
+    /* The time currently in the boxes, or in the value when they are not on
+     * screen. Read from the boxes rather than re-parsed from the input so that
+     * a half-typed hour is not lost the moment a day is clicked. */
+    clock() {
+      if (!this.hourBox) return clockOf(this.input.value);
+      let hour = Number(this.hourBox.value) || 0;
+      // On a twelve-hour clock the box holds 1-12, and which half of the day it
+      // belongs to is the other control's answer.
+      if (this.meridiemBox) {
+        hour %= 12;
+        if (this.meridiemBox.value === "PM") hour += 12;
+      }
+      return {
+        hour: clamp(hour, 0, 23),
+        minute: clamp(Number(this.minuteBox.value) || 0, 0, 59),
+      };
+    }
+
     render() {
+      this.hourBox = null;
+      this.minuteBox = null;
+      this.meridiemBox = null;
+      if (this.view === YEAR_VIEW) this.renderYears();
+      else if (this.view === MONTH_VIEW) this.renderMonths();
+      else this.renderDays();
+    }
+
+    /* The row of arrows and the title. The title is what zooms out, so it is a
+     * button everywhere except the year view, where there is nowhere further to
+     * go and a button that does nothing is worse than a heading. */
+    head(title, { zoom = true } = {}) {
+      return el("div", { class: "ff-datepicker__head" }, [
+        el(
+          "button",
+          { type: "button", class: "ff-action", "data-ff-cal-step": "-1", "aria-label": t("Previous") },
+          [icon("chevron-left", 15)]
+        ),
+        zoom
+          ? el("button", {
+              type: "button",
+              class: "ff-datepicker__title",
+              "data-ff-cal-zoom": "1",
+              text: title,
+            })
+          : el("span", { class: "ff-datepicker__title", text: title }),
+        el(
+          "button",
+          { type: "button", class: "ff-action", "data-ff-cal-step": "1", "aria-label": t("Next") },
+          [icon("chevron-right", 15)]
+        ),
+      ]);
+    }
+
+    foot() {
+      const buttons = [
+        el("button", {
+          type: "button",
+          class: "ff-btn ff-btn--sm ff-btn--ghost",
+          "data-ff-cal-clear": "1",
+          text: t("Clear"),
+        }),
+        el("button", {
+          type: "button",
+          class: "ff-btn ff-btn--sm ff-btn--ghost",
+          "data-ff-cal-today": "1",
+          // "Today" is the wrong word for a control that also sets the clock.
+          text: this.withTime ? t("Now") : t("Today"),
+        }),
+      ];
+      // A date is finished when a day is clicked; a datetime is not, so it needs
+      // a way to say so that is not "click somewhere else and hope".
+      if (this.withTime) {
+        buttons.push(
+          el("button", {
+            type: "button",
+            class: "ff-btn ff-btn--sm ff-btn--primary",
+            "data-ff-cal-done": "1",
+            text: t("Done"),
+          })
+        );
+      }
+      return el("div", { class: "ff-datepicker__foot" }, buttons);
+    }
+
+    /* Whether this locale writes 9pm as "9 PM" or as "21:00". `Intl` knows;
+     * hard-coding either produces a clock that is wrong for most of the world
+     * in one direction or the other. */
+    get hour12() {
+      try {
+        const cycle = new Intl.DateTimeFormat(this.locale, {
+          hour: "numeric",
+        }).resolvedOptions().hourCycle;
+        return Boolean(cycle?.startsWith("h1"));
+      } catch {
+        return false;
+      }
+    }
+
+    /* What this locale calls the two halves of the day: AM and PM in English,
+     * 午前 and 午後 in Japanese. Read off `Intl` rather than translated, because
+     * it is a property of the locale's clock rather than an interface string. */
+    dayPeriods() {
+      try {
+        const format = new Intl.DateTimeFormat(this.locale, { hour: "numeric", hour12: true });
+        const at = (hour) =>
+          format.formatToParts(new Date(2020, 0, 1, hour)).find((part) => part.type === "dayPeriod")
+            ?.value;
+        return [at(9) || "AM", at(21) || "PM"];
+      } catch {
+        return ["AM", "PM"];
+      }
+    }
+
+    /* One unit of the clock, as the same control every other choice in the
+     * admin is made with. Two bare number boxes were what this started as, and
+     * they read as a form to fill in rather than a time to pick -- spinners the
+     * browser draws differently everywhere, no way to see what the options are,
+     * and nothing to say whether 9 meant morning or evening. */
+    unit(options, current, label, { search = false } = {}) {
+      const select = el(
+        "select",
+        {
+          class: "ff-select ff-datepicker__unit",
+          "data-ff-combo": "",
+          "data-ff-clearable": "false",
+          // Only the minutes are long enough to be worth searching. Twelve
+          // hours and two day-halves fit on screen at once, and a search box
+          // above them is a control to walk past rather than a shortcut.
+          "data-ff-search": search ? "always" : "never",
+          "aria-label": label,
+        },
+        options.map(([value, text]) => el("option", { value, text }))
+      );
+      select.value = current;
+      select.addEventListener("change", () => this.writeTime());
+      return select;
+    }
+
+    /* The clock, for a column that stores one.
+     *
+     * The panel used to render a calendar and nothing else, so the time half of
+     * a `datetime-local` could only be reached by typing into the native input
+     * behind it -- and on a field the picker had just written, that meant
+     * editing around a value somebody else had put there. */
+    time() {
+      const { hour, minute } = clockOf(this.input.value);
+      const twelve = this.hour12;
+
+      const hours = twelve
+        ? Array.from({ length: 12 }, (_, index) => {
+            const shown = index === 0 ? 12 : index;
+            return [String(shown), String(shown)];
+          })
+        : Array.from({ length: 24 }, (_, value) => [String(value), pad(value)]);
+
+      this.hourBox = this.unit(
+        hours,
+        String(twelve ? hour % 12 || 12 : hour),
+        t("Hours")
+      );
+      this.minuteBox = this.unit(
+        Array.from({ length: 60 }, (_, value) => [String(value), pad(value)]),
+        String(minute),
+        t("Minutes"),
+        { search: true }
+      );
+
+      const parts = [
+        icon("clock", 14),
+        this.hourBox,
+        el("span", { class: "ff-datepicker__colon", text: ":" }),
+        this.minuteBox,
+      ];
+
+      if (twelve) {
+        const [morning, evening] = this.dayPeriods();
+        this.meridiemBox = this.unit(
+          [
+            ["AM", morning],
+            ["PM", evening],
+          ],
+          hour < 12 ? "AM" : "PM",
+          `${morning}/${evening}`
+        );
+        parts.push(this.meridiemBox);
+      } else {
+        this.meridiemBox = null;
+      }
+
+      return el("div", { class: "ff-datepicker__clock" }, parts);
+    }
+
+    renderDays() {
       const shown = this.cursor;
-      const monthName = new Intl.DateTimeFormat(this.locale, {
+      const title = new Intl.DateTimeFormat(this.locale, {
         month: "long",
         year: "numeric",
       }).format(shown);
 
+      const parts = [this.head(title), this.grid(shown)];
+      if (this.withTime) parts.push(this.time());
+      parts.push(this.foot());
+      this.panel.replaceChildren(...parts);
+      // The clock's three units are `<select>` elements, and every other one in
+      // the admin is upgraded to a combobox. Doing it here rather than shipping
+      // a second dropdown of its own is what keeps them the same control.
+      if (this.withTime) enhance(this.panel);
+    }
+
+    renderMonths() {
+      const year = this.cursor.getFullYear();
+      const names = new Intl.DateTimeFormat(this.locale, { month: "short" });
+      const selected = this.value;
+      const grid = el("div", { class: "ff-datepicker__cells" });
+
+      for (let month = 0; month < 12; month += 1) {
+        grid.append(
+          el("button", {
+            type: "button",
+            class: "ff-datepicker__cell",
+            "data-ff-cal-month": String(month),
+            "aria-selected": String(
+              Boolean(selected) && selected.getFullYear() === year && selected.getMonth() === month
+            ),
+            text: names.format(new Date(year, month, 1)),
+          })
+        );
+      }
+
+      this.panel.replaceChildren(this.head(String(year)), grid, this.foot());
+    }
+
+    renderYears() {
+      // Aligned to a fixed decade rather than centred on the cursor, so paging
+      // back and forward lands on the same blocks each time instead of drifting.
+      const first = Math.floor(this.cursor.getFullYear() / YEARS_PER_PAGE) * YEARS_PER_PAGE;
+      const selected = this.value;
+      const grid = el("div", { class: "ff-datepicker__cells" });
+
+      for (let offset = 0; offset < YEARS_PER_PAGE; offset += 1) {
+        const year = first + offset;
+        grid.append(
+          el("button", {
+            type: "button",
+            class: "ff-datepicker__cell",
+            "data-ff-cal-year": String(year),
+            "aria-selected": String(Boolean(selected) && selected.getFullYear() === year),
+            text: String(year),
+          })
+        );
+      }
+
       this.panel.replaceChildren(
-        el("div", { class: "ff-datepicker__head" }, [
-          el(
-            "button",
-            {
-              type: "button",
-              class: "ff-action",
-              "data-ff-cal-step": "-1",
-              "aria-label": t("Previous"),
-            },
-            [icon("chevron-left", 15)]
-          ),
-          el("span", { class: "ff-datepicker__month", text: monthName }),
-          el(
-            "button",
-            {
-              type: "button",
-              class: "ff-action",
-              "data-ff-cal-step": "1",
-              "aria-label": t("Next"),
-            },
-            [icon("chevron-right", 15)]
-          ),
-        ]),
-        this.grid(shown),
-        el("div", { class: "ff-datepicker__foot" }, [
-          el("button", {
-            type: "button",
-            class: "ff-btn ff-btn--sm ff-btn--ghost",
-            "data-ff-cal-clear": "1",
-            text: t("Clear"),
-          }),
-          el("button", {
-            type: "button",
-            class: "ff-btn ff-btn--sm",
-            "data-ff-cal-today": "1",
-            text: t("Today"),
-          }),
-        ])
+        this.head(`${first} – ${first + YEARS_PER_PAGE - 1}`, { zoom: false }),
+        grid,
+        this.foot()
       );
     }
 
@@ -1230,20 +1480,45 @@
 
     // -- behaviour --------------------------------------------------------
 
+    /* Write the time without touching anything else.
+     *
+     * Deliberately does not re-render: the boxes are inside the panel, and
+     * rebuilding it while somebody is typing an hour into one of them takes the
+     * focus away mid-keystroke. Nothing else on screen depends on the time, so
+     * there is nothing to redraw. */
+    writeTime() {
+      const { hour, minute } = this.clock();
+      const date = this.value ?? new Date();
+      this.input.value = `${iso(date)}T${pad(hour)}:${pad(minute)}`;
+      this.input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
     pick(stamp) {
       const chosen = parseISO(stamp);
       if (!chosen) return;
 
       if (this.withTime) {
-        // Keep whatever time was already there: someone correcting the date of
-        // an appointment has not asked to move it to midnight.
-        const existing = /T(\d{2}:\d{2})/.exec(this.input.value);
-        this.input.value = `${stamp}T${existing ? existing[1] : "00:00"}`;
+        // Keep whatever time is set: someone correcting the date of an
+        // appointment has not asked to move it to midnight.
+        const { hour, minute } = this.clock();
+        this.input.value = `${stamp}T${pad(hour)}:${pad(minute)}`;
       } else {
         this.input.value = stamp;
       }
 
       this.input.dispatchEvent(new Event("change", { bubbles: true }));
+      this.focused = chosen;
+      this.cursor = new Date(chosen.getFullYear(), chosen.getMonth(), 1);
+
+      // A date field is answered by the click that chose the day. A datetime
+      // one is not -- closing here would put the panel away before the time it
+      // exists to collect could be set, which is the whole complaint the time
+      // boxes above are here to answer.
+      if (this.withTime) {
+        this.render();
+        this.panel.querySelector('[tabindex="0"]')?.focus();
+        return;
+      }
       this.close();
       this.input.focus();
     }
@@ -1252,6 +1527,8 @@
       if (this.open) return;
       closeDatePickers(this);
       this.open = true;
+      // Always opens on the calendar, whatever view it was left in.
+      this.view = DAY_VIEW;
       this.cursor = this.value ?? new Date();
       this.focused = this.value ?? new Date();
       this.panel.hidden = false;
@@ -1273,8 +1550,15 @@
       else this.show();
     }
 
-    step(months) {
-      this.cursor = new Date(this.cursor.getFullYear(), this.cursor.getMonth() + months, 1);
+    /* One arrow, three meanings: a month in the calendar, a year among the
+     * months, a block of years among the years. Which one it is follows what is
+     * on screen, so the same button always means "one page back". */
+    step(direction) {
+      const year = this.cursor.getFullYear();
+      const month = this.cursor.getMonth();
+      if (this.view === DAY_VIEW) this.cursor = new Date(year, month + direction, 1);
+      else if (this.view === MONTH_VIEW) this.cursor = new Date(year + direction, month, 1);
+      else this.cursor = new Date(year + direction * YEARS_PER_PAGE, month, 1);
       this.render();
     }
 
@@ -1284,14 +1568,46 @@
         this.step(Number(stepper.dataset.ffCalStep));
         return;
       }
+      if (event.target.closest("[data-ff-cal-zoom]")) {
+        this.view = this.view === DAY_VIEW ? MONTH_VIEW : YEAR_VIEW;
+        this.render();
+        return;
+      }
+      const month = event.target.closest("[data-ff-cal-month]");
+      if (month) {
+        // Back to the days, which is what picking a month was asking for.
+        this.cursor = new Date(this.cursor.getFullYear(), Number(month.dataset.ffCalMonth), 1);
+        this.view = DAY_VIEW;
+        this.render();
+        return;
+      }
+      const year = event.target.closest("[data-ff-cal-year]");
+      if (year) {
+        this.cursor = new Date(Number(year.dataset.ffCalYear), this.cursor.getMonth(), 1);
+        this.view = MONTH_VIEW;
+        this.render();
+        return;
+      }
       if (event.target.closest("[data-ff-cal-clear]")) {
         this.input.value = "";
         this.input.dispatchEvent(new Event("change", { bubbles: true }));
         this.close();
         return;
       }
+      if (event.target.closest("[data-ff-cal-done]")) {
+        this.close();
+        this.input.focus();
+        return;
+      }
       if (event.target.closest("[data-ff-cal-today]")) {
-        this.pick(iso(new Date()));
+        const now = new Date();
+        // "Now" means now, clock included. Setting today's date and leaving
+        // midnight behind would be the one answer nobody pressing it wants.
+        if (this.withTime && this.hourBox) {
+          this.hourBox.value = pad(now.getHours());
+          this.minuteBox.value = pad(now.getMinutes());
+        }
+        this.pick(iso(now));
         return;
       }
       const day = event.target.closest("[data-ff-cal-pick]");
@@ -1302,6 +1618,19 @@
      * calendar is navigated without a mouse. Moving off the shown month follows
      * into the next one rather than stopping at its edge. */
     onKey(event) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        this.close();
+        this.trigger.focus();
+        return;
+      }
+
+      // Arrows belong to whatever the focus is in: a number box steps its own
+      // value with up and down, and the month and year grids are plain buttons
+      // that Tab already walks. Only the calendar wants them.
+      const inClock = event.target === this.hourBox || event.target === this.minuteBox;
+      if (this.view !== DAY_VIEW || inClock) return;
+
       const moves = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
       const move = moves[event.key];
 
@@ -1316,12 +1645,6 @@
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         this.pick(iso(this.focused));
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        this.close();
-        this.trigger.focus();
       }
     }
   }
@@ -1397,7 +1720,10 @@
       for (const segment of SEGMENTS) {
         const box = el("input", {
           type: "number",
-          class: "ff-input ff-duration__box",
+          // Not `ff-input`: the box and the border belong to the group around
+          // it now, and a bordered field inside a bordered field reads as two
+          // controls rather than one part of one.
+          class: "ff-duration__box",
           inputmode: "numeric",
           min: "0",
           value: String(parsed ? parsed[segment.key] : 0),
@@ -1498,6 +1824,17 @@
 
   const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
+  /* Longitude back into -180..180 after panning around the world. Without it a
+   * drag eastward keeps counting -- 190, 250, 540 -- and the box under the map,
+   * which is the thing that actually submits, fills up with a coordinate no
+   * database will take. */
+  const wrapLng = (lng) => ((((lng + 180) % 360) + 360) % 360) - 180;
+
+  /* The offset of the same longitude in whichever copy of the world the view is
+   * currently over. Panning is unbounded, so the point being marked may be a
+   * whole world's width to the left or right of where it was drawn. */
+  const nearestCopy = (offset, span) => offset - span * Math.round(offset / span);
+
   const lngToX = (lng, zoom) => ((lng + 180) / 360) * TILE * 2 ** zoom;
 
   const latToY = (lat, zoom) => {
@@ -1544,26 +1881,55 @@
 
     build() {
       this.tiles = el("div", { class: "ff-map__tiles" });
-      this.marker = el("div", { class: "ff-map__marker", "aria-hidden": "true" });
-      this.canvas = el("div", { class: "ff-map__canvas" }, [this.tiles, this.marker]);
-
-      const zoomIn = el(
-        "button",
-        { type: "button", class: "ff-action", "aria-label": t("ZoomIn") },
-        [icon("plus", 15)]
-      );
-      const zoomOut = el(
-        "button",
-        { type: "button", class: "ff-action", "aria-label": t("ZoomOut") },
-        [icon("minus", 15)]
-      );
-      zoomIn.addEventListener("click", () => this.zoomBy(1));
-      zoomOut.addEventListener("click", () => this.zoomBy(-1));
-
-      this.element = el("div", { class: "ff-map ff-js-only" }, [
-        this.canvas,
-        el("div", { class: "ff-map__controls" }, [zoomIn, zoomOut]),
+      // A pin, anchored at its point rather than at its middle -- the place is
+      // where the tip touches the map, which is what makes a marker readable at
+      // a glance instead of a dot you have to guess the centre of.
+      this.marker = el("div", { class: "ff-map__marker", "aria-hidden": "true" }, [
+        icon("map-pin", 30),
       ]);
+      this.canvas = el("div", { class: "ff-map__canvas" }, [this.tiles, this.marker]);
+      /* One layer per zoom level, keyed by that zoom. Tiles inside a layer are
+       * placed at their own level's pixel coordinates and the layer carries the
+       * scale, which is what lets a zoom be applied to what is already on
+       * screen in the same frame the button was pressed. */
+      this.layers = new Map();
+      this.current = null;
+      this.backdrop = null;
+
+      const button = (name, label, run) => {
+        const control = el(
+          "button",
+          { type: "button", class: "ff-map__button", "aria-label": label },
+          [icon(name, 15)]
+        );
+        control.addEventListener("click", (event) => {
+          // Inside a form: without this the first button in the map submits it.
+          event.preventDefault();
+          run();
+        });
+        return control;
+      };
+
+      const controls = [
+        button("plus", t("ZoomIn"), () => this.zoomBy(1)),
+        button("minus", t("ZoomOut"), () => this.zoomBy(-1)),
+      ];
+
+      // Only where the browser offers it: geolocation needs a secure context,
+      // and a button that can only ever fail is worse than no button.
+      if (navigator.geolocation) {
+        controls.push(button("crosshair", t("MyLocation"), () => this.locate()));
+      }
+
+      const children = [this.canvas, el("div", { class: "ff-map__controls" }, controls)];
+
+      // The credit line goes on the map, where every other map puts it and
+      // where it stays attached to the tiles it is crediting. Under the field
+      // it read as help text for the input.
+      const credit = this.input.dataset.ffMapCredit;
+      if (credit) children.push(el("div", { class: "ff-map__credit", text: credit }));
+
+      this.element = el("div", { class: "ff-map ff-js-only" }, children);
 
       this.input.after(this.element);
       this.bind();
@@ -1590,12 +1956,52 @@
       });
     }
 
+    /* Centre on where the browser says the device is, and mark it.
+     *
+     * The commonest thing anyone puts in a location field is where they are
+     * standing, and without this that means finding it by dragging from a view
+     * of the whole world. Only offered where `navigator.geolocation` exists;
+     * a refusal or a timeout leaves the map exactly as it was, because the
+     * alternative -- an error banner on a field nobody was required to use --
+     * is noise about something that was optional to begin with.
+     */
+    locate() {
+      this.element.dataset.ffLocating = "true";
+      const done = () => delete this.element.dataset.ffLocating;
+
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          done();
+          const found = {
+            lat: position.coords.latitude,
+            lng: wrapLng(position.coords.longitude),
+          };
+          this.point = found;
+          this.center = found;
+          // Close enough to see a street, which is the scale somebody asking
+          // "where am I" is asking at.
+          this.zoom = Math.max(this.zoom, 15);
+          this.write();
+          this.draw();
+        },
+        done,
+        { enableHighAccuracy: true, timeout: 10_000 }
+      );
+    }
+
     bind() {
       let dragging = null;
+
+      // Belt to the stylesheet's braces: anything the map draws that turns out
+      // to be draggable takes the gesture away from the pan.
+      this.canvas.addEventListener("dragstart", (event) => event.preventDefault());
 
       this.canvas.addEventListener("pointerdown", (event) => {
         dragging = { x: event.clientX, y: event.clientY, moved: false };
         this.canvas.setPointerCapture(event.pointerId);
+        // The hand closes while the map is being dragged. The cursor is the
+        // only thing telling anyone the map can be dragged at all.
+        this.canvas.dataset.ffDragging = "true";
       });
 
       this.canvas.addEventListener("pointermove", (event) => {
@@ -1613,12 +2019,14 @@
       this.canvas.addEventListener("pointerup", (event) => {
         const wasDrag = dragging?.moved;
         dragging = null;
+        delete this.canvas.dataset.ffDragging;
         this.canvas.releasePointerCapture(event.pointerId);
         if (!wasDrag) this.pickAt(event);
       });
 
       this.canvas.addEventListener("pointercancel", () => {
         dragging = null;
+        delete this.canvas.dataset.ffDragging;
       });
 
       this.canvas.addEventListener(
@@ -1636,14 +2044,30 @@
       return { width: box.width, height: box.height };
     }
 
+    /* Drag the map.
+     *
+     * East and west are unbounded, because the world is: `draw()` already wraps
+     * the tile column, so panning past the anti-meridian arrives back where it
+     * started. They used to be clamped to the width of the world minus the
+     * canvas, and at the zoom levels the field opens on that bound is *smaller*
+     * than the canvas -- the low end came out above the high end, `clamp` then
+     * returned the high one whatever it was given, and every drag snapped the
+     * centre to the same spot. The map looked stuck because it was.
+     *
+     * North and south stay bounded, because the world genuinely ends there;
+     * past the poles there is nothing to show but empty canvas. Zoomed out far
+     * enough that the whole world is shorter than the canvas, there is only one
+     * position worth being in, so it centres instead of clamping to a range
+     * that has crossed over. */
     panBy(dx, dy) {
-      const { width, height } = this.size();
+      const { height } = this.size();
+      const span = TILE * 2 ** this.zoom;
       const x = lngToX(this.center.lng, this.zoom) + dx;
       const y = latToY(this.center.lat, this.zoom) + dy;
-      const span = TILE * 2 ** this.zoom;
+      const vertical = span <= height ? span / 2 : clamp(y, height / 2, span - height / 2);
       this.center = {
-        lat: yToLat(clamp(y, height / 2, span - height / 2), this.zoom),
-        lng: xToLng(clamp(x, width / 2, span - width / 2), this.zoom),
+        lat: yToLat(vertical, this.zoom),
+        lng: wrapLng(xToLng(x, this.zoom)),
       };
       this.draw();
     }
@@ -1672,29 +2096,80 @@
       const originY = latToY(this.center.lat, this.zoom) - box.height / 2;
       return {
         lat: yToLat(originY + (event.clientY - box.top), this.zoom),
-        lng: xToLng(originX + (event.clientX - box.left), this.zoom),
+        // Wrapped, because the pointer can be over a copy of the world one
+        // pan to the east of the first one.
+        lng: wrapLng(xToLng(originX + (event.clientX - box.left), this.zoom)),
       };
+    }
+
+    /* Put the marked point into the box that actually submits.
+     *
+     * Synchronous: every listener the dispatch reaches, including the one this
+     * class registers on the same input, runs before this returns -- so the
+     * guard has to be up around it. */
+    write() {
+      this.input.value = formatPoint(this.point);
+      this.settingInput = true;
+      this.input.dispatchEvent(new Event("change", { bubbles: true }));
+      this.settingInput = false;
     }
 
     pickAt(event) {
       this.point = this.atEvent(event);
-      this.input.value = formatPoint(this.point);
-      // Synchronous: every listener the dispatch reaches, including the one
-      // this class registers on the same input, runs before this returns.
-      this.settingInput = true;
-      this.input.dispatchEvent(new Event("change", { bubbles: true }));
-      this.settingInput = false;
+      this.write();
       this.draw();
+    }
+
+    /* The layer holding one zoom level's tiles, created on first use.
+     *
+     * The level that was on screen when a new one appears is kept underneath as
+     * a backdrop: scaled to line up with the new zoom, it fills the view for the
+     * fraction of a second before the sharp tiles arrive. Removing it instead --
+     * or leaving it at the old zoom's scale, which amounts to the same thing --
+     * is what made a zoom blank the map, then repaint. Only one is kept, and an
+     * incoming level that never managed to load a tile does not become one,
+     * because an empty backdrop is the blank frame it exists to prevent. */
+    layerFor(zoom) {
+      const found = this.layers.get(zoom);
+      if (found) return found;
+
+      const outgoing = this.layers.get(this.current);
+      if (outgoing && outgoing.loaded > 0) this.backdrop = this.current;
+
+      for (const [level, layer] of this.layers) {
+        if (level !== this.backdrop) {
+          layer.element.remove();
+          this.layers.delete(level);
+        }
+      }
+
+      const layer = {
+        zoom,
+        element: el("div", { class: "ff-map__layer" }),
+        tiles: new Map(),
+        pending: 0,
+        loaded: 0,
+      };
+      this.tiles.append(layer.element);
+      this.layers.set(zoom, layer);
+      return layer;
+    }
+
+    /* Place every layer for the view as it is now. A layer drawn at zoom `z`
+     * holds world pixels of that level, so scaling it by 2^(zoom - z) puts them
+     * where this zoom's pixels are and the backdrop stays registered with the
+     * level on top of it rather than sliding around under it. */
+    position(originX, originY) {
+      for (const layer of this.layers.values()) {
+        const scale = 2 ** (this.zoom - layer.zoom);
+        layer.element.style.transform =
+          `translate(${-originX}px, ${-originY}px) scale(${scale})`;
+      }
     }
 
     draw() {
       const { width, height } = this.size();
       if (!width || !height) return;
-
-      // Identifies which call to draw() a pending tile load belongs to, so a
-      // slow load from an earlier call cannot sweep away tiles a later call
-      // has since decided to keep -- see the guard in `settle` below.
-      const generation = (this.generation = (this.generation ?? 0) + 1);
 
       const span = 2 ** this.zoom;
       const originX = lngToX(this.center.lng, this.zoom) - width / 2;
@@ -1705,84 +2180,113 @@
         y: Math.floor((originY + height) / TILE),
       };
 
-      const wanted = new Map();
+      const layer = this.layerFor(this.zoom);
+      this.current = this.zoom;
+      // Zooming out and back lands on a level that already exists but sits
+      // under the one that replaced it, where a stale half-screen of tiles
+      // would cover the fresh ones. Appending a node already in the tree moves
+      // it; it does not re-request the images.
+      if (this.tiles.lastElementChild !== layer.element) this.tiles.append(layer.element);
+
+      const wanted = new Set();
       for (let x = first.x; x <= last.x; x += 1) {
         for (let y = first.y; y <= last.y; y += 1) {
           // Rows past the edge do not exist; columns wrap, because the world does.
           if (y < 0 || y >= span) continue;
+          wanted.add(`${x},${y}`);
+          if (layer.tiles.has(`${x},${y}`)) continue;
+
           const column = ((x % span) + span) % span;
-          // Keyed by zoom too: two different zoom levels can share the same
-          // x,y numbers, and without the prefix a tile from the wrong zoom
-          // would be repositioned rather than replaced.
-          wanted.set(`${this.zoom}:${x},${y}`, {
-            url: this.template
-              .replace("{z}", String(this.zoom))
-              .replace("{x}", String(column))
-              .replace("{y}", String(y)),
-            left: x * TILE - originX,
-            top: y * TILE - originY,
+          // Not lazy: these are the tiles of the view being drawn right now, and
+          // a deferred one never fires the event that retires the backdrop.
+          //
+          // `draggable="false"` alongside the stylesheet's `pointer-events`,
+          // because the attribute is what older browsers honour: an image is
+          // draggable by default, and pressing on one to pan the map started
+          // the browser's own drag-and-drop instead.
+          const image = el("img", {
+            class: "ff-map__tile",
+            alt: "",
+            decoding: "async",
+            draggable: "false",
           });
-        }
-      }
+          // Positioned in the layer's own coordinates. The layer's transform is
+          // what turns these into screen pixels, which is why a zoom moves one
+          // element instead of every tile.
+          image.style.transform = `translate(${x * TILE}px, ${y * TILE}px)`;
+          layer.pending += 1;
 
-      // Reuse the images already on screen. Rebuilding them all on every pointer
-      // move would re-request each tile and make dragging flicker.
-      this.shown ??= new Map();
-
-      // Panning keeps most keys, so nothing here needs to wait: the sweep of
-      // whatever is no longer wanted can run right away. Zooming replaces every
-      // key at once, and removing a whole screen of tiles before their
-      // replacements have loaded is what "flashes empty, then repaints" looks
-      // like -- so a zoom's stale tiles are swept only once every tile it
-      // requested has either loaded or failed, and stay on screen as a
-      // placeholder (in the wrong position, but filled) until then.
-      let awaited = 0;
-      const sweep = () => {
-        // A slower, earlier draw() finishing after a newer one has already run
-        // must not act: its `wanted` is stale, and applying it here would
-        // remove tiles the newer call has since decided to keep. The newer
-        // call's own sweep -- guarded the same way, and unconditional once it
-        // is the one still current -- is what actually cleans up.
-        if (generation !== this.generation) return;
-        for (const [key, image] of this.shown) {
-          if (!wanted.has(key)) {
-            image.remove();
-            this.shown.delete(key);
-          }
-        }
-      };
-
-      for (const [key, tile] of wanted) {
-        let image = this.shown.get(key);
-        if (!image) {
-          image = el("img", { class: "ff-map__tile", alt: "", loading: "lazy" });
-          awaited += 1;
-          const settle = () => {
-            awaited -= 1;
-            image.dataset.ffLoaded = "true";
-            if (awaited === 0) sweep();
+          // Counted exactly once, however it ends: loaded, failed, or panned off
+          // the edge before it arrived. A tile that is never accounted for holds
+          // `pending` above zero for good, and the backdrop underneath the level
+          // never goes away.
+          let counted = false;
+          const done = (shown) => {
+            if (counted) return;
+            counted = true;
+            layer.pending -= 1;
+            if (shown) {
+              image.dataset.ffLoaded = "true";
+              layer.loaded += 1;
+            }
+            // The level is complete: nothing is showing through it any more.
+            if (layer.pending === 0 && this.layers.get(this.current) === layer) this.settle(layer);
           };
-          image.addEventListener("load", settle, { once: true });
-          image.addEventListener("error", settle, { once: true });
-          image.src = tile.url;
-          this.tiles.append(image);
-          this.shown.set(key, image);
+          image.addEventListener("load", () => done(true), { once: true });
+          image.addEventListener("error", () => done(false), { once: true });
+          // Called when the tile is discarded before it settled. Removing an
+          // <img> mid-request does not reliably fire either event.
+          image.ffRetire = () => done(false);
+          image.src = this.template
+            .replace("{z}", String(this.zoom))
+            .replace("{x}", String(column))
+            .replace("{y}", String(y));
+
+          layer.element.append(image);
+          layer.tiles.set(`${x},${y}`, image);
         }
-        image.style.transform = `translate(${tile.left}px, ${tile.top}px)`;
       }
 
-      // Every tile this call wanted was already on screen -- a pan within the
-      // loaded area, most often -- so there is nothing to wait for.
-      if (awaited === 0) sweep();
+      // Tiles this level no longer needs. Safe to drop immediately, unlike a
+      // whole level: they are off the edge of a pan, not under what replaced them.
+      for (const [key, image] of layer.tiles) {
+        if (!wanted.has(key)) {
+          image.ffRetire();
+          image.remove();
+          layer.tiles.delete(key);
+        }
+      }
+
+      this.position(originX, originY);
+      if (layer.pending === 0) this.settle(layer);
 
       if (this.point) {
         this.marker.hidden = false;
+        // Panning is unbounded, so the marked point may belong to a copy of the
+        // world several widths away from the one on screen. Drawn at its raw
+        // offset it slides off the edge and never comes back; drawn in the
+        // nearest copy it stays where the place actually is.
+        const centre = width / 2;
+        const offset = lngToX(this.point.lng, this.zoom) - originX - centre;
         this.marker.style.transform =
-          `translate(${lngToX(this.point.lng, this.zoom) - originX}px, ` +
+          `translate(${centre + nearestCopy(offset, TILE * span)}px, ` +
           `${latToY(this.point.lat, this.zoom) - originY}px)`;
       } else {
         this.marker.hidden = true;
       }
+    }
+
+    /* Every tile of the level on screen has loaded or failed, so whatever was
+     * showing through it can go. */
+    settle(layer) {
+      if (this.backdrop === null && this.layers.size === 1) return;
+      for (const [level, other] of this.layers) {
+        if (other !== layer) {
+          other.element.remove();
+          this.layers.delete(level);
+        }
+      }
+      this.backdrop = null;
     }
   }
 
@@ -1790,6 +2294,311 @@
     for (const input of scope.querySelectorAll("input[data-ff-map]")) {
       if (!once(input, "ffMapReady")) continue;
       new PointMap(input);
+    }
+  });
+
+  // =========================================================================
+  // File and image fields
+  //
+  // `<input type="file">` is the worst control the platform ships. It is a grey
+  // button reading "No file chosen", drawn differently by every browser, it
+  // cannot be styled, it cannot be dropped onto, and once something is chosen it
+  // shows a truncated filename and nothing else -- so the commonest question
+  // about an upload, "is that the right picture", is one it cannot answer.
+  //
+  // This replaces the presentation and nothing else. The native input stays in
+  // the DOM, keeps its name and is still what carries the bytes; with script off
+  // the field is exactly the input plus the stored-value block it always was.
+  //
+  // The preview is a `URL.createObjectURL` of the chosen file -- the browser
+  // drawing a file the person just picked, with nothing uploaded and no request
+  // made. A video gets a `<video preload="metadata">`, which paints its first
+  // frame for the same price.
+  // =========================================================================
+
+  const FILE_UNITS = ["B", "KB", "MB", "GB"];
+
+  const formatBytes = (bytes) => {
+    let value = bytes;
+    let unit = 0;
+    while (value >= 1024 && unit < FILE_UNITS.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    // One decimal below ten, none above: "1.4 MB" and "340 KB" both read
+    // cleanly, "1.43871 MB" and "340.0 KB" do not.
+    const rounded = unit === 0 || value >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
+    return `${rounded} ${FILE_UNITS[unit]}`;
+  };
+
+  const IMAGE_EXT = /\.(avif|bmp|gif|jpe?g|png|svg|webp)(\?|#|$)/i;
+  const VIDEO_EXT = /\.(m4v|mov|mp4|ogv|webm)(\?|#|$)/i;
+
+  /* "image" | "video" | "" -- from the MIME type when there is one, and from the
+   * name when there is not. A stored value is a path, so it never has one. */
+  const kindOf = (name, type = "") => {
+    if (type.startsWith("image/")) return "image";
+    if (type.startsWith("video/")) return "video";
+    if (IMAGE_EXT.test(name)) return "image";
+    if (VIDEO_EXT.test(name)) return "video";
+    return "";
+  };
+
+  class FileField {
+    constructor(input) {
+      this.input = input;
+      this.limit = Number(input.dataset.ffFileLimit) || 0;
+      this.imagesOnly = (input.getAttribute("accept") || "").startsWith("image/");
+      this.objectUrl = null;
+      this.adopt();
+      this.build();
+      this.render();
+    }
+
+    /* Take over the stored-value block the server rendered.
+     *
+     * Its checkbox is what actually submits "remove the file that is there", so
+     * it is moved into the card rather than rebuilt: the name of that field
+     * belongs to the form layer, and a second copy here would be one rename away
+     * from silently never clearing anything. */
+    adopt() {
+      const current = this.input.parentNode.querySelector(".ff-file-current");
+      this.stored = null;
+      this.clearBox = null;
+      if (!current) return;
+
+      const link = current.querySelector("a");
+      this.clearBox = current.querySelector('input[type="checkbox"]');
+      if (link) {
+        this.stored = { url: link.getAttribute("href"), name: link.textContent.trim() };
+      }
+      current.remove();
+    }
+
+    build() {
+      this.card = el("div", { class: "ff-upload" });
+      this.input.parentNode.insertBefore(this.card, this.input);
+
+      this.input.classList.add("ff-upload__input");
+      // Not a tab stop: the card carries a real button, and two stops for one
+      // control is one more than anybody wants to walk past.
+      this.input.tabIndex = -1;
+      this.card.append(this.input);
+
+      if (this.clearBox) {
+        this.clearBox.classList.add("ff-upload__flag");
+        this.clearBox.tabIndex = -1;
+        this.card.append(this.clearBox);
+      }
+
+      this.body = el("div", { class: "ff-upload__body" });
+      this.card.append(this.body);
+
+      // The label points at an input nobody can see, so clicking it has to be
+      // sent somewhere useful.
+      const label = this.input.id && document.querySelector(`label[for="${CSS.escape(this.input.id)}"]`);
+      label?.addEventListener("click", (event) => {
+        event.preventDefault();
+        this.open();
+      });
+
+      this.bind();
+    }
+
+    bind() {
+      this.input.addEventListener("change", () => this.render());
+
+      this.card.addEventListener("click", (event) => {
+        if (event.target.closest("[data-ff-upload-remove]")) {
+          event.preventDefault();
+          this.remove();
+          return;
+        }
+        if (event.target.closest("[data-ff-upload-undo]")) {
+          event.preventDefault();
+          this.undo();
+          return;
+        }
+        // A link to the stored file opens it; everything else in the card is
+        // the target for choosing a new one.
+        if (event.target.closest("a")) return;
+        this.open();
+      });
+
+      for (const type of ["dragenter", "dragover"]) {
+        this.card.addEventListener(type, (event) => {
+          event.preventDefault();
+          this.card.dataset.ffDrop = "true";
+        });
+      }
+      this.card.addEventListener("dragleave", (event) => {
+        // Fires on every child boundary crossed on the way in, so the pointer
+        // has to have actually left the card before the highlight drops.
+        if (!this.card.contains(event.relatedTarget)) delete this.card.dataset.ffDrop;
+      });
+      this.card.addEventListener("drop", (event) => {
+        event.preventDefault();
+        delete this.card.dataset.ffDrop;
+        this.accept(event.dataTransfer?.files);
+      });
+    }
+
+    open() {
+      this.input.click();
+    }
+
+    /* Put a dropped file into the input, which is the thing that submits.
+     *
+     * Through a fresh `DataTransfer` rather than by assigning the dropped list
+     * straight across: a drop can carry several files onto a field that takes
+     * one, and the extras would ride along into a request that has no field for
+     * them. */
+    accept(files) {
+      const first = files && files[0];
+      if (!first) return;
+      const transfer = new DataTransfer();
+      transfer.items.add(first);
+      this.input.files = transfer.files;
+      this.input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    remove() {
+      if (this.input.files?.length) {
+        // Undoing a choice is choosing nothing, which is what an empty input is.
+        this.input.value = "";
+      } else if (this.clearBox) {
+        this.clearBox.checked = true;
+      }
+      this.render();
+    }
+
+    undo() {
+      if (this.clearBox) this.clearBox.checked = false;
+      this.render();
+    }
+
+    /* A URL for the browser to draw the chosen file from, revoking the last one.
+     * Left unrevoked, every file somebody tries out stays in memory until the
+     * page is closed. */
+    objectFor(file) {
+      if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+      this.objectUrl = URL.createObjectURL(file);
+      return this.objectUrl;
+    }
+
+    preview(url, name, kind) {
+      if (kind === "image") {
+        return el("img", { class: "ff-upload__thumb", src: url, alt: "" });
+      }
+      if (kind === "video") {
+        // Muted and metadata-only: enough to paint the first frame, without
+        // fetching a whole video to decorate a form.
+        const video = el("video", {
+          class: "ff-upload__thumb",
+          src: url,
+          muted: true,
+          playsinline: true,
+          preload: "metadata",
+        });
+        video.muted = true;
+        return video;
+      }
+      return el("span", { class: "ff-upload__thumb ff-upload__thumb--icon" }, [icon("file", 20)]);
+    }
+
+    render() {
+      const chosen = this.input.files?.[0];
+      if (chosen) return this.renderChosen(chosen);
+      if (this.stored && this.clearBox?.checked) return this.renderCleared();
+      if (this.stored) return this.renderStored();
+      return this.renderEmpty();
+    }
+
+    renderEmpty() {
+      const hint = this.limit
+        ? `${t("OrDropIt")} · ${formatBytes(this.limit)}`
+        : t("OrDropIt");
+      this.card.dataset.ffState = "empty";
+      this.body.replaceChildren(
+        el("span", { class: "ff-upload__icon" }, [icon("upload", 18)]),
+        el("span", { class: "ff-upload__choose", text: t("ChooseFile") }),
+        el("span", { class: "ff-upload__hint", text: hint })
+      );
+    }
+
+    renderChosen(file) {
+      const kind = kindOf(file.name, file.type);
+      const tooBig = Boolean(this.limit) && file.size > this.limit;
+      const wrongKind = this.imagesOnly && kind !== "image";
+      this.card.dataset.ffState = tooBig || wrongKind ? "invalid" : "chosen";
+
+      this.body.replaceChildren(
+        this.preview(this.objectFor(file), file.name, kind),
+        el("span", { class: "ff-upload__name", text: file.name, title: file.name }),
+        el("span", {
+          class: "ff-upload__meta",
+          // The server rejects both of these anyway. Saying so here is the
+          // difference between finding out now and finding out after a
+          // long upload and a round trip.
+          text: tooBig ? t("TooLarge") : wrongKind ? t("WrongType") : formatBytes(file.size),
+        }),
+        this.removeButton()
+      );
+    }
+
+    renderStored() {
+      const kind = kindOf(this.stored.name);
+      this.card.dataset.ffState = "stored";
+      this.body.replaceChildren(
+        this.preview(this.stored.url, this.stored.name, kind),
+        el("a", {
+          class: "ff-upload__name",
+          href: this.stored.url,
+          target: "_blank",
+          rel: "noopener",
+          text: this.stored.name,
+          title: this.stored.name,
+        }),
+        el("span", { class: "ff-upload__meta", text: t("Replace") }),
+        this.removeButton()
+      );
+    }
+
+    /* Marked for removal, not yet removed: nothing has been saved, and a
+     * mis-clicked delete on a file somebody cannot re-upload is worth one
+     * button to take back. */
+    renderCleared() {
+      this.card.dataset.ffState = "cleared";
+      this.body.replaceChildren(
+        el("span", { class: "ff-upload__thumb ff-upload__thumb--icon" }, [icon("trash", 18)]),
+        el("span", { class: "ff-upload__name ff-upload__name--gone", text: this.stored.name }),
+        el("button", {
+          type: "button",
+          class: "ff-btn ff-btn--sm ff-btn--ghost",
+          "data-ff-upload-undo": "1",
+          text: t("Undo"),
+        })
+      );
+    }
+
+    removeButton() {
+      return el(
+        "button",
+        {
+          type: "button",
+          class: "ff-action ff-upload__remove",
+          "data-ff-upload-remove": "1",
+          "aria-label": t("Remove"),
+        },
+        [icon("close", 14)]
+      );
+    }
+  }
+
+  enhancers.push((scope) => {
+    for (const input of scope.querySelectorAll("input[data-ff-file]")) {
+      if (!once(input, "ffFileReady")) continue;
+      new FileField(input);
     }
   });
 

@@ -21,6 +21,20 @@
 
   const root = document.documentElement;
 
+  /* "Scripting is on", declared here rather than by the main bundle.
+   *
+   * The stylesheet keys two opposite rules off this: `.ff-js-only` is hidden
+   * without it, and `.ff-no-js` is hidden with it. Set from the deferred bundle
+   * -- which runs after the browser has already painted -- both were wrong for
+   * the first frame of every single navigation. The theme switch, the settings
+   * button and the command palette blinked into existence a moment after the
+   * page appeared, and every native <select> that is about to be replaced was
+   * drawn in the operating system's own styling first and then swapped.
+   *
+   * This file is the right place for it because this file is the proof: it is
+   * running, so scripting is on, and it runs before the first paint. */
+  root.dataset.ffJs = "1";
+
   /* localStorage throws in private mode in some browsers, and a preference is
    * never worth breaking the page over. */
   const read = (key) => {

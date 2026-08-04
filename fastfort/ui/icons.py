@@ -179,6 +179,12 @@ ICONS: dict[str, str] = {
     "map-pin": (
         '<path d="M12 21s7-6 7-11a7 7 0 1 0-14 0c0 5 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/>'
     ),
+    # The "where am I" control on a map. A ring with a dot and four ticks, which
+    # is what every mapping application draws for it.
+    "crosshair": (
+        '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="1.5"/>'
+        '<path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>'
+    ),
     "phone": (
         '<path d="M6 3h3l2 5-2.5 1.5a12 12 0 0 0 5 5L15 12l5 2v3'
         'a2 2 0 0 1-2.2 2A17 17 0 0 1 4 5.2 2 2 0 0 1 6 3Z"/>'

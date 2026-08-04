@@ -11,7 +11,7 @@
   window that is about to close.
 #}
 <!doctype html>
-<html lang="{{ language }}" {% for name, value in theme.root_attributes().items() %}{{ name }}="{{ value }}" {% endfor %}>
+<html lang="{{ language }}" dir="{{ text_direction }}" {% for name, value in theme.root_attributes().items() %}{{ name }}="{{ value }}" {% endfor %}>
   <head>
     <meta charset="utf-8" />
     <meta name="robots" content="noindex, nofollow" />

@@ -113,6 +113,74 @@ async def test_the_date_field_keeps_its_name_and_value(client: httpx.AsyncClient
 
 
 # ---------------------------------------------------------------------------
+# The picker's own machinery
+#
+# There is no browser here, so what these check is that the script still ships
+# the parts and that the server still sends the words for them. A view that gets
+# renamed out from under the click handler, or a string the server stops
+# sending, breaks the control exactly as thoroughly as a logic error and is
+# invisible from the Python side without this.
+# ---------------------------------------------------------------------------
+
+
+async def test_the_calendar_can_zoom_out_to_months_and_years(client: httpx.AsyncClient) -> None:
+    """Paging a month at a time is fine for next Tuesday and useless for a date
+    of birth: 1987 is four hundred clicks from here on one arrow."""
+    script = (await client.get("/admin/static/js/fastfort.js")).text
+
+    assert "data-ff-cal-zoom" in script
+    assert "data-ff-cal-month" in script
+    assert "data-ff-cal-year" in script
+
+
+async def test_a_datetime_field_gets_a_clock(client: httpx.AsyncClient) -> None:
+    """A `datetime-local` column stores a time, and the panel had no way to set
+    one -- the calendar wrote the date and left the clock at whatever it was."""
+    script = (await client.get("/admin/static/js/fastfort.js")).text
+
+    assert "ff-datepicker__clock" in script
+    assert "writeTime" in script
+
+
+async def test_the_clock_is_made_of_the_same_dropdowns_as_everything_else(
+    client: httpx.AsyncClient,
+) -> None:
+    """Two number boxes were what this started as, and they read as a form to
+    fill in rather than a time to pick: spinners drawn differently by every
+    browser, no way to see the options, and nothing saying whether 9 meant
+    morning or evening.
+    """
+    script = (await client.get("/admin/static/js/fastfort.js")).text
+
+    # Real `<select>` elements, upgraded by the combobox the rest of the admin
+    # uses -- rather than a second dropdown of the picker's own.
+    assert 'class: "ff-select ff-datepicker__unit"' in script
+    assert "enhance(this.panel)" in script
+
+
+async def test_the_clock_follows_the_locale_on_twelve_or_twenty_four_hours(
+    client: httpx.AsyncClient,
+) -> None:
+    """9pm is "9 PM" in English and "21:00" in most of the world. Hard-coding
+    either is wrong for most people in one direction or the other, and the
+    AM/PM names themselves come from `Intl` rather than from a catalogue."""
+    script = (await client.get("/admin/static/js/fastfort.js")).text
+
+    assert "hourCycle" in script
+    assert "dayPeriod" in script
+
+
+async def test_the_server_sends_the_words_the_picker_and_uploader_need() -> None:
+    from fastfort.admin.site import _ui_text
+    from fastfort.i18n import Translator
+
+    sent = _ui_text(Translator())
+
+    for key in ("now", "done", "choose-file", "or-drop-it", "remove", "undo", "too-large"):
+        assert key in sent, key
+
+
+# ---------------------------------------------------------------------------
 # The format hint
 # ---------------------------------------------------------------------------
 

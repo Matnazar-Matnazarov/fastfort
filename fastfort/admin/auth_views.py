@@ -22,7 +22,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastfort._version import __version__
 from fastfort.core.exceptions import SecurityError
 from fastfort.core.hooks import Hook
-from fastfort.i18n import Translator, negotiate_language
+from fastfort.i18n import Translator, is_rtl, negotiate_language
 from fastfort.spec import FieldType
 from fastfort.ui.theming import Theme
 
@@ -80,6 +80,10 @@ def build_auth_router(fort: FastFort, auth: AdminAuth, renderer: Renderer) -> AP
             theme=theme,
             _=translator,
             language=translator.language,
+            # The sign-in page is not built on the shell, so it needs telling
+            # separately. Without it, Arabic turned the whole admin around and
+            # left the one page an anonymous visitor sees laid out the other way.
+            text_direction="rtl" if is_rtl(translator.language) else "ltr",
             languages=translator.choices(),
             current_language=translator.choice,
             language_url=f"{admin_url}/language",

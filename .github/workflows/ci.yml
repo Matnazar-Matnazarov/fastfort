@@ -148,7 +148,9 @@ jobs:
         run: uv run --with pip-audit pip-audit --strict --requirement requirements-audit.txt
 
   # -------------------------------------------------------------------------
-  # Verify the wheel builds and installs into a clean environment.
+  # The distributions, checked the same way the release workflow checks them --
+  # so a packaging mistake is a red pull request rather than a bad version on
+  # PyPI that can never be replaced.
   # -------------------------------------------------------------------------
   build:
     name: Build distribution
@@ -156,9 +158,57 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv build
-      - name: Install into a clean environment
+        with:
+          enable-cache: true
+
+      - name: Build wheel and sdist
+        run: uv build
+
+      - name: Check the metadata renders on PyPI
+        run: uv run --with twine python -m twine check --strict dist/*
+
+      # This package is mostly data: templates, seven stylesheets, two scripts,
+      # eleven catalogues and an icon set. They are listed in `pyproject.toml`
+      # rather than found automatically, so a wheel that builds and imports
+      # cleanly can still be one whose admin renders nothing -- which is exactly
+      # what happens when a new directory is added and that list is not.
+      - name: The wheel carries its data files
+        run: |
+          python - <<'PY'
+          import sys, zipfile
+          from pathlib import Path
+
+          wheel = next(Path("dist").glob("*.whl"))
+          names = zipfile.ZipFile(wheel).namelist()
+
+          required = {
+              "templates": "fastfort/ui/templates/base.html",
+              "stylesheets": "fastfort/ui/static/css/01-tokens.css",
+              "scripts": "fastfort/ui/static/js/fastfort.js",
+              "boot script": "fastfort/ui/static/js/boot.js",
+              "favicon": "fastfort/ui/static/favicon.svg",
+              "typing marker": "fastfort/py.typed",
+          }
+          missing = {what: path for what, path in required.items() if path not in names}
+
+          catalogues = [n for n in names if n.startswith("fastfort/i18n/locale/")]
+          if len(catalogues) < 10:
+              missing["catalogues"] = f"only {len(catalogues)} found"
+
+          for what, detail in missing.items():
+              print(f"::error::the wheel is missing its {what} ({detail})")
+          sys.exit(1 if missing else 0)
+          PY
+
+      - name: Install the wheel into a clean environment
         run: uv run --isolated --no-project --with dist/*.whl python -c "import fastfort; print(fastfort.__version__)"
+
+      # A wheel built *from the sdist*, which is what a downstream packager and
+      # `pip install --no-binary` actually do. An sdist that is missing a file
+      # the build needs passes every check above and fails only there.
+      - name: The sdist builds a wheel
+        run: uv build --wheel --out-dir rebuilt "$(ls dist/*.tar.gz)"
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist

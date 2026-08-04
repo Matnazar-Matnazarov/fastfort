@@ -171,7 +171,9 @@ body {
 .ff-skip-link {
   position: absolute;
   top: var(--ff-space-2);
-  left: var(--ff-space-2);
+  /* Logical, so it lands at the start of the line in a right-to-left language
+   * rather than at the far end of the header from everything else. */
+  inset-inline-start: var(--ff-space-2);
   z-index: var(--ff-z-toast);
   padding: var(--ff-space-2) var(--ff-space-4);
   background: var(--ff-surface-raised);

@@ -92,6 +92,20 @@ def csp_of(response: httpx.Response) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
+def hosts_in(directive: str) -> list[str]:
+    """The origins a directive admits, dropping the keywords and schemes.
+
+    `'self'`, `data:` and `blob:` are the page's own -- none of them is a server
+    anything is fetched from. What these tests are about is which *hosts* the
+    policy lets in, so they are read past.
+    """
+    return [
+        source
+        for source in directive.split()
+        if not source.startswith("'") and not source.endswith(":")
+    ]
+
+
 async def test_tiles_are_blocked_until_a_project_names_a_host(
     backend: SQLAlchemyBackend, staff_user: StaffUser
 ) -> None:
@@ -102,13 +116,13 @@ async def test_tiles_are_blocked_until_a_project_names_a_host(
     async with opened(backend) as client:
         policy = csp_of(await client.get("/admin/"))
 
-    assert policy["img-src"] == "'self' data:"
+    assert hosts_in(policy["img-src"]) == []
 
 
 async def test_naming_a_tile_url_admits_exactly_that_host(client: httpx.AsyncClient) -> None:
     policy = csp_of(await client.get("/admin/"))
 
-    assert policy["img-src"] == "'self' data: https://tile.openstreetmap.org"
+    assert hosts_in(policy["img-src"]) == ["https://tile.openstreetmap.org"]
 
 
 async def test_the_rest_of_the_policy_is_untouched(client: httpx.AsyncClient) -> None:
@@ -139,7 +153,7 @@ async def test_a_relative_tile_url_does_not_widen_the_policy(
     async with opened(backend, map_tile_url="/tiles/{z}/{x}/{y}.png") as client:
         policy = csp_of(await client.get("/admin/"))
 
-    assert policy["img-src"] == "'self' data:"
+    assert hosts_in(policy["img-src"]) == []
 
 
 # ---------------------------------------------------------------------------
@@ -200,10 +214,132 @@ async def test_the_attribution_is_rendered_when_configured(
     backend: SQLAlchemyBackend, staff_user: StaffUser
 ) -> None:
     """Tile services generally require a credit line, and the project is the
-    party bound by that -- so FastFort renders whatever the project wrote."""
+    party bound by that -- so FastFort renders whatever the project wrote.
+
+    Handed to the map rather than printed under the field: on the map is where
+    every other map puts it, and where it reads as a notice about the pictures
+    instead of as help text for the input.
+    """
     async with opened(
         backend, map_tile_url=TILES, map_attribution="© OpenStreetMap contributors"
     ) as client:
         body = await form_body(client)
 
-    assert "© OpenStreetMap contributors" in body
+    assert 'data-ff-map-credit="© OpenStreetMap contributors"' in body
+
+
+# ---------------------------------------------------------------------------
+# Handling
+#
+# A map you cannot tell is draggable is a map nobody drags. These check that the
+# parts are served; the gestures themselves need a browser.
+# ---------------------------------------------------------------------------
+
+
+async def test_the_map_says_it_can_be_dragged(client: httpx.AsyncClient) -> None:
+    """A crosshair says "click to place a point" and says nothing about the map
+    moving, so the one gesture that makes a map a map was invisible."""
+    sheet = (await client.get("/admin/static/fastfort.css")).text
+    canvas = sheet[sheet.index(".ff-map__canvas {") :].split("}", 1)[0]
+
+    assert "cursor: grab" in canvas
+    assert 'data-ff-dragging="true"' in sheet
+    assert "cursor: grabbing" in sheet
+
+
+async def test_the_tiles_cannot_steal_the_drag(client: httpx.AsyncClient) -> None:
+    """This is what made the map immovable, and it hid behind two other bugs.
+
+    A tile is an `<img>`, and an image is draggable by default: pressing on one
+    and moving started the browser's own drag-and-drop, which fires
+    `pointercancel` and hands back a ghost of the tile. Every pan died two
+    pixels in, on every tile, in every browser -- so the arithmetic fixes that
+    came before this one changed nothing anybody could see.
+    """
+    sheet = (await client.get("/admin/static/fastfort.css")).text
+    script = (await client.get("/admin/static/js/fastfort.js")).text
+    tiles = sheet[sheet.index(".ff-map__tiles {") :].split("}", 1)[0]
+
+    # The layer is inert, so every pointer event lands on the canvas that pans.
+    assert "pointer-events: none" in tiles
+    # And the attribute too, for the browsers that honour only that.
+    assert 'draggable: "false"' in script
+    assert 'addEventListener("dragstart"' in script
+
+
+async def test_the_marker_is_a_pin_anchored_at_its_point(client: httpx.AsyncClient) -> None:
+    """The place is where the tip touches the map. A dot has to be guessed at."""
+    script = (await client.get("/admin/static/js/fastfort.js")).text
+    sheet = (await client.get("/admin/static/fastfort.css")).text
+    marker = sheet[sheet.index(".ff-map__marker {") :].split("}", 1)[0]
+
+    assert 'icon("map-pin"' in script
+    # The whole height and half the width, so the pin hangs above its coordinate.
+    assert "margin: -30px 0 0 -15px" in marker
+
+
+async def test_the_map_offers_to_find_where_you_are(client: httpx.AsyncClient) -> None:
+    """The commonest thing anyone puts in a location field is where they are
+    standing, and without this that means dragging there from the whole world."""
+    script = (await client.get("/admin/static/js/fastfort.js")).text
+    sprite = await form_body(client)
+
+    assert "getCurrentPosition" in script
+    assert 'button("crosshair"' in script
+    # Offered only where the browser has it: geolocation needs a secure context,
+    # and a button that can only ever fail is worse than no button.
+    assert "if (navigator.geolocation)" in script
+    # And the icon it names is one the sprite actually carries.
+    assert 'id="ff-i-crosshair"' in sprite
+
+
+async def test_the_locate_control_has_a_translated_label(client: httpx.AsyncClient) -> None:
+    body = await form_body(client)
+
+    assert "data-ff-t-my-location=" in body
+
+
+# ---------------------------------------------------------------------------
+# Zooming
+#
+# A zoom used to blank the map: every tile of the new level was requested, the
+# old ones stayed frozen at the previous level's positions, and the view only
+# changed once the last request had come back. What that looks like from a chair
+# is a flash of empty canvas, a repaint, and then the zoom.
+#
+# The fix is the one every slippy map uses -- a layer per zoom level, so the level
+# already on screen can be scaled to line up with the new one and stay underneath
+# while its tiles load. These check the machinery is served; the geometry itself
+# is arithmetic with no server side to assert against.
+# ---------------------------------------------------------------------------
+
+
+async def test_the_script_draws_a_layer_per_zoom_level(client: httpx.AsyncClient) -> None:
+    script = (await client.get("/admin/static/js/fastfort.js")).text
+
+    assert "ff-map__layer" in script
+    assert "layerFor" in script
+    # The backdrop: what the new level is drawn over rather than instead of.
+    assert "backdrop" in script
+
+
+async def test_a_layer_scales_from_its_own_corner(client: httpx.AsyncClient) -> None:
+    """The coordinates inside a layer are absolute pixels of a world whose origin
+    is its top-left corner. Scaling about the centre -- the CSS default -- would
+    put every tile somewhere else.
+    """
+    sheet = (await client.get("/admin/static/fastfort.css")).text
+    rule = sheet[sheet.index(".ff-map__layer") :].split("}", 1)[0]
+
+    assert "transform-origin: 0 0" in rule
+
+
+async def test_tiles_are_not_deferred(client: httpx.AsyncClient) -> None:
+    """A lazily loaded tile never fires the event that retires the backdrop, so
+    the level underneath would stay there for as long as the map was off screen.
+    """
+    script = (await client.get("/admin/static/js/fastfort.js")).text
+    built = script[script.index('class: "ff-map__tile"') :].split("});", 1)[0]
+
+    assert 'loading: "lazy"' not in built
+    assert 'decoding: "async"' in built
