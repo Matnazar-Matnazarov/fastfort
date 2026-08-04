@@ -18,10 +18,12 @@ __all__ = [
     "LANGUAGES",
     "LANGUAGE_ENGLISH_NAMES",
     "LANGUAGE_FLAGS",
+    "RTL_LANGUAGES",
     "LanguageChoice",
     "Translator",
     "available_languages",
     "clear_catalog_cache",
+    "is_rtl",
     "negotiate_language",
 ]
 
@@ -47,7 +49,9 @@ LANGUAGES: dict[str, str] = {
     "fr": "Français",
     "es": "Español",
     "zh": "中文",
+    "ja": "日本語",
     "ko": "한국어",
+    "ar": "العربية",
 }
 
 #: The same languages named in English, for anyone who cannot read the script a
@@ -61,8 +65,17 @@ LANGUAGE_ENGLISH_NAMES: dict[str, str] = {
     "fr": "French",
     "es": "Spanish",
     "zh": "Chinese",
+    "ja": "Japanese",
     "ko": "Korean",
+    "ar": "Arabic",
 }
+
+#: Languages written right to left. The page's `dir` follows this, which is what
+#: turns the whole admin around: the stylesheet is written with logical
+#: properties throughout -- `inset-inline-end`, `padding-inline`, `margin-inline`
+#: -- so the sidebar, the table alignment, the chevrons and every popover flip
+#: without a second stylesheet or a single mirrored rule.
+RTL_LANGUAGES: frozenset[str] = frozenset({"ar"})
 
 #: Regional-indicator pairs, shown beside the name in the switcher. Decoration
 #: only: several platforms draw them as two letters instead of a flag, and a flag
@@ -77,7 +90,12 @@ LANGUAGE_FLAGS: dict[str, str] = {
     "fr": "\U0001f1eb\U0001f1f7",
     "es": "\U0001f1ea\U0001f1f8",
     "zh": "\U0001f1e8\U0001f1f3",
+    "ja": "\U0001f1ef\U0001f1f5",
     "ko": "\U0001f1f0\U0001f1f7",
+    # No country owns Arabic. The League of Arab States' flag is the closest
+    # thing to a neutral mark for it, and unlike a regional-indicator pair it is
+    # a single codepoint that either renders or does not.
+    "ar": "\U0001f1f8\U0001f1e6",
 }
 
 
@@ -140,6 +158,15 @@ def available_languages() -> tuple[str, ...]:
 def clear_catalog_cache() -> None:
     """Forget loaded catalogues. Used by tests and by a development reload."""
     _catalog.cache_clear()
+
+
+def is_rtl(language: str) -> bool:
+    """Whether a language is written right to left.
+
+    Read off the base code, so a regional variant is not a language the admin
+    suddenly lays out the wrong way round.
+    """
+    return language.split("-", 1)[0].lower() in RTL_LANGUAGES
 
 
 def negotiate_language(

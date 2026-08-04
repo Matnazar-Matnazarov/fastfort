@@ -17,10 +17,12 @@ from .catalog import (
     LANGUAGE_ENGLISH_NAMES,
     LANGUAGE_FLAGS,
     LANGUAGES,
+    RTL_LANGUAGES,
     LanguageChoice,
     Translator,
     available_languages,
     clear_catalog_cache,
+    is_rtl,
     negotiate_language,
 )
 
@@ -29,9 +31,11 @@ __all__ = [
     "LANGUAGES",
     "LANGUAGE_ENGLISH_NAMES",
     "LANGUAGE_FLAGS",
+    "RTL_LANGUAGES",
     "LanguageChoice",
     "Translator",
     "available_languages",
     "clear_catalog_cache",
+    "is_rtl",
     "negotiate_language",
 ]
