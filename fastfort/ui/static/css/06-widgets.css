@@ -2608,3 +2608,194 @@ a.ff-upload__name {
   flex: 0 0 auto;
   color: var(--ff-text-subtle);
 }
+
+/* ===========================================================================
+ * Geometry: the shape drawn over the tiles, and a handle per vertex
+ *
+ * Both are placed by script in the map's own pixel space, which is the same
+ * deliberate exception to this stylesheet's logical-direction rule that the
+ * marker already is: a coordinate space is physical, and a polygon does not
+ * mirror when the interface does.
+ * ======================================================================== */
+
+.ff-map__overlay,
+.ff-map__handles {
+  position: absolute;
+  inset: 0;
+  /* Inert for the same reason the tile layer is: the canvas underneath is what
+   * pans, and a shape covering the whole map would otherwise eat every drag
+   * that happened to start inside it. The handles opt back in one by one. */
+  pointer-events: none;
+}
+
+.ff-map__overlay {
+  width: 100%;
+  height: 100%;
+}
+
+.ff-map__line,
+.ff-map__area {
+  fill: none;
+  stroke: var(--ff-accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  /* Over a satellite tile the accent alone can vanish; the halo is what keeps
+   * an outline readable against a photograph as well as against a street map. */
+  paint-order: stroke;
+}
+
+.ff-map__area {
+  fill: var(--ff-accent);
+  fill-opacity: 0.18;
+}
+
+.ff-map__handle {
+  position: absolute;
+  /* Centred on its coordinate. The marker is anchored at its tip because a pin
+   * points at a place; a vertex *is* the place, so it sits on it. */
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  margin-block-start: -6px;
+  margin-inline-start: -6px;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 2px solid var(--ff-surface);
+  border-radius: 50%;
+  background: var(--ff-accent);
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.ff-map__handle:hover {
+  /* A wider target under the pointer, drawn as a ring rather than as a bigger
+   * dot: 12px is a small thing to aim at, and growing the handle itself would
+   * move the vertex it is marking away from where it actually is. */
+  background: var(--ff-accent-hover);
+  box-shadow: 0 0 0 4px var(--ff-accent-subtle);
+}
+
+.ff-map__handle:active {
+  cursor: grabbing;
+}
+
+/* A multi-geometry or a collection is drawn but not edited -- there are no
+ * handles to grab, so the crosshair that says "click to place" would be a lie. */
+.ff-map[data-ff-readonly="true"] .ff-map__canvas {
+  cursor: grab;
+}
+
+/* ===========================================================================
+ * Tags, for an ARRAY column
+ * ======================================================================== */
+
+.ff-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ff-space-1);
+  min-height: var(--ff-control-height);
+  padding: var(--ff-space-1) var(--ff-space-2);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-md);
+  background: var(--ff-surface);
+}
+
+/* The whole control focuses when the box inside it does, so it reads as one
+ * field rather than as a bare input sitting in a bordered area. */
+.ff-tags:focus-within {
+  border-color: var(--ff-accent);
+  box-shadow: 0 0 0 var(--ff-focus-width) var(--ff-accent-subtle);
+}
+
+.ff-tags__chips {
+  display: contents;
+}
+
+.ff-tags__entry {
+  flex: 1 1 6rem;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+/* Marked, not refused: an ARRAY(Integer) entry that is not an integer is still
+ * what somebody typed, and the server is the thing that decides. Removing it
+ * from under them would be worse than showing it is wrong. */
+.ff-chip[data-ff-invalid="true"] {
+  border-color: var(--ff-danger);
+  color: var(--ff-danger);
+}
+
+/* ===========================================================================
+ * Key/value, for an HSTORE column
+ * ======================================================================== */
+
+.ff-kv {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ff-space-2);
+}
+
+.ff-kv__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ff-space-1);
+  width: 100%;
+}
+
+/* The key column is narrower than the value on purpose: keys are short names
+ * and values are content, and equal halves waste the row on the wrong one. */
+.ff-kv__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+  gap: var(--ff-space-1);
+  align-items: center;
+}
+
+.ff-kv__remove {
+  display: grid;
+  place-items: center;
+  width: var(--ff-control-height);
+  height: var(--ff-control-height);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--ff-radius-md);
+  background: none;
+  color: var(--ff-text-subtle);
+  cursor: pointer;
+}
+
+.ff-kv__remove:hover {
+  border-color: var(--ff-border);
+  background: var(--ff-danger-subtle);
+  color: var(--ff-danger);
+}
+
+/* ===========================================================================
+ * JSON
+ * ======================================================================== */
+
+.ff-json__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+  margin-block-start: var(--ff-space-1);
+}
+
+.ff-json__status {
+  color: var(--ff-danger);
+  font-size: var(--ff-text-sm);
+}
+
+/* Invalid while typing, not only after a submit. The field is the only place
+ * that can say a document will not parse before the round trip that proves it. */
+[data-ff-invalid="true"].ff-textarea,
+[data-ff-invalid="true"].ff-input {
+  border-color: var(--ff-danger);
+}

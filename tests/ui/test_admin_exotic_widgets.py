@@ -277,3 +277,78 @@ async def test_no_map_host_means_no_map_hooks(
     # Still editable, though -- the text box is the control, the map was only
     # ever the thing beside it.
     control_for(body, "location")
+
+
+# ---------------------------------------------------------------------------
+# Which bundles a page asks for
+# ---------------------------------------------------------------------------
+
+
+def scripts_in(body: str) -> list[str]:
+    return re.findall(r'<script src="[^"]*/js/([^"]+)"', body)
+
+
+async def test_a_page_asks_only_for_the_bundles_its_fields_need(
+    client: httpx.AsyncClient,
+) -> None:
+    """The whole point of splitting the front end: a model with no array and no
+    hstore must not download the editors for them.
+
+    The other direction -- a page that needs neither bundle getting neither --
+    is `test_a_read_only_geometry_asks_for_nothing_extra` below."""
+    spatial = scripts_in(await add_form(client, "lab.spatial"))
+    assert "fastfort-geo.js" in spatial
+    assert "fastfort-data.js" not in spatial
+
+
+async def test_the_data_bundle_arrives_for_arrays_and_hstores(
+    client: httpx.AsyncClient,
+) -> None:
+    exotic = scripts_in(await add_form(client, "lab.exotic"))
+    assert "fastfort-data.js" in exotic
+    assert "fastfort-geo.js" not in exotic
+
+
+async def test_an_extra_bundle_loads_after_the_one_it_borrows_from(
+    client: httpx.AsyncClient,
+) -> None:
+    """`fastfort-geo.js` reaches the DOM helpers through `window.FastFort`,
+    which `fastfort.js` publishes. Deferred scripts run in document order, so
+    the order of the tags is the order of execution -- and getting it backwards
+    would leave the map silently never upgrading."""
+    order = scripts_in(await add_form(client, "lab.spatial"))
+    assert order.index("fastfort.js") < order.index("fastfort-geo.js")
+    for name in order:
+        assert (await client.get(f"/admin/static/js/{name}")).status_code == 200
+
+
+async def test_a_read_only_geometry_asks_for_nothing_extra(
+    session_factory: async_sessionmaker[AsyncSession], staff_user: StaffUser
+) -> None:
+    """Read off the widgets rendered, not the model's columns. A geometry field
+    an admin marked read-only draws no map, so asking the browser for the map
+    editor anyway is exactly the download the split exists to avoid."""
+
+    class Frozen(admin.ModelAdmin):
+        readonly_fields = ("location", "area")
+
+    fort = FastFort(
+        FastFortSettings(  # type: ignore[call-arg]
+            secret_key=SECRET,
+            security={"cookie_secure": False},  # type: ignore[arg-type]
+            ui={"map_tile_url": TILES},  # type: ignore[arg-type]
+        ),
+        backend=exotic_backend(session_factory),
+    )
+    fort.set_user_model(StaffUser)
+    fort.register(SpatialColumn, Frozen, key="lab.spatial")
+    app = FastAPI()
+    fort.mount(app)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as opened:
+        await sign_in(opened)
+        body = await add_form(opened, "lab.spatial")
+
+    assert scripts_in(body) == ["boot.js", "fastfort.js"]

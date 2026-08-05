@@ -68,6 +68,26 @@ CSS_SHEETS = (
     "06-widgets.css",
 )
 
+#: Every script this admin will serve. An allow-list, because the route reads a
+#: file by a name the request chose.
+#:
+#: The first two load on every page. The other two are asked for only by a page
+#: that renders a field needing them, which is what `_extra_scripts` decides:
+#: the map editor and the structured-data editors together are about a third of
+#: the front end's weight, and the great majority of admin pages have no
+#: geometry, array or hstore column at all.
+SCRIPTS = frozenset({"boot.js", "fastfort.js", "fastfort-geo.js", "fastfort-data.js"})
+
+#: The bundle each widget needs, over and above the everyday one.
+_WIDGET_SCRIPTS = {
+    "geometry": "fastfort-geo.js",
+    "tags": "fastfort-data.js",
+    "keyvalue": "fastfort-data.js",
+    "json": "fastfort-data.js",
+    "inet": "fastfort-data.js",
+    "mac": "fastfort-data.js",
+}
+
 #: Types whose columns are right-aligned with tabular figures, so digits line up.
 _NUMERIC_TYPES = frozenset(
     {FieldType.INTEGER, FieldType.BIGINT, FieldType.DECIMAL, FieldType.FLOAT}
@@ -218,6 +238,11 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             "palette": _palette_entries(fort, list_url, translator),
             "accents": ACCENT_PRESETS,
             "ui_text": _ui_text(translator),
+            # Nothing beyond the everyday bundle, unless a view says otherwise.
+            # Declared here rather than per page because the renderer runs with
+            # StrictUndefined, so a template reading a name one view forgot to
+            # set is an error, not an empty loop.
+            "extra_scripts": (),
             "breadcrumbs": (),
             # Only a form opened from a relation field is a popup; every other
             # page gets the shell. Declared here so no template has to guard.
@@ -389,7 +414,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         # An allow-list, not a path join: `name` comes from the URL, and
         # anything that reads a file by a name a request chose is one `..` away
         # from serving the rest of the disk.
-        if name not in {"fastfort.js", "boot.js"}:
+        if name not in SCRIPTS:
             raise HTTPException(status_code=404, detail="No such script.")
         return asset(request, _bundled_js(name, debug=settings.debug), "text/javascript")
 
@@ -836,6 +861,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             ),
             "version_token": None,
             "input_types": INPUT_TYPES,
+            "extra_scripts": _extra_scripts(form),
         }
 
     @router.get("/{model_key}/add", response_class=HTMLResponse, name="fastfort:add")
@@ -1554,18 +1580,36 @@ def _ui_text(translate: Translator) -> dict[str, str]:
         "undo": translate("Undo"),
         "too-large": translate("Too large"),
         "wrong-type": translate("Not an image"),
-        # The key/value (HSTORE) and tag (ARRAY) editors Phase 4 builds on top
-        # of the plain textarea and text input this phase renders -- unread
-        # until then, added now so the two sides of the FALLBACK_TEXT/`_ui_text`
-        # pair do not drift apart in the meantime.
+        # The key/value (HSTORE), tag (ARRAY) and JSON editors, which live in
+        # `fastfort-data.js` rather than the everyday bundle. They read these
+        # off `<html>` exactly like every widget above, because `t()` reaches
+        # them through the kit the main script publishes -- one table of
+        # strings for every bundle, not one per file.
         "add": translate("Add"),
         "key": translate("Key"),
         "value": translate("Value"),
+        "format": translate("Format"),
         "from": translate("From"),
         "to": translate("To"),
         "bounds": translate("Bounds"),
         "invalid-address": translate("Invalid address"),
     }
+
+
+def _extra_scripts(form: Form) -> tuple[str, ...]:
+    """The bundles this form's controls need, beyond the everyday one.
+
+    Read off the widgets actually rendered rather than off the model's fields:
+    a geometry column a `ModelAdmin` marked read-only draws no map, and asking
+    the browser for the map editor anyway is exactly the download this split
+    exists to avoid.
+
+    Ordered rather than a set, so the same page produces the same tags in the
+    same order on every request -- a `<script>` list that reshuffles between
+    responses defeats the browser cache it is trying to use.
+    """
+    wanted = {_WIDGET_SCRIPTS[f.widget] for f in form.fields if f.widget in _WIDGET_SCRIPTS}
+    return tuple(name for name in ("fastfort-data.js", "fastfort-geo.js") if name in wanted)
 
 
 def _title_of(admin: Any, key: str) -> str:

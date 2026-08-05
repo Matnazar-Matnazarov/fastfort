@@ -37,6 +37,18 @@
       <link rel="stylesheet" href="{{ stylesheet }}" />
     {% endfor %}
     <script src="{{ static_url }}/js/fastfort.js" defer></script>
+    {% for script in extra_scripts %}
+      {# The editors only some pages need -- the map, the structured-data
+         controls. `_extra_scripts` in `admin/site.py` picks them from the
+         widgets this page actually rendered, so a model with no geometry
+         column never downloads the polygon editor.
+
+         After the main bundle and deferred like it, which matters: deferred
+         scripts run in document order, and these reach the DOM helpers through
+         the `window.FastFort` kit that one publishes. Each guards against its
+         absence anyway, because a project may have overridden this template. #}
+      <script src="{{ static_url }}/js/{{ script }}" defer></script>
+    {% endfor %}
     {% if theme.richtext_url %}
       {# The project's own editor, upgrading every `data-ff-richtext` textarea.
          Deferred like the main script: an editor is an enhancement, and the
