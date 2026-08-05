@@ -129,6 +129,16 @@
     ZoomIn: "Zoom in",
     ZoomOut: "Zoom out",
     MyLocation: "My location",
+    // The key/value and tag editors these widgets grow are not built yet --
+    // see `_ui_text` in `admin/site.py`, which sends the other half of each
+    // of these pairs starting the same phase this comment does.
+    Add: "Add",
+    Key: "Key",
+    Value: "Value",
+    From: "From",
+    To: "To",
+    Bounds: "Bounds",
+    InvalidAddress: "Invalid address",
   };
 
   /* Every widget registers here. Called once on load and again on any fragment

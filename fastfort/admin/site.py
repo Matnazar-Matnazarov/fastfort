@@ -1241,19 +1241,29 @@ def build_admin_router(fort: FastFort) -> APIRouter:
 
 #: HTML input types, keyed by widget name. Kept beside the widget map rather than
 #: in the template, so adding a widget touches one file.
+#:
+#: Only widgets the generic `<input>` branch in `_widgets.html` actually
+#: renders belong here -- "tags", "keyvalue", "range" and "geometry" draw their
+#: own markup and never reach this lookup. A name this dict does not carry
+#: still renders: `generic_control` reads it with `.get(field.widget, "text")`,
+#: which is the fix for the crash this dict used to cause (see the widget's own
+#: comment in `widgets.py`) -- so a project's `register_widget()` name degrades
+#: to a plain text box instead of a 500 until it ships a template partial.
 INPUT_TYPES = {
     "text": "text",
     "number": "number",
     "decimal": "number",
+    "money": "number",
     "date": "date",
     "datetime": "datetime-local",
     "time": "time",
     "duration": "text",
-    "list": "text",
-    "point": "text",
     "email": "email",
     "url": "url",
     "password": "password",
+    "inet": "text",
+    "mac": "text",
+    "bits": "text",
 }
 
 
@@ -1544,6 +1554,17 @@ def _ui_text(translate: Translator) -> dict[str, str]:
         "undo": translate("Undo"),
         "too-large": translate("Too large"),
         "wrong-type": translate("Not an image"),
+        # The key/value (HSTORE) and tag (ARRAY) editors Phase 4 builds on top
+        # of the plain textarea and text input this phase renders -- unread
+        # until then, added now so the two sides of the FALLBACK_TEXT/`_ui_text`
+        # pair do not drift apart in the meantime.
+        "add": translate("Add"),
+        "key": translate("Key"),
+        "value": translate("Value"),
+        "from": translate("From"),
+        "to": translate("To"),
+        "bounds": translate("Bounds"),
+        "invalid-address": translate("Invalid address"),
     }
 
 

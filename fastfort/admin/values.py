@@ -30,7 +30,14 @@ from fastfort.spec import FieldSpec, FieldType
 
 from . import geo
 
-__all__ = ["check_bounds", "duration_text", "parse_duration", "parse_value", "render_value"]
+__all__ = [
+    "check_bounds",
+    "duration_text",
+    "parse_duration",
+    "parse_value",
+    "range_parts",
+    "render_value",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -523,6 +530,47 @@ def _bits_text(value: Any) -> str:
         # it, so it has to come out before the box shows the value.
         return str(as_string()).replace(" ", "")
     return str(value)
+
+
+def range_parts(value: Any, spec: FieldSpec) -> tuple[str, str, str]:
+    """The lower text, the upper text and the bracket notation a two-input
+    range control renders -- the exact three pieces `Form.bind` reassembles
+    into `[1, 10)` before handing the result to `parse_value`, and the
+    counterpart to `_range_text` for a control that is two boxes instead of
+    one.
+
+    Duck-typed against `.lower`/`.upper`/`.bounds`, exactly like `_range_text`:
+    the live value is a `sqlalchemy.dialects.postgresql.Range` on the way in
+    from the database, and the plain `(lower, upper, bounds)` tuple this
+    module's own `_parse_range` produces on the way back from a submission
+    that failed validation elsewhere on the form.
+
+    An explicit empty range (`'empty'::int4range`) has no lower or upper to
+    put in two boxes, so it renders as though nothing were stored -- the one
+    case this control cannot round-trip byte for byte, and rare enough in
+    practice (nobody types "empty" into a date range) that it is not worth a
+    fifth, unlabelled option in the bounds selector.
+    """
+    default = ("", "", "[)")
+    if value is None or getattr(value, "isempty", False):
+        return default
+
+    bound_type = _bound_type(spec)
+    bound_spec = FieldSpec(name="bound", label="Bound", type=bound_type)
+
+    if isinstance(value, tuple) and len(value) == 3:
+        lower, upper, notation = value
+    else:
+        bounds = getattr(value, "bounds", None)
+        if bounds is None:
+            return default
+        lower = getattr(value, "lower", None)
+        upper = getattr(value, "upper", None)
+        notation = str(bounds)
+
+    lower_text = "" if lower is None else render_value(lower, bound_spec)
+    upper_text = "" if upper is None else render_value(upper, bound_spec)
+    return (lower_text, upper_text, notation)
 
 
 def _range_text(value: Any, bound_type: FieldType) -> str:

@@ -2575,3 +2575,36 @@ a.ff-upload__name {
 .ff-upload__remove {
   flex: none;
 }
+
+/* ===========================================================================
+ * Range
+ *
+ * A bounds selector and two boxes read as one control because they are laid
+ * out as one row -- the select carries the bracket notation `values.py`
+ * needs and `Form.bind` reassembles the pair around it into the single
+ * string the parser accepts; see `_bind_range` in `admin/forms.py`.
+ * ======================================================================== */
+
+.ff-range-field {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+}
+
+/* Fixed rather than flexed: the options are four short bracket pairs, and
+ * letting the select grow with its siblings would stretch a control with
+ * nothing to fill the extra width with. */
+.ff-range-field__bounds {
+  flex: 0 0 auto;
+  width: 5rem;
+}
+
+.ff-range-field__bound {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ff-range-field__sep {
+  flex: 0 0 auto;
+  color: var(--ff-text-subtle);
+}

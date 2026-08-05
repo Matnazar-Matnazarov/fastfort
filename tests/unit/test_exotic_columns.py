@@ -1,8 +1,10 @@
 """Column types the browser has no native control for.
 
-A duration, an array, a range and a handful of PostgreSQL scalars all end up in
-a plain text or textarea box, so each one needs a shape it accepts and a shape
-it renders. Geometry has its own file, `test_geo_codec.py`, since the codec
+A duration, an array, a range and a handful of PostgreSQL scalars each need a
+shape they accept and a shape they render -- what this file tests is that
+shape, at the `parse_value`/`render_value` level, independent of which control
+draws it (that half lives in `tests/ui/test_admin_widgets.py`, which drives a
+real form). Geometry has its own file, `test_geo_codec.py`, since the codec
 underneath it is large enough to want fixtures of its own.
 """
 
@@ -37,17 +39,18 @@ def field(name: str, kind: FieldType, **kwargs: object) -> FieldSpec:
     ("kind", "expected"),
     [
         (FieldType.DURATION, "duration"),
-        (FieldType.ARRAY, "list"),
-        (FieldType.GEOMETRY, "point"),
-        # Phase 2: no dedicated widget yet (see widgets.py's `_WIDGETS` for why),
-        # so these fall back to a control the template already renders safely.
-        (FieldType.INET, "text"),
-        (FieldType.MACADDR, "text"),
-        (FieldType.MONEY, "text"),
-        (FieldType.BITS, "text"),
-        (FieldType.RANGE, "text"),
-        (FieldType.HSTORE, "textarea"),
-        (FieldType.MULTIRANGE, "textarea"),
+        (FieldType.ARRAY, "tags"),
+        (FieldType.GEOMETRY, "geometry"),
+        (FieldType.INET, "inet"),
+        (FieldType.MACADDR, "mac"),
+        (FieldType.MONEY, "money"),
+        (FieldType.BITS, "bits"),
+        # RANGE and MULTIRANGE share one widget -- `range_control` in
+        # `_widgets.html` is what actually tells them apart, by `FieldType`
+        # rather than by widget name; see `widgets.py`'s `_WIDGETS` docstring.
+        (FieldType.RANGE, "range"),
+        (FieldType.MULTIRANGE, "range"),
+        (FieldType.HSTORE, "keyvalue"),
         (FieldType.BINARY, "readonly"),
         (FieldType.SEARCH_VECTOR, "readonly"),
     ],
@@ -57,6 +60,20 @@ def test_each_exotic_type_has_a_control(kind: FieldType, expected: str) -> None:
     rendering them read-only made them uneditable through the admin for no
     reason anyone could see."""
     assert widget_for(field("x", kind)) == expected
+
+
+def test_the_old_widget_names_still_validate() -> None:
+    """`formfield_overrides = {"keywords": "list"}`, written before `ARRAY` had
+    a widget of its own, must not turn into a start-up error on upgrade."""
+    from fastfort.admin.widgets import WIDGET_NAMES, canonical_widget
+
+    assert "list" in WIDGET_NAMES
+    assert "point" in WIDGET_NAMES
+    assert canonical_widget("list") == "tags"
+    assert canonical_widget("point") == "geometry"
+    # Unknown names pass through unchanged -- `canonical_widget` only ever
+    # redirects the two names this phase renamed.
+    assert canonical_widget("richtext") == "richtext"
 
 
 # ---------------------------------------------------------------------------

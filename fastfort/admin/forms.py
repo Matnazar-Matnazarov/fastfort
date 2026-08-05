@@ -31,7 +31,7 @@ from fastfort.auth.passwords import hash_password, validate_password
 from fastfort.spec import Choice, FieldSpec, FieldType
 
 from .files import UploadedFile, delete_upload, save_upload, stored_path
-from .values import _identity, check_bounds, parse_value, render_value
+from .values import _identity, check_bounds, parse_value, range_parts, render_value
 from .widgets import (
     CLEAR_SUFFIX,
     CONFIRM_SUFFIX,
@@ -39,6 +39,8 @@ from .widgets import (
     READONLY_WIDGET,
     UPGRADED_WIDGETS,
     WIDGET_NAMES,
+    bound_widget,
+    canonical_widget,
     format_help,
     widget_for,
 )
@@ -74,6 +76,14 @@ class FormField:
     #: the field, not enough to browse it.
     remote: bool = False
 
+    #: The three pieces a `RANGE` field's two-input control renders: the lower
+    #: box's text, the upper box's text, and the bracket notation the bounds
+    #: selector shows. Unused by every other widget -- `raw` alone is enough
+    #: for a control that is one box, not two.
+    range_lower: str = ""
+    range_upper: str = ""
+    range_bounds: str = "[)"
+
     @property
     def name(self) -> str:
         return self.spec.name
@@ -106,6 +116,18 @@ class FormField:
     @property
     def clear_name(self) -> str:
         return f"{self.spec.name}{CLEAR_SUFFIX}"
+
+    @property
+    def range_widget(self) -> str:
+        """Which control renders each of a range's two boxes.
+
+        A `daterange` gets `type="date"` from this, through the same table
+        `widget_for` reads, so its boxes carry `data-ff-date` and pick up the
+        calendar exactly the way a plain `DATE` column's box does.
+        """
+        if self.spec.bounds is None:
+            return "text"
+        return bound_widget(self.spec.bounds.bound)
 
 
 class Form:
@@ -180,8 +202,11 @@ class Form:
         if writable:
             # The admin's own choice wins over the type's default:
             # `formfield_overrides` exists precisely to say "this column is a
-            # colour, not a string".
-            widget = self.admin.widget_override(spec) or widget_for(spec)
+            # colour, not a string". Canonicalised once here, so an old name
+            # from either source ("list", "point") never reaches the template
+            # or `format_help` -- both of those only ever handle the current
+            # name.
+            widget = canonical_widget(self.admin.widget_override(spec) or widget_for(spec))
         else:
             widget = READONLY_WIDGET
         value = (
@@ -204,6 +229,13 @@ class Form:
                 _current_choices(value) if remote else self._relation_choices.get(spec.name, ())
             )
 
+        # `MULTIRANGE` shares the "range" widget but stays a plain textarea (see
+        # `range_control` in `_widgets.html`), so only a true `RANGE` needs its
+        # value split into the two boxes and the bounds selector read it.
+        range_lower, range_upper, range_bounds = (
+            range_parts(value, spec) if spec.type is FieldType.RANGE else ("", "", "[)")
+        )
+
         return FormField(
             spec=spec,
             widget=widget,
@@ -217,6 +249,9 @@ class Form:
             # duration field is an empty rectangle and the only way to learn the
             # format is to guess wrong and read the error.
             help_override=format_help(spec, widget) if not spec.help_text else None,
+            range_lower=range_lower,
+            range_upper=range_upper,
+            range_bounds=range_bounds,
         )
 
     # -- binding ------------------------------------------------------------
@@ -270,6 +305,10 @@ class Form:
                 form_field.value = cleaned[spec.name]
                 continue
 
+            if spec.type is FieldType.RANGE:
+                self._bind_range(form_field, data, cleaned)
+                continue
+
             if spec.name not in data:
                 # Absent and submitted-empty are different things. A browser sends
                 # every rendered control, so a missing key means the request did
@@ -304,6 +343,66 @@ class Form:
             form_field.value = parsed
 
         return cleaned
+
+    def _bind_range(
+        self, form_field: FormField, data: dict[str, Any], cleaned: dict[str, Any]
+    ) -> None:
+        """Reassemble the two boxes and the bounds selector into the single
+        `[1, 10)`-shaped string `values.parse_value` actually parses.
+
+        The form never submits `spec.name` itself for a `RANGE` -- the control
+        is three fields, `{name}__lower`, `{name}__upper` and `{name}__bounds`
+        -- so this runs instead of the generic scalar path above, not after it.
+        Errors are still appended to `form_field.errors`, the same list the
+        template reads off `spec.name`, so a bad range lands on the one field a
+        project's own `form.add_error(name, ...)` would also reach.
+        """
+        spec = form_field.spec
+        lower_key, upper_key, bounds_key = (
+            f"{spec.name}__lower",
+            f"{spec.name}__upper",
+            f"{spec.name}__bounds",
+        )
+        if lower_key not in data and upper_key not in data:
+            # Neither box was on the request at all -- the same "leave it
+            # alone" rule the generic path applies when `spec.name` is absent.
+            return
+
+        lower_raw = str(data.get(lower_key) or "").strip()
+        upper_raw = str(data.get(upper_key) or "").strip()
+        notation = str(data.get(bounds_key) or "[)")
+        form_field.range_lower = lower_raw
+        form_field.range_upper = upper_raw
+        form_field.range_bounds = notation
+
+        if not lower_raw and not upper_raw:
+            if spec.required:
+                form_field.errors.append("This field is required.")
+                return
+            cleaned[spec.name] = None
+            form_field.value = None
+            return
+
+        # `notation` came from a <select> offering exactly "[)", "(]", "[]" and
+        # "()", but it is still request data -- a tampered value that is not
+        # one of those simply fails `_RANGE_RE` inside `parse_value` below and
+        # reports the same "Enter a range" error a typo would, rather than
+        # reassembling into something the parser was not expecting.
+        reassembled = f"{notation[:1]}{lower_raw}, {upper_raw}{notation[-1:]}"
+
+        try:
+            parsed = parse_value(reassembled, spec)
+        except ValueError as exc:
+            form_field.errors.append(str(exc))
+            return
+
+        error = check_bounds(parsed, spec)
+        if error:
+            form_field.errors.append(error)
+            return
+
+        cleaned[spec.name] = parsed
+        form_field.value = parsed
 
     def _bind_password(
         self, form_field: FormField, data: dict[str, Any], cleaned: dict[str, Any]

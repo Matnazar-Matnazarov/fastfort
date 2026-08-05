@@ -1,4 +1,21 @@
 {% extends "base.html" %}
+{% from "model/_widgets.html" import
+  checkbox_control,
+  color_control,
+  file_control,
+  generic_control,
+  geometry_control,
+  keyvalue_control,
+  nullboolean_control,
+  password_control,
+  range_control,
+  readonly_control,
+  relations_control,
+  richtext_control,
+  select_control,
+  tags_control,
+  textarea_control
+%}
 
 {% block content %}
   <div class="ff-page-header">
@@ -72,12 +89,20 @@
     <div class="ff-card">
       <div class="ff-card__body ff-form-grid">
         {% for field in form.fields %}
+          {# The geometry kind decides width too -- a POLYGON's textarea earns
+             the full row the way any other textarea does, but a POINT with no
+             map configured is still a short text box next to nothing. Mirrors
+             `geometry_control`'s own default: a missing `GeometrySpec` reads
+             as POINT, which is what a `formfield_overrides = {"col": "point"}`
+             on a plain column looks like once its name resolves to
+             "geometry". #}
+          {% set geometry_kind = (field.spec.geometry.kind if field.spec.geometry
+                                   else "POINT") if field.widget == "geometry" else "" %}
           {# Long controls span both columns: a textarea squeezed into half a
-             page is worse than a taller form. A map earns the width only when
-             there is one -- without a tile URL the field is a short text box
-             and a full-width row of nothing beside it. #}
-          {% set wide = field.widget in ('textarea', 'json', 'relations')
-                        or (field.widget == 'point' and settings.ui.map_tile_url) %}
+             page is worse than a taller form. #}
+          {% set wide = field.widget in ("textarea", "json", "relations", "keyvalue", "range")
+                        or (field.widget == "geometry"
+                            and (settings.ui.map_tile_url or geometry_kind != "POINT")) %}
           <div
             class="ff-field{% if wide %} ff-field--wide{% endif %}"
             {% if field.errors %}data-invalid="true"{% endif %}
@@ -91,330 +116,36 @@
             </label>
 
             {% if field.widget == "readonly" %}
-              <div class="ff-readonly" id="ff-{{ field.name }}">{{ field.value|ff_display }}</div>
-
+              {{ readonly_control(field) }}
             {% elif field.widget == "textarea" or field.widget == "json" %}
-              <textarea
-                class="ff-textarea {% if field.widget == 'json' %}ff-mono{% endif %}"
-                id="ff-{{ field.name }}"
-                name="{{ field.name }}"
-                rows="{{ 10 if field.widget == 'json' else 4 }}"
-                {% if field.required %}required{% endif %}
-                {% if field.errors %}aria-invalid="true"{% endif %}
-              >{{ field.raw }}</textarea>
-
-            {% elif field.widget == "point" %}
-              {# The pair of coordinates stays the control that holds and submits
-                 the value; the map only writes into it. Typing "41.2995,
-                 69.2401" still works, pasting from anywhere still works, and
-                 with script off or no tile URL configured this is exactly the
-                 text box it has always been. #}
-              <input
-                class="ff-input ff-mono"
-                id="ff-{{ field.name }}"
-                name="{{ field.name }}"
-                type="text"
-                value="{{ field.raw }}"
-                spellcheck="false"
-                placeholder="41.2995, 69.2401"
-                {% if field.required %}required{% endif %}
-                {% if field.errors %}aria-invalid="true"{% endif %}
-                {% if settings.ui.map_tile_url %}
-                  data-ff-map="{{ settings.ui.map_tile_url }}"
-                  data-ff-map-center="{{ settings.ui.map_center }}"
-                  {# Drawn on the map itself, where every other map puts its
-                     credit and where it stays attached to the tiles it is
-                     crediting. Under the field it read as help text for the
-                     input rather than as a notice about the pictures. #}
-                  data-ff-map-credit="{{ settings.ui.map_attribution }}"
-                {% endif %}
-              />
-
+              {{ textarea_control(field) }}
+            {% elif field.widget == "geometry" %}
+              {{ geometry_control(field, settings.ui.map_tile_url, settings.ui.map_center,
+                                   settings.ui.map_attribution) }}
             {% elif field.widget in ("file", "image") %}
-              {# A native file input cannot be prefilled -- browsers refuse, for
-                 good reason -- so a stored value is shown as a link (or a
-                 thumbnail, for an image) beside the input rather than inside
-                 it. Choosing a new file replaces it on save; the "Clear"
-                 checkbox removes it without replacing it, and only appears when
-                 there is something to remove.
-
-                 This is also the whole control with script off. With it, the
-                 uploader reads this block for the stored value and the clear
-                 checkbox, adopts both, and replaces the pair with a drop target
-                 that previews what is there and what is about to replace it. #}
-              {% if field.value %}
-                <div class="ff-file-current">
-                  {% if field.widget == "image" %}
-                    <img class="ff-file-current__thumb" src="{{ media_url }}/{{ field.value }}" alt="" />
-                  {% endif %}
-                  <a
-                    class="ff-file-current__link"
-                    href="{{ media_url }}/{{ field.value }}"
-                    target="_blank"
-                    rel="noopener"
-                  >{{ field.value.rsplit("/", 1)[-1] }}</a>
-                  <label class="ff-checkbox ff-file-current__clear">
-                    <input type="checkbox" name="{{ field.clear_name }}" value="1" />
-                    <span>{{ _("Clear") }}</span>
-                  </label>
-                </div>
-              {% endif %}
-              <input
-                class="ff-input"
-                id="ff-{{ field.name }}"
-                name="{{ field.name }}"
-                type="file"
-                accept="{{ 'image/*' if field.widget == 'image' else '' }}"
-                data-ff-file="{{ field.widget }}"
-                {# The server enforces this either way; saying it up front is the
-                   difference between a rejected upload and one nobody started. #}
-                data-ff-file-limit="{{ settings.media.upload_limit }}"
-                {% if field.errors %}aria-invalid="true"{% endif %}
-              />
-
+              {{ file_control(field, media_url, settings.media.upload_limit, _) }}
             {% elif field.widget == "color" %}
-              {# A swatch and the hex beside it, kept in step. The native picker
-                 alone cannot be typed into and cannot be read aloud; the text
-                 box alone cannot be pointed at. Both, bound together, is the
-                 only version that serves everyone. #}
-              <div class="ff-color" data-ff-color>
-                <input
-                  class="ff-color__swatch"
-                  type="color"
-                  value="{{ field.raw or "#000000" }}"
-                  aria-hidden="true"
-                  tabindex="-1"
-                />
-                <input
-                  class="ff-input ff-color__hex ff-mono"
-                  id="ff-{{ field.name }}"
-                  name="{{ field.name }}"
-                  type="text"
-                  value="{{ field.raw }}"
-                  placeholder="#000000"
-                  spellcheck="false"
-                  {% if field.errors %}aria-invalid="true"{% endif %}
-                />
-              </div>
-
+              {{ color_control(field) }}
             {% elif field.widget == "richtext" %}
-              {# The editor is the project's to choose. FastFort renders the
-                 textarea and marks it; `UISettings.richtext_url` names a script
-                 that upgrades it -- CKEditor, TinyMCE, whatever the project
-                 already licences. Without one this is a textarea, which is a
-                 working control rather than a broken editor. #}
-              <textarea
-                class="ff-textarea"
-                id="ff-{{ field.name }}"
-                name="{{ field.name }}"
-                rows="10"
-                data-ff-richtext
-                {% if field.required %}required{% endif %}
-                {% if field.errors %}aria-invalid="true"{% endif %}
-              >{{ field.raw }}</textarea>
-
+              {{ richtext_control(field) }}
             {% elif field.widget == "nullboolean" %}
-              {# Three states, because the column has three. A checkbox would
-                 turn "not answered yet" into "answered no" the first time
-                 anyone pressed Save. #}
-              <select
-                class="ff-select"
-                id="ff-{{ field.name }}"
-                name="{{ field.name }}"
-                data-ff-combo
-                data-ff-clearable="false"
-                {% if field.errors %}aria-invalid="true"{% endif %}
-              >
-                <option value="" {% if field.raw == "" %}selected{% endif %}>{{ _("Unknown") }}</option>
-                <option value="1" {% if field.raw == "1" %}selected{% endif %}>{{ _("Yes") }}</option>
-                <option value="0" {% if field.raw == "0" %}selected{% endif %}>{{ _("No") }}</option>
-              </select>
-
+              {{ nullboolean_control(field, _) }}
             {% elif field.widget == "checkbox" %}
-              <label class="ff-checkbox">
-                <input
-                  type="checkbox"
-                  id="ff-{{ field.name }}"
-                  name="{{ field.name }}"
-                  value="1"
-                  {% if field.value %}checked{% endif %}
-                />
-                <span>{{ field.help_text or _("Enabled") }}</span>
-              </label>
-
+              {{ checkbox_control(field, _) }}
             {% elif field.widget == "password" %}
-              {# Two boxes, both empty. The stored hash is never sent to the
-                 browser, so there is nothing to prefill and nothing to leak. #}
-              <input
-                class="ff-input"
-                id="ff-{{ field.name }}"
-                name="{{ field.name }}"
-                type="password"
-                autocomplete="new-password"
-                {% if field.errors %}aria-invalid="true"{% endif %}
-              />
-              <input
-                class="ff-input ff-mt-2"
-                name="{{ field.confirm_name }}"
-                type="password"
-                autocomplete="new-password"
-                placeholder="{{ _("Confirm {name}", name=_(field.label)|lower) }}"
-                aria-label="{{ _("Confirm {name}", name=_(field.label)|lower) }}"
-              />
-
+              {{ password_control(field, _) }}
             {% elif field.widget == "select" or field.widget == "relation" %}
-              <div class="ff-with-related">
-              {# A real <select>, upgraded in place to a searchable listbox.
-                 `data-ff-url` is set when the target table has more rows than
-                 can be sent to the browser, and the control then searches the
-                 server as you type instead of listing everything. #}
-              <select
-                class="ff-select"
-                id="ff-{{ field.name }}"
-                name="{{ field.name }}"
-                data-ff-combo
-                {# Relations always get a search box, whatever the count. The
-                   target table is the one that grows, and a picker that offers
-                   search only past some threshold is one people learn is not
-                   searchable. #}
-                {% if field.spec.is_relation %}data-ff-search="always"{% endif %}
-                data-ff-placeholder="{{ _("Choose…") }}"
-                data-ff-clearable="{{ "false" if field.required else "true" }}"
-                {% if field.remote %}data-ff-url="{{ autocomplete_url }}?field={{ field.name }}"{% endif %}
-                {% if field.errors %}aria-invalid="true"{% endif %}
-              >
-                {% if not field.required %}
-                  <option value="">{{ _("— none —") }}</option>
-                {% endif %}
-                {% for choice in field.choices %}
-                  <option
-                    value="{{ choice.value }}"
-                    {% if field.raw == choice.value|string %}selected{% endif %}
-                  >{{ choice.label }}</option>
-                {% endfor %}
-              </select>
-
-              {% if relation_links.get(field.name) %}
-                {# The buttons Django puts beside a foreign key. `add` opens the
-                   target's own form in a popup and drops the row it creates into
-                   this control; `change` and `view` open whatever is selected.
-                   Script-only: a popup that hands its result back has no
-                   meaning without one, and the picker works fine without them. #}
-                <div
-                  class="ff-related ff-js-only"
-                  data-ff-related="{{ field.name }}"
-                  data-ff-related-add="{{ relation_links[field.name].add }}"
-                  data-ff-related-base="{{ relation_links[field.name].base }}"
-                >
-                  <button
-                    class="ff-action"
-                    type="button"
-                    data-ff-related-action="change"
-                    data-ff-tip="{{ _("Edit") }}"
-                    disabled
-                  >{{ ff_icon("edit", size=15) }}</button>
-                  <button
-                    class="ff-action"
-                    type="button"
-                    data-ff-related-action="add"
-                    data-ff-tip="{{ _("Add") }}"
-                  >{{ ff_icon("plus", size=15) }}</button>
-                  <button
-                    class="ff-action"
-                    type="button"
-                    data-ff-related-action="view"
-                    data-ff-tip="{{ _("View") }}"
-                    data-ff-tip-align="end"
-                    disabled
-                  >{{ ff_icon("eye", size=15) }}</button>
-                </div>
-              {% endif %}
-              </div>
-
+              {{ select_control(field, autocomplete_url, relation_links, _) }}
             {% elif field.widget == "relations" %}
-              <div class="ff-with-related">
-              {# Many-to-many, drawn as removable chips. The native control this
-                 replaces asked people to hold Ctrl to attach three tags to a
-                 product, which is not a thing anyone should have to know. #}
-              <select
-                class="ff-select"
-                id="ff-{{ field.name }}"
-                name="{{ field.name }}[]"
-                multiple
-                size="{{ [field.choices|length, 6]|min if field.choices else 3 }}"
-                data-ff-combo
-                data-ff-search="always"
-                data-ff-placeholder="{{ _("Choose…") }}"
-                {% if field.remote %}data-ff-url="{{ autocomplete_url }}?field={{ field.name }}"{% endif %}
-              >
-                {% for choice in field.choices %}
-                  <option
-                    value="{{ choice.value }}"
-                    {% if choice.value|string in field.selected %}selected{% endif %}
-                  >{{ choice.label }}</option>
-                {% endfor %}
-              </select>
-
-              {% if relation_links.get(field.name) %}
-                {# The buttons Django puts beside a foreign key. `add` opens the
-                   target's own form in a popup and drops the row it creates into
-                   this control; `change` and `view` open whatever is selected.
-                   Script-only: a popup that hands its result back has no
-                   meaning without one, and the picker works fine without them. #}
-                <div
-                  class="ff-related ff-js-only"
-                  data-ff-related="{{ field.name }}"
-                  data-ff-related-add="{{ relation_links[field.name].add }}"
-                  data-ff-related-base="{{ relation_links[field.name].base }}"
-                >
-                  <button
-                    class="ff-action"
-                    type="button"
-                    data-ff-related-action="change"
-                    data-ff-tip="{{ _("Edit") }}"
-                    disabled
-                  >{{ ff_icon("edit", size=15) }}</button>
-                  <button
-                    class="ff-action"
-                    type="button"
-                    data-ff-related-action="add"
-                    data-ff-tip="{{ _("Add") }}"
-                  >{{ ff_icon("plus", size=15) }}</button>
-                  <button
-                    class="ff-action"
-                    type="button"
-                    data-ff-related-action="view"
-                    data-ff-tip="{{ _("View") }}"
-                    data-ff-tip-align="end"
-                    disabled
-                  >{{ ff_icon("eye", size=15) }}</button>
-                </div>
-              {% endif %}
-              </div>
-              <span class="ff-help ff-no-js">{{ _("Hold Ctrl (or Cmd) to select more than one.") }}</span>
-
+              {{ relations_control(field, autocomplete_url, relation_links, _) }}
+            {% elif field.widget == "tags" %}
+              {{ tags_control(field) }}
+            {% elif field.widget == "keyvalue" %}
+              {{ keyvalue_control(field) }}
+            {% elif field.widget == "range" %}
+              {{ range_control(field, input_types, _) }}
             {% else %}
-              <input
-                class="ff-input"
-                id="ff-{{ field.name }}"
-                name="{{ field.name }}"
-                type="{{ input_types[field.widget] }}"
-                value="{{ field.raw }}"
-                {# Upgraded in place to a calendar drawn in the page. The native
-                   input stays the element that holds and submits the value, so
-                   without script it is exactly the control it has always been --
-                   only the picker is replaced. #}
-                {% if field.widget in ("date", "datetime") %}data-ff-date{% endif %}
-                {# Likewise: split into days/hours/minutes/seconds boxes, which
-                   is the format the text box was asking people to type out. #}
-                {% if field.widget == "duration" %}data-ff-duration{% endif %}
-                {% if field.widget == "decimal" %}step="{{ field.spec.decimal_places|step }}"{% endif %}
-                {% if field.spec.max_length %}maxlength="{{ field.spec.max_length }}"{% endif %}
-                {% if field.spec.placeholder %}placeholder="{{ field.spec.placeholder }}"{% endif %}
-                {% if field.required %}required{% endif %}
-                {% if field.errors %}aria-invalid="true"{% endif %}
-                {% if field.widget == "password" %}autocomplete="new-password"{% endif %}
-              />
+              {{ generic_control(field, input_types) }}
             {% endif %}
 
             {% if field.help_text and field.widget != "checkbox" %}
