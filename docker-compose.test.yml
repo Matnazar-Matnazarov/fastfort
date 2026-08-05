@@ -10,7 +10,12 @@
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # PostGIS rather than plain PostgreSQL: a drop-in superset, and the only way
+    # the spatial filters get tested against a database rather than against a
+    # compiled SQL string. Tests that need it are marked `postgis` and skip
+    # themselves when `postgis_version()` does not answer, so a SQLite or MySQL
+    # run is unaffected and `make test` still needs no services at all.
+    image: postgis/postgis:16-3.4
     environment:
       POSTGRES_USER: fastfort
       POSTGRES_PASSWORD: fastfort

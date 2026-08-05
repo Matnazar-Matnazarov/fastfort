@@ -391,7 +391,7 @@ class ModelAdmin:
         field = self.spec.get(column)
         if field is not None and field.type is FieldType.GEOMETRY and value is not None:
             # Otherwise the cell is a WKB hex blob, which reads as corruption.
-            from .geo import summarise
+            from fastfort.spec.geo import summarise
 
             return summarise(value)
         if field is None or not field.is_relation:

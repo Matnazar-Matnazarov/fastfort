@@ -12,8 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from fastfort.admin import geo
-from fastfort.spec import FieldSpec, FieldType, GeometrySpec
+from fastfort.spec import FieldSpec, FieldType, GeometrySpec, geo
 
 # ---------------------------------------------------------------------------
 # Fixtures: a point in Tashkent (69.2401 E, 41.2995 N), and a handful of

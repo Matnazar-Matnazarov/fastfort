@@ -20,7 +20,7 @@ from sqlalchemy.orm import InstrumentedAttribute, joinedload, selectinload
 from fastfort.core.exceptions import ValidationError
 from fastfort.spec import FieldSpec, FieldType, Filter, FilterOperator, ListQuery, ModelSpec
 
-from .dialects import DialectProfile, icontains, order_term
+from .dialects import DialectProfile, icontains, order_term, spatial_condition
 
 __all__ = ["QueryBuilder"]
 
@@ -113,6 +113,20 @@ class QueryBuilder:
         for condition in query.filters:
             statement = self._join_for(statement, condition.field, joined)
             statement = statement.where(self._condition(condition))
+
+        for spatial in query.spatial:
+            # `None` where the database has no PostGIS. A saved link carrying a
+            # spatial filter is still a perfectly good request for a list page,
+            # so the condition is dropped rather than the page.
+            predicate = spatial_condition(
+                self._attribute(spatial.field),
+                spatial.operator.value,
+                spatial.geometry,
+                spatial.distance,
+                self.profile,
+            )
+            if predicate is not None:
+                statement = statement.where(predicate)
 
         if query.search and self.search_fields:
             clauses: list[sa.ColumnElement[bool]] = []

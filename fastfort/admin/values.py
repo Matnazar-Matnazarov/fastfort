@@ -26,9 +26,7 @@ import uuid
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from fastfort.spec import FieldSpec, FieldType
-
-from . import geo
+from fastfort.spec import FieldSpec, FieldType, geo
 
 __all__ = [
     "check_bounds",

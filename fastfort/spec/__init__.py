@@ -16,7 +16,15 @@ from .changes import Change, ChangeSet
 from .deletion import DeletionEffect, DeletionPlan, RelatedRows
 from .fields import Choice, FieldSpec, FieldType, GeometrySpec, RangeSpec, RelationSpec
 from .model import ModelSpec
-from .query import Filter, FilterOperator, ListQuery, Page, SortSpec
+from .query import (
+    Filter,
+    FilterOperator,
+    ListQuery,
+    Page,
+    SortSpec,
+    SpatialFilter,
+    SpatialOperator,
+)
 
 __all__ = [
     "Change",
@@ -36,4 +44,6 @@ __all__ = [
     "RelatedRows",
     "RelationSpec",
     "SortSpec",
+    "SpatialFilter",
+    "SpatialOperator",
 ]

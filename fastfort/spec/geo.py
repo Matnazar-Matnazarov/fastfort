@@ -7,6 +7,16 @@ the write path produces EWKT *text*, which every spatial backend accepts on
 insert, so nothing here needs to construct a real geometry object to hand one
 value to the ORM.
 
+In `spec/` rather than in `admin/`, where it started, because three layers need
+it and only one of them is allowed to import the others. The form parses what
+somebody typed; the query builder turns a spatial filter's geometry into the
+argument of an `ST_` function; and `ListQuery.from_params` has to know a
+geometry is well formed before either of them runs, because it is the one place
+raw query-string input becomes a query. `spec/` is the layer all three already
+depend on, and a coordinate codec is exactly the kind of pure data it holds --
+it reaches for no web framework and no ORM, which is what the architecture test
+enforces about this package.
+
 Replaces the point-only `_parse_point`/`_point_text` that used to live in
 `forms.py`, extended from one geometry kind to all seven WKB knows how to
 carry: `POINT`, `LINESTRING`, `POLYGON`, `MULTIPOINT`, `MULTILINESTRING`,
@@ -23,7 +33,7 @@ import re
 import struct
 from typing import Any
 
-from fastfort.spec import FieldSpec
+from .fields import FieldSpec
 
 __all__ = ["decode", "parse", "render", "summarise", "to_ewkt"]
 
