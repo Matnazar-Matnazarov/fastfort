@@ -28,7 +28,8 @@ from tests.conftest import sign_in
 from tests.orm.models import Product, StaffUser
 
 from fastfort import FastFort, FastFortSettings, admin
-from fastfort.admin.forms import _duration_text, _parse_duration
+from fastfort.admin.values import duration_text as _duration_text
+from fastfort.admin.values import parse_duration as _parse_duration
 from fastfort.orm.sqlalchemy import SQLAlchemyBackend
 
 SECRET = "n7Qw2xLp9vRt4KjM8sYzB3cF6hVdA1gE"

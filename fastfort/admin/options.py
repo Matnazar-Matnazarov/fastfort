@@ -16,7 +16,7 @@ from fastfort.core.exceptions import ConfigurationError
 from fastfort.spec import FieldType, SortSpec
 from fastfort.ui.icons import icon_names, is_icon
 
-from .forms import WIDGET_NAMES
+from .widgets import WIDGET_NAMES
 
 if TYPE_CHECKING:
     from fastfort.spec import ModelSpec
@@ -391,9 +391,9 @@ class ModelAdmin:
         field = self.spec.get(column)
         if field is not None and field.type is FieldType.GEOMETRY and value is not None:
             # Otherwise the cell is a WKB hex blob, which reads as corruption.
-            from .forms import _point_text
+            from .geo import summarise
 
-            return _point_text(value)
+            return summarise(value)
         if field is None or not field.is_relation:
             return value
         if field.type.is_multi_valued:

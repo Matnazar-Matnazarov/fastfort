@@ -216,9 +216,26 @@ def test_read_only_types_override_the_widget(exotic: ModelSpec, field: str) -> N
     assert exotic.field(field).widget == "readonly"
 
 
+@pytest.mark.parametrize("field", ["blob", "search", "legacy_id"])
+def test_read_only_types_are_also_not_editable(exotic: ModelSpec, field: str) -> None:
+    """`widget="readonly"` alone used to leave `editable=True` -- harmless for
+    a browser, since no `<input>` is ever drawn for a readonly widget, but
+    `FieldSpec.editable` is documented as *the* mass-assignment boundary with
+    "deliberately no second flag that could disagree with it" (`CLAUDE.md`),
+    and `_writable()` only ever checks that flag. A hand-crafted POST for one
+    of these field names reached `SQLAlchemyAdapter._apply` regardless of
+    what the template drew -- not a data breach (the real column type
+    rejects the string the write path hands it), but exactly the "control
+    that 500s on save" the column-types phase's write path exists to avoid.
+    """
+    assert not exotic.field(field).editable
+    assert not exotic.field(field).required
+
+
 def test_a_raster_is_binary_and_read_only(spatial: ModelSpec) -> None:
     assert spatial.field("heatmap").type is FieldType.BINARY
     assert spatial.field("heatmap").widget == "readonly"
+    assert not spatial.field("heatmap").editable
 
 
 def test_a_geometry_column_carries_its_shape(spatial: ModelSpec) -> None:

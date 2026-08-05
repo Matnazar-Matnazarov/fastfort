@@ -190,6 +190,18 @@ def _column_field(mapper: Mapper[Any], name: str, column: sa.Column[Any]) -> Fie
     if widget is None and _is_long_text(field_type, max_length):
         widget = "textarea"
 
+    # A classification that hands back `widget="readonly"` (a raster, a search
+    # vector, an OID -- see `types.py`) is saying the column cannot be written
+    # back at all, not just that it looks best undrawn. Without folding that
+    # into `generated` too, `editable` stayed `True` for it: `_writable()` is
+    # documented as *the* mass-assignment boundary with "deliberately no
+    # second flag that could disagree with it" (`CLAUDE.md`), so a form field
+    # nobody can see was still one a hand-crafted POST could reach -- not a
+    # data breach (the column's real type rejects the string `values.py`
+    # would hand it), but exactly the "control that 500s on save" Phase 2's
+    # write path exists to avoid.
+    generated = generated or widget == "readonly"
+
     return FieldSpec(
         name=name,
         type=field_type,

@@ -12,13 +12,14 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql.ranges import MultiRange, Range
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
 from fastfort.core.exceptions import AdapterError, ObjectNotFound, ValidationError
 from fastfort.core.registry import default_model_key
 from fastfort.orm.base import PrimaryKey, RelatedChoice
-from fastfort.spec import DeletionPlan, ListQuery, ModelSpec, Page
+from fastfort.spec import DeletionPlan, FieldSpec, FieldType, ListQuery, ModelSpec, Page
 
 from .deletion import collect_deletion
 from .dialects import DialectProfile, icontains
@@ -248,7 +249,7 @@ class SQLAlchemyAdapter:
                     obj, field.name, value, is_list=field.type.is_multi_valued
                 )
             else:
-                setattr(obj, name, value)
+                setattr(obj, name, _coerce_for_driver(field, value))
 
     async def _assign_relation(self, obj: Any, name: str, value: Any, *, is_list: bool) -> None:
         """Set a relation from either model instances or bare identities.
@@ -404,3 +405,75 @@ def _coerce_key(target: type[Any], value: Any) -> Any:
         except ValueError:
             return value
     return value
+
+
+# ---------------------------------------------------------------------------
+# Driver-specific write conversions.
+#
+# `fastfort/admin/values.py` (Phase 2, the column-types phase) produces plain,
+# portable Python values for every field type -- it may not import SQLAlchemy
+# at all, let alone a driver. This is the one place allowed to know that the
+# project's asyncpg driver disagrees with some of those plain values, verified
+# against a live PostGIS sandbox rather than assumed (see the phase report for
+# the full session):
+#
+#   - `inet`/`cidr`/`macaddr` take a plain `str` outright, and so do
+#     SQLAlchemy's own `postgresql.HSTORE` (a `dict`) and `postgresql.MONEY`
+#     (a `str` -- a `Decimal` is refused). None of those need converting here.
+#   - `bit`/`varbit` refuse a `str` of "0"/"1" characters -- asyncpg's codec
+#     wants its own `BitString` instead.
+#   - `int4range`/`daterange`/etc. refuse a plain tuple or a bare
+#     `sqlalchemy.dialects.postgresql.Range` sent through `text()` with no
+#     type info, but *do* accept one assigned to a properly-typed mapped
+#     column, because the asyncpg dialect's own bind processor converts it --
+#     so the fix is building that `Range`/`MultiRange` here, not an asyncpg
+#     type. `MULTIRANGE` is the same story, one level up.
+# ---------------------------------------------------------------------------
+
+
+def _coerce_for_driver(field: FieldSpec, value: Any) -> Any:
+    """The portable value `values.py` produced, turned into whatever this
+    project's driver actually accepts for `field`'s type -- a no-op for every
+    type except the three above.
+    """
+    if value is None:
+        return None
+    if field.type is FieldType.BITS:
+        return _bits_for_driver(value)
+    if field.type is FieldType.RANGE:
+        return _range_for_driver(value)
+    if field.type is FieldType.MULTIRANGE:
+        return _multirange_for_driver(value)
+    return value
+
+
+def _bits_for_driver(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value  # already a driver object -- a programmatic caller's, not a form's
+    try:
+        import asyncpg  # type: ignore[import-untyped]
+    except ImportError:
+        # No asyncpg installed: `bit`/`varbit` are PostgreSQL-only types to
+        # begin with, so a project without it could not have reached this
+        # column either. Left as-is rather than raising here, so the error the
+        # person sees is the driver's own, not a confusing one from this shim.
+        return value
+    return asyncpg.BitString(value)
+
+
+def _range_for_driver(value: Any) -> Any:
+    """`(lower, upper, bounds)` from `values.py` into a real `Range` --
+    `bounds == "empty"` is the one shape that tuple cannot otherwise express.
+    """
+    if not isinstance(value, tuple) or len(value) != 3:
+        return value
+    lower, upper, bounds = value
+    if bounds == "empty":
+        return Range(empty=True)
+    return Range(lower, upper, bounds=bounds)
+
+
+def _multirange_for_driver(value: Any) -> Any:
+    if not isinstance(value, list | tuple):
+        return value
+    return MultiRange(_range_for_driver(item) for item in value)

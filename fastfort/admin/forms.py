@@ -10,22 +10,38 @@ like.
 
 *Nothing is coerced silently.* A value that cannot be parsed into the column's
 type is an error shown against that field, not a `None` written to the database.
+
+Split into four modules once the column-types phase pushed this file past what
+one should carry: this one keeps `Form`/`FormField`/`bind()`/`commit_files()` --
+the two rules above and the state machine that enforces them. `widgets.py`
+picks which control renders a field; `values.py` parses and renders the text
+that control holds; `geo.py` is the geometry codec `values.py` calls into.
+`widget_for` and `WIDGET_NAMES` are re-exported below so `fastfort.admin.forms`
+stays a working import path -- this is a published library and those two names
+are semi-public.
 """
 
 from __future__ import annotations
 
-import datetime as dt
-import json
-import uuid
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, Any
 
 from fastfort.auth.passwords import hash_password, validate_password
 from fastfort.spec import Choice, FieldSpec, FieldType
 
 from .files import UploadedFile, delete_upload, save_upload, stored_path
+from .values import _identity, check_bounds, parse_value, render_value
+from .widgets import (
+    CLEAR_SUFFIX,
+    CONFIRM_SUFFIX,
+    FILE_WIDGETS,
+    READONLY_WIDGET,
+    UPGRADED_WIDGETS,
+    WIDGET_NAMES,
+    format_help,
+    widget_for,
+)
 
 if TYPE_CHECKING:
     from fastfort.core.settings import MediaSettings
@@ -34,90 +50,6 @@ if TYPE_CHECKING:
     from .options import ModelAdmin
 
 __all__ = ["WIDGET_NAMES", "Form", "FormField", "widget_for"]
-
-#: Which control renders each field type. The template switches on this name, so
-#: adding a widget is a template branch plus one entry here.
-_WIDGETS: dict[FieldType, str] = {
-    FieldType.STRING: "text",
-    FieldType.TEXT: "textarea",
-    FieldType.INTEGER: "number",
-    FieldType.BIGINT: "number",
-    FieldType.FLOAT: "number",
-    FieldType.DECIMAL: "decimal",
-    FieldType.BOOLEAN: "checkbox",
-    FieldType.DATE: "date",
-    FieldType.DATETIME: "datetime",
-    FieldType.TIME: "time",
-    FieldType.DURATION: "duration",
-    FieldType.ARRAY: "list",
-    FieldType.GEOMETRY: "point",
-    FieldType.UUID: "text",
-    FieldType.JSON: "json",
-    FieldType.ENUM: "select",
-    FieldType.EMAIL: "email",
-    FieldType.URL: "url",
-    FieldType.PASSWORD: "password",
-    FieldType.FOREIGN_KEY: "relation",
-    FieldType.ONE_TO_ONE: "relation",
-    FieldType.MANY_TO_MANY: "relations",
-}
-
-#: Every control the form template can render. `ModelAdmin.formfield_overrides`
-#: is checked against this at declaration time, so a typo is a start-up error
-#: rather than a field that quietly renders read-only.
-WIDGET_NAMES: frozenset[str] = frozenset(
-    {
-        *_WIDGETS.values(),
-        "nullboolean",
-        "color",
-        "richtext",
-        "readonly",
-        "file",
-        "image",
-    }
-)
-
-#: Widgets whose submitted value is a file rather than text.
-FILE_WIDGETS = frozenset({"file", "image"})
-
-#: A field type with no widget is shown but never written, so an exotic column
-#: degrades to a read-only row instead of blocking the whole form.
-READONLY_WIDGET = "readonly"
-
-#: Suffix of the confirmation input paired with a password control.
-CONFIRM_SUFFIX = "__confirm"
-
-#: Suffix of the checkbox that removes a file or image without replacing it.
-CLEAR_SUFFIX = "__clear"
-
-#: Help text for the controls the browser has no native input for. Both are a
-#: plain text box, so the box has to state the shape it accepts.
-_FORMAT_HELP = {
-    "duration": "Length of time, as HH:MM:SS — or 2d HH:MM:SS for more than a day.",
-    "list": "Separate values with a comma.",
-    "point": "Latitude and longitude, as 41.2995, 69.2401.",
-}
-
-#: Widgets whose format hint is script-only, because script replaces the box
-#: that needed explaining with a control that cannot be filled in wrongly.
-#: Telling somebody to type `HH:MM:SS` next to four labelled number boxes is
-#: instructions for a control that is no longer on the page.
-_UPGRADED_WIDGETS = frozenset({"duration"})
-
-
-def widget_for(spec: FieldSpec) -> str:
-    """The control name for a field, honouring an explicit override."""
-    if spec.widget:
-        return spec.widget
-    if spec.choices and spec.type is not FieldType.BOOLEAN:
-        return "select"
-    if spec.type is FieldType.BOOLEAN and spec.nullable:
-        # A checkbox has two states and the column has three. Rendered as one,
-        # a NULL ("not checked yet") became False ("checked, and it failed") the
-        # first time anyone opened the form and pressed Save -- a silent change
-        # to data nobody asked to change.
-        return "nullboolean"
-    return _WIDGETS.get(spec.type, READONLY_WIDGET)
 
 
 @dataclass(slots=True)
@@ -165,7 +97,7 @@ class FormField:
     @property
     def help_is_for_no_script(self) -> bool:
         """Whether the help only applies when the control has not been upgraded."""
-        return self.help_override is not None and self.widget in _UPGRADED_WIDGETS
+        return self.help_override is not None and self.widget in UPGRADED_WIDGETS
 
     @property
     def confirm_name(self) -> str:
@@ -276,15 +208,15 @@ class Form:
             spec=spec,
             widget=widget,
             value=value,
-            raw=_render(value, spec),
+            raw=render_value(value, spec),
             choices=choices,
             selected=_selection(value, spec),
             remote=remote,
-            # Two controls are a plain text box because the browser has nothing
+            # Some controls are a plain text box because the browser has nothing
             # better, so the box has to say what shape it wants. Without this a
             # duration field is an empty rectangle and the only way to learn the
             # format is to guess wrong and read the error.
-            help_override=_FORMAT_HELP.get(widget) if not spec.help_text else None,
+            help_override=format_help(spec, widget) if not spec.help_text else None,
         )
 
     # -- binding ------------------------------------------------------------
@@ -358,12 +290,12 @@ class Form:
                 continue
 
             try:
-                parsed = _parse(raw, spec)
+                parsed = parse_value(raw, spec)
             except ValueError as exc:
                 form_field.errors.append(str(exc))
                 continue
 
-            error = _check_bounds(parsed, spec)
+            error = check_bounds(parsed, spec)
             if error:
                 form_field.errors.append(error)
                 continue
@@ -523,267 +455,9 @@ class Form:
 
 
 # ---------------------------------------------------------------------------
-# Parsing
+# Relation helpers -- only `Form` itself needs these, unlike `values.py`'s
+# scalar parse/render pair, which `options.py` and the tests reach for too.
 # ---------------------------------------------------------------------------
-
-
-def _parse(raw: str, spec: FieldSpec) -> Any:
-    """Turn a submitted string into the column's Python type.
-
-    Messages name what was expected, because "invalid value" tells the person
-    filling the form nothing they can act on.
-    """
-    text = raw.strip()
-
-    if spec.is_relation:
-        # The identity of the related row, as the dropdown submitted it. The
-        # adapter resolves it to an object and reports a missing target itself.
-        return text
-
-    if spec.type in {FieldType.INTEGER, FieldType.BIGINT}:
-        try:
-            return int(text)
-        except ValueError:
-            raise ValueError("Enter a whole number.") from None
-
-    if spec.type is FieldType.FLOAT:
-        try:
-            return float(text)
-        except ValueError:
-            raise ValueError("Enter a number.") from None
-
-    if spec.type is FieldType.DECIMAL:
-        try:
-            return Decimal(text)
-        except InvalidOperation:
-            raise ValueError("Enter a number, for example 1234.56.") from None
-
-    if spec.type is FieldType.DATE:
-        try:
-            return dt.date.fromisoformat(text)
-        except ValueError:
-            raise ValueError("Enter a date as YYYY-MM-DD.") from None
-
-    if spec.type is FieldType.DATETIME:
-        try:
-            parsed = dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
-        except ValueError:
-            raise ValueError("Enter a date and time as YYYY-MM-DD HH:MM.") from None
-        # A naive value from a datetime-local input is read as UTC, so the column
-        # never receives a mix of aware and naive values.
-        return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.UTC)
-
-    if spec.type is FieldType.TIME:
-        try:
-            return dt.time.fromisoformat(text)
-        except ValueError:
-            raise ValueError("Enter a time as HH:MM.") from None
-
-    if spec.type is FieldType.DURATION:
-        return _parse_duration(text)
-
-    if spec.type is FieldType.GEOMETRY:
-        return _parse_point(text)
-
-    if spec.type is FieldType.ARRAY:
-        # Comma-separated, which is what people type and what the read side
-        # renders. Blank entries are dropped rather than stored as empty
-        # strings: "a, b," is a typo, not a three-element list.
-        return [part.strip() for part in text.split(",") if part.strip()]
-
-    if spec.type is FieldType.UUID:
-        try:
-            return uuid.UUID(text)
-        except ValueError:
-            raise ValueError("Enter a valid UUID.") from None
-
-    if spec.type is FieldType.JSON:
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"Enter valid JSON ({exc.msg} at position {exc.pos}).") from None
-
-    if spec.type is FieldType.EMAIL and "@" not in text:
-        raise ValueError("Enter an email address.")
-
-    if spec.choices and not any(str(choice.value) == text for choice in spec.choices):
-        allowed = ", ".join(str(choice.value) for choice in spec.choices)
-        raise ValueError(f"Choose one of: {allowed}.")
-
-    return raw if spec.type is FieldType.TEXT else text
-
-
-def _parse_point(text: str) -> str:
-    """`lat, lng` into the EWKT a spatial column accepts.
-
-    Returned as text rather than as a geometry object: constructing one would
-    mean importing GeoAlchemy2, and the write path must not depend on a package
-    the project may not have installed. Every spatial backend accepts EWKT, so
-    the string is the portable answer.
-
-    Latitude first, because that is the order every map, phone and street sign
-    uses -- even though WKT itself is longitude first, which is exactly the
-    trap this converts away from.
-    """
-    parts = [part.strip() for part in text.replace(";", ",").split(",") if part.strip()]
-    if len(parts) != 2:
-        raise ValueError("Enter a latitude and a longitude, as 41.2995, 69.2401.")
-    try:
-        latitude, longitude = (float(part) for part in parts)
-    except ValueError:
-        raise ValueError("Enter a latitude and a longitude, as 41.2995, 69.2401.") from None
-
-    if not -90 <= latitude <= 90:
-        raise ValueError("Latitude runs from -90 to 90.")
-    if not -180 <= longitude <= 180:
-        raise ValueError("Longitude runs from -180 to 180.")
-    return f"SRID=4326;POINT({longitude} {latitude})"
-
-
-def _point_text(value: Any) -> str:
-    """`lat, lng` from whatever a spatial column handed back.
-
-    The value is normally a GeoAlchemy2 `WKBElement`, whose `str` is the raw
-    hex -- which is what the read-only fallback used to print at people. The
-    hex is decoded here rather than by importing Shapely: a POINT is a fixed
-    21-byte layout, and it is the only geometry an admin form can meaningfully
-    edit anyway. Anything else falls back to what the value says it is.
-    """
-    import binascii
-    import struct
-
-    raw = getattr(value, "desc", None) or str(value)
-    try:
-        data = binascii.unhexlify(raw)
-    except (binascii.Error, ValueError, TypeError):
-        return str(value)
-
-    if len(data) < 21:
-        return str(value)
-
-    order = "<" if data[0] == 1 else ">"
-    (kind,) = struct.unpack(f"{order}I", data[1:5])
-    # The high bit of the type word marks an EWKB SRID prefix, which shifts the
-    # coordinates along by four bytes.
-    offset = 9 if kind & 0x20000000 else 5
-    if kind & 0xFF != 1 or len(data) < offset + 16:
-        return str(value)
-
-    longitude, latitude = struct.unpack(f"{order}dd", data[offset : offset + 16])
-    return f"{latitude:g}, {longitude:g}"
-
-
-def _duration_text(value: dt.timedelta) -> str:
-    """A duration in exactly the shape `_parse_duration` accepts.
-
-    `str(timedelta)` renders "2 days, 4:15:00", which that parser rejects -- so
-    opening a row with a multi-day duration and pressing Save produced a
-    validation error on a field nobody had touched.
-    """
-    seconds = value.total_seconds()
-    sign = "-" if seconds < 0 else ""
-    seconds = abs(seconds)
-
-    days, seconds = divmod(seconds, 86_400)
-    hours, seconds = divmod(seconds, 3_600)
-    minutes, seconds = divmod(seconds, 60)
-    # `%g` so a whole number of seconds does not render as "05.000000".
-    clock = f"{int(hours):02d}:{int(minutes):02d}:{seconds:09.6f}".rstrip("0").rstrip(".")
-    if len(clock) == 6:  # HH:MM: with the seconds stripped to nothing
-        clock += "00"
-    return f"{sign}{int(days)}d {clock}" if days else f"{sign}{clock}"
-
-
-def _parse_duration(text: str) -> dt.timedelta:
-    """A timedelta from `HH:MM:SS`, `MM:SS`, or `Nd HH:MM:SS`.
-
-    There is no HTML control for a duration, so this is a text box and the shape
-    it accepts has to be the one people already write. Seconds may carry a
-    fraction, because that is what `str(timedelta)` prints and round-tripping
-    the rendered value is the least surprising behaviour.
-    """
-    days = 0
-    remainder = text
-    if "d" in remainder:
-        head, _, remainder = remainder.partition("d")
-        try:
-            days = int(head.strip())
-        except ValueError:
-            raise ValueError("Enter a duration as HH:MM:SS, or 2d HH:MM:SS.") from None
-
-    parts = remainder.strip().split(":") if remainder.strip() else ["0"]
-    if len(parts) > 3:
-        raise ValueError("Enter a duration as HH:MM:SS, or 2d HH:MM:SS.")
-
-    try:
-        numbers = [float(part) for part in parts]
-    except ValueError:
-        raise ValueError("Enter a duration as HH:MM:SS, or 2d HH:MM:SS.") from None
-
-    # Right-aligned, so "90" is ninety seconds and "1:30" is a minute and a half.
-    while len(numbers) < 3:
-        numbers.insert(0, 0.0)
-    hours, minutes, seconds = numbers
-    return dt.timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
-
-
-def _check_bounds(value: Any, spec: FieldSpec) -> str | None:
-    """Range and length checks the database would otherwise reject on write.
-
-    Caught here so the person sees a field-level message instead of a 500 from a
-    constraint violation.
-    """
-    if spec.max_length is not None and isinstance(value, str) and len(value) > spec.max_length:
-        return f"Use at most {spec.max_length} characters (this is {len(value)})."
-    if isinstance(value, int | float | Decimal):
-        as_decimal = Decimal(str(value))
-        if spec.min_value is not None and as_decimal < spec.min_value:
-            return f"Must be at least {spec.min_value}."
-        if spec.max_value is not None and as_decimal > spec.max_value:
-            return f"Must be at most {spec.max_value}."
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Rendering
-# ---------------------------------------------------------------------------
-
-
-def _boolean_raw(value: Any) -> str:
-    """The submitted form of a three-state boolean."""
-    if value is None:
-        return ""
-    return "1" if value else "0"
-
-
-def _render(value: Any, spec: FieldSpec) -> str:
-    """The string a control shows for a value.
-
-    A sensitive field renders empty: echoing a stored secret back into a form is
-    how it ends up in a browser cache or a screenshot.
-    """
-    if spec.type is FieldType.BOOLEAN and spec.nullable:
-        return _boolean_raw(value)
-    if spec.sensitive or value is None:
-        return ""
-    if spec.is_relation:
-        return str(_identity(value))
-    if spec.type is FieldType.DATETIME and isinstance(value, dt.datetime):
-        # datetime-local wants exactly this shape and rejects an offset.
-        return value.strftime("%Y-%m-%dT%H:%M")
-    if spec.type is FieldType.DATE and isinstance(value, dt.date):
-        return value.isoformat()
-    if spec.type is FieldType.TIME and isinstance(value, dt.time):
-        return value.strftime("%H:%M")
-    if spec.type is FieldType.JSON:
-        return json.dumps(value, indent=2, ensure_ascii=False, default=str)
-    if spec.type is FieldType.DURATION and isinstance(value, dt.timedelta):
-        return _duration_text(value)
-    if spec.type is FieldType.ARRAY and isinstance(value, list | tuple):
-        return ", ".join(str(item) for item in value)
-    if spec.type is FieldType.GEOMETRY:
-        return _point_text(value)
-    return str(value)
 
 
 def _current_choices(value: Any) -> tuple[Choice, ...]:
@@ -805,12 +479,3 @@ def _selection(value: Any, spec: FieldSpec) -> tuple[str, ...]:
     if not spec.type.is_multi_valued or value is None:
         return ()
     return tuple(str(_identity(item)) for item in value)
-
-
-def _identity(obj: Any) -> Any:
-    """A related object's primary key, or the value itself if it is already one."""
-    for attribute in ("id", "pk"):
-        found = getattr(obj, attribute, None)
-        if found is not None:
-            return found
-    return obj
