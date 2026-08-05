@@ -7,6 +7,7 @@ that fails halfway therefore leaves nothing behind.
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
@@ -25,7 +26,7 @@ from .deletion import collect_deletion
 from .dialects import DialectProfile, icontains
 from .query import QueryBuilder
 
-__all__ = ["SQLAlchemyAdapter", "constraint_message"]
+__all__ = ["SQLAlchemyAdapter", "check_constraint_message", "constraint_message"]
 
 #: Rows touched per statement in a bulk operation. Bounded so that an action over
 #: a large selection cannot pull the whole table into memory.
@@ -182,7 +183,7 @@ class SQLAlchemyAdapter:
         try:
             await self.session.flush()
         except sa.exc.IntegrityError as exc:
-            raise AdapterError(constraint_message(exc)) from exc
+            raise AdapterError(constraint_message(exc, self._spec)) from exc
 
     async def bulk_update(self, query: ListQuery, data: Mapping[str, Any]) -> int:
         writable = self._writable(data)
@@ -308,14 +309,70 @@ class SQLAlchemyAdapter:
         return cast("InstrumentedAttribute[Any]", getattr(self.model, name))
 
 
-def constraint_message(error: sa.exc.IntegrityError) -> str:
+#: A failed CHECK, as each driver spells it. PostgreSQL and MySQL both name the
+#: constraint; SQLite names the table and the constraint together.
+_CHECK_FAILURE = re.compile(
+    r"(?:violates check constraint|CHECK constraint failed|Check constraint)"
+    # PostgreSQL quotes with ", MySQL with ', SQLite with neither.
+    r"[\"':\s]*(?P<name>[\w.]+)",
+    re.IGNORECASE,
+)
+
+
+def check_constraint_message(error: sa.exc.IntegrityError, spec: ModelSpec | None) -> str | None:
+    """A failed CHECK constraint, said in words, or `None` if it is not one.
+
+    The database's own sentence is accurate and unusable: "new row for relation
+    "everything" violates check constraint "everything_rating_check"" tells
+    somebody filling in a form nothing they can act on, and the constraint name
+    is the only part of it that means anything.
+
+    So the name is matched back against the fields whose bounds were read off
+    that same constraint at introspection time -- `age >= 0` became
+    `min_value=0` on the spec, and this turns it back into "Age must be at least
+    0". Only when the name contains the field's own name, which is the
+    convention every one of the three databases follows for an auto-named
+    constraint and the only link between the two that exists at all.
+    """
+    if spec is None:
+        return None
+    text = str(getattr(error, "orig", error))
+    match = _CHECK_FAILURE.search(text)
+    if match is None:
+        return None
+
+    name = match["name"].lower()
+    for field in spec:
+        if field.name not in name:
+            continue
+        if field.min_value is not None and field.max_value is not None:
+            return f"{field.label} must be between {field.min_value} and {field.max_value}."
+        if field.min_value is not None:
+            return f"{field.label} must be at least {field.min_value}."
+        if field.max_value is not None:
+            return f"{field.label} must be at most {field.max_value}."
+        # The constraint names the field but says something this layer could not
+        # read -- a regular expression, a comparison against another column. The
+        # field is still worth naming, because "which box" is most of the
+        # question.
+        return f"{field.label} is not allowed to hold that value."
+    return None
+
+
+def constraint_message(error: sa.exc.IntegrityError, spec: ModelSpec | None = None) -> str:
     """What to tell someone whose save the database refused.
 
-    The driver's text names the constraint and often the column, which is more
-    use than "integrity error" -- but it also carries the whole failing row,
-    which can be a screenful and may contain data the person should not see
-    echoed back. Only the first line is kept.
+    A failed CHECK gets said in words where the spec can say them; see
+    `check_constraint_message`. Everything else falls back to the driver's own
+    text, which names the constraint and often the column -- more use than
+    "integrity error", but it also carries the whole failing row, which can be a
+    screenful and may contain data the person should not see echoed back. Only
+    the first line is kept.
     """
+    readable = check_constraint_message(error, spec)
+    if readable is not None:
+        return readable
+
     detail = str(getattr(error, "orig", error)).strip().splitlines()
     first = detail[0].strip() if detail else ""
     # asyncpg stringifies as "<class 'asyncpg.exceptions.X'>: the real message".

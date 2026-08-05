@@ -354,10 +354,38 @@ def _relation_type(rel: RelationshipProperty[Any]) -> FieldType:
     if rel.direction is MANYTOMANY:
         return FieldType.MANY_TO_MANY
     if rel.direction is MANYTOONE:
-        return FieldType.FOREIGN_KEY
+        # A unique foreign key is a one-to-one, whatever SQLAlchemy calls the
+        # direction. The parent side already reports ONETOMANY-not-uselist as
+        # one, so without this the same relationship was two different kinds
+        # depending on which model's page you were looking at.
+        return FieldType.ONE_TO_ONE if _is_unique(rel) else FieldType.FOREIGN_KEY
     if rel.direction is ONETOMANY:
         return FieldType.REVERSE_FK if rel.uselist else FieldType.ONE_TO_ONE
     return FieldType.UNKNOWN
+
+
+def _is_unique(rel: RelationshipProperty[Any]) -> bool:
+    """Whether every local column behind a to-one relation is unique.
+
+    Read from the columns and from the table's own UNIQUE constraints, because
+    `Column(unique=True)` and `UniqueConstraint(...)` are the same statement
+    said two ways and a project picks whichever suits. A composite key counts
+    only when one constraint covers all of it -- two separately unique columns
+    do not make the pair unique.
+    """
+    local = list(rel.local_columns)
+    if not local:
+        return False
+    if all(column.unique or column.primary_key for column in local):
+        return True
+
+    names = {column.name for column in local}
+    table = local[0].table
+    return any(
+        isinstance(constraint, sa.UniqueConstraint)
+        and {column.name for column in constraint.columns} == names
+        for constraint in getattr(table, "constraints", ())
+    )
 
 
 # ---------------------------------------------------------------------------

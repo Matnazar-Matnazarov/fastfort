@@ -407,3 +407,66 @@ def test_an_empty_mapping_reads_as_missing_rather_than_as_nothing() -> None:
     from fastfort.ui.renderer import EMPTY, display_value
 
     assert display_value({}) == EMPTY
+
+
+# ---------------------------------------------------------------------------
+# What the database says, said in words
+# ---------------------------------------------------------------------------
+
+
+def constraint_error(text: str) -> object:
+    """An IntegrityError shaped the way a driver hands one over."""
+    import sqlalchemy as sa
+
+    return sa.exc.IntegrityError("INSERT ...", {}, Exception(text))
+
+
+@pytest.mark.parametrize(
+    "reported",
+    [
+        # PostgreSQL, SQLite and MySQL each spell it differently, and each quotes
+        # the constraint name differently or not at all.
+        'new row for relation "exotic_column" violates check constraint '
+        '"exotic_column_rating_check"',
+        "CHECK constraint failed: exotic_column_rating_check",
+        "Check constraint 'exotic_column_rating_check' is violated.",
+    ],
+)
+def test_a_failed_check_constraint_names_the_field_and_the_rule(reported: str) -> None:
+    """The database's own sentence is accurate and unusable. "violates check
+    constraint "exotic_column_rating_check"" tells somebody filling in a form
+    nothing they can act on, and the constraint name is the only part of it that
+    means anything -- so it is matched back to the field whose bounds were read
+    off that same constraint at introspection time."""
+    from tests.orm.exotic_models import ExoticColumn
+
+    from fastfort.orm.sqlalchemy import introspect_model
+    from fastfort.orm.sqlalchemy.adapter import constraint_message
+
+    spec = introspect_model(ExoticColumn, key="lab.exotic")
+    assert constraint_message(constraint_error(reported), spec) == "Rating must be between 1 and 5."
+
+
+def test_a_violation_that_is_not_a_check_keeps_the_driver_wording() -> None:
+    """A unique index has no bound on the spec to turn back into a sentence, and
+    the driver's own line does name the constraint -- which is more use than a
+    generic message would be."""
+    from fastfort.orm.sqlalchemy.adapter import constraint_message
+
+    reported = 'duplicate key value violates unique constraint "users_email_key"'
+    assert constraint_message(constraint_error(reported), None) == reported
+
+
+def test_a_unique_foreign_key_is_a_one_to_one() -> None:
+    """`ForeignKey(unique=True)` on the child side is many-to-one as far as
+    SQLAlchemy's direction goes. The parent side already reports it as a
+    one-to-one, so without this the same relationship was two different kinds
+    depending on which model's page you were looking at."""
+    from tests.orm.models import Product
+
+    from fastfort.orm.sqlalchemy import introspect_model
+    from fastfort.spec import FieldType
+
+    spec = introspect_model(Product, key="shop.product")
+    # `category` is an ordinary, non-unique foreign key and must stay one.
+    assert spec.field("category").type is FieldType.FOREIGN_KEY
