@@ -14,7 +14,7 @@ from typing import Any
 
 from ._json import jsonify
 
-__all__ = ["Choice", "FieldSpec", "FieldType", "RelationSpec"]
+__all__ = ["Choice", "FieldSpec", "FieldType", "GeometrySpec", "RangeSpec", "RelationSpec"]
 
 
 class FieldType(StrEnum):
@@ -23,6 +23,10 @@ class FieldType(StrEnum):
     Adapters map their native types onto these. Anything they cannot classify
     becomes `UNKNOWN`, which is displayed read-only rather than raising -- a model
     with one exotic column should still get a working admin page.
+
+    Deliberately no ``SMALLINT``: a small integer is an `INTEGER` with a narrower
+    bound, and the bound (``min_value``/``max_value``) is what a form needs to
+    validate against, not a second type to branch on everywhere else.
     """
 
     STRING = "string"
@@ -31,6 +35,7 @@ class FieldType(StrEnum):
     BIGINT = "bigint"
     FLOAT = "float"
     DECIMAL = "decimal"
+    MONEY = "money"
     BOOLEAN = "boolean"
     DATE = "date"
     DATETIME = "datetime"
@@ -38,13 +43,21 @@ class FieldType(StrEnum):
     DURATION = "duration"
     UUID = "uuid"
     JSON = "json"
+    HSTORE = "hstore"
     ENUM = "enum"
     EMAIL = "email"
     URL = "url"
     PASSWORD = "password"  # noqa: S105 -- a field kind, not a credential
     FILE = "file"
     IMAGE = "image"
+    BINARY = "binary"
+    INET = "inet"
+    MACADDR = "macaddr"
+    BITS = "bits"
+    SEARCH_VECTOR = "search_vector"
     ARRAY = "array"
+    RANGE = "range"
+    MULTIRANGE = "multirange"
     GEOMETRY = "geometry"
     FOREIGN_KEY = "foreign_key"
     ONE_TO_ONE = "one_to_one"
@@ -60,6 +73,16 @@ class FieldType(StrEnum):
     def is_multi_valued(self) -> bool:
         """True when a single value of this field is a collection of objects."""
         return self in {FieldType.MANY_TO_MANY, FieldType.REVERSE_FK}
+
+    @property
+    def is_spatial(self) -> bool:
+        """True for a geometry/geography column, mirroring `is_relation`.
+
+        A single member today, but later phases (the map widget, spatial
+        filters) branch on this rather than on ``self is FieldType.GEOMETRY``
+        directly, so a second spatial kind would only need adding here.
+        """
+        return self is FieldType.GEOMETRY
 
 
 _RELATION_TYPES = frozenset(
@@ -79,6 +102,11 @@ _NON_TEXT_TYPES = frozenset(
         FieldType.IMAGE,
         FieldType.JSON,
         FieldType.GEOMETRY,
+        FieldType.HSTORE,
+        FieldType.BINARY,
+        FieldType.SEARCH_VECTOR,
+        FieldType.RANGE,
+        FieldType.MULTIRANGE,
     }
 )
 
@@ -120,6 +148,47 @@ class RelationSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class GeometrySpec:
+    """How a `GEOMETRY` field is shaped, for the map widget and validation.
+
+    Plain data, same as `RelationSpec` -- PostGIS and GeoAlchemy2 are ORM-layer
+    concerns; this dataclass only carries what those concerns produced.
+    """
+
+    #: POINT, LINESTRING, POLYGON, MULTIPOINT, MULTILINESTRING, MULTIPOLYGON,
+    #: GEOMETRYCOLLECTION, or the untyped GEOMETRY.
+    kind: str = "GEOMETRY"
+    srid: int = 4326
+    #: True for a PostGIS `geography` column rather than `geometry`.
+    geography: bool = False
+    dimension: int = 2
+    spatial_index: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "srid": self.srid,
+            "geography": self.geography,
+            "dimension": self.dimension,
+            "spatial_index": self.spatial_index,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RangeSpec:
+    """How a `RANGE` or `MULTIRANGE` field's endpoints are typed."""
+
+    #: The type of each endpoint, e.g. `FieldType.INTEGER` for an `int4range`.
+    bound: FieldType = FieldType.INTEGER
+    #: True when this is a multirange (several disjoint ranges in one value)
+    #: rather than a single range -- must agree with the field's own type.
+    multi: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"bound": self.bound.value, "multi": self.multi}
+
+
+@dataclass(frozen=True, slots=True)
 class FieldSpec:
     """Everything FastFort knows about one field of one model.
 
@@ -143,10 +212,25 @@ class FieldSpec:
     max_length: int | None = None
     min_value: Decimal | None = None
     max_value: Decimal | None = None
+    #: The scale: digits after the point, e.g. `2` for a price in cents.
+    #: Paired with `precision` below -- a `Numeric(10, 2)` carries `precision=10,
+    #: decimal_places=2`, and a form needs both to size the box and validate it.
     decimal_places: int | None = None
+    #: The total digit count of a fixed-point number, paired with `decimal_places`
+    #: (the scale) above. `None` means the database places no limit.
+    precision: int | None = None
     choices: tuple[Choice, ...] = ()
     default: Any = None
     has_db_default: bool = False
+
+    # --- structured values ---------------------------------------------------
+    #: The element spec of an `ARRAY`. Recursive by design -- `ARRAY(ARRAY(...))`
+    #: needs it, and it is how `ARRAY(Integer)` gets per-entry validation and
+    #: `ARRAY(Enum)` gets its choices. `None` on a bare `ARRAY` degrades to a
+    #: list of strings rather than blocking the column.
+    item: FieldSpec | None = None
+    geometry: GeometrySpec | None = None
+    bounds: RangeSpec | None = None
 
     # --- relations ---------------------------------------------------------
     relation: RelationSpec | None = None
@@ -175,6 +259,18 @@ class FieldSpec:
             # A required-but-nullable column is almost always an adapter bug, and
             # it produces forms that reject values the database would accept.
             raise ValueError(f"{self.name!r} cannot be both required and nullable")
+        if self.item is not None and self.type is not FieldType.ARRAY:
+            raise ValueError(f"{self.name!r} has an item spec but type is {self.type.value!r}")
+        if self.geometry is not None and self.type is not FieldType.GEOMETRY:
+            raise ValueError(f"{self.name!r} has a GeometrySpec but type is {self.type.value!r}")
+        if self.bounds is not None:
+            if self.type not in (FieldType.RANGE, FieldType.MULTIRANGE):
+                raise ValueError(f"{self.name!r} has a RangeSpec but type is {self.type.value!r}")
+            if self.bounds.multi != (self.type is FieldType.MULTIRANGE):
+                raise ValueError(
+                    f"{self.name!r} bounds.multi={self.bounds.multi!r} disagrees with "
+                    f"type {self.type.value!r}"
+                )
 
     # -- derived properties -------------------------------------------------
 
@@ -184,7 +280,13 @@ class FieldSpec:
 
     @property
     def is_text_like(self) -> bool:
-        """Whether an icontains search over this field makes sense."""
+        """Whether an icontains search over this field makes sense.
+
+        `INET` and `MACADDR` are deliberately excluded even though they read like
+        text: PostgreSQL has no `LIKE` for `inet`, so `icontains` against one
+        fails with "operator does not exist" -- a search box that 500s is worse
+        than one that silently skips the column.
+        """
         return self.type in {
             FieldType.STRING,
             FieldType.TEXT,
@@ -223,9 +325,13 @@ class FieldSpec:
             "min_value": jsonify(self.min_value),
             "max_value": jsonify(self.max_value),
             "decimal_places": self.decimal_places,
+            "precision": self.precision,
             "choices": [choice.to_dict() for choice in self.choices],
             "default": jsonify(self.default),
             "has_db_default": self.has_db_default,
+            "item": self.item.to_dict() if self.item is not None else None,
+            "geometry": self.geometry.to_dict() if self.geometry is not None else None,
+            "bounds": self.bounds.to_dict() if self.bounds is not None else None,
             "relation": self.relation.to_dict() if self.relation else None,
             "widget": self.widget,
             "placeholder": self.placeholder,

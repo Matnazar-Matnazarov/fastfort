@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from .changes import Change, ChangeSet
 from .deletion import DeletionEffect, DeletionPlan, RelatedRows
-from .fields import Choice, FieldSpec, FieldType, RelationSpec
+from .fields import Choice, FieldSpec, FieldType, GeometrySpec, RangeSpec, RelationSpec
 from .model import ModelSpec
 from .query import Filter, FilterOperator, ListQuery, Page, SortSpec
 
@@ -28,9 +28,11 @@ __all__ = [
     "FieldType",
     "Filter",
     "FilterOperator",
+    "GeometrySpec",
     "ListQuery",
     "ModelSpec",
     "Page",
+    "RangeSpec",
     "RelatedRows",
     "RelationSpec",
     "SortSpec",
