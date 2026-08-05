@@ -88,6 +88,26 @@ _WIDGET_SCRIPTS = {
     "mac": "fastfort-data.js",
 }
 
+#: Filterable types that ask for a lower and an upper bound rather than a list of
+#: values, mapped to the input the two boxes use.
+#:
+#: A number, a time and a duration all have the same problem an exact-match
+#: dropdown cannot solve: nobody filters a price list to exactly 19.99, they
+#: filter it to under twenty. Dates are handled separately, above -- they get the
+#: same two boxes plus the presets ("this month") that are what a date filter is
+#: actually used for, and no equivalent exists for a price.
+_BOUNDED_FILTER_TYPES = {
+    FieldType.INTEGER: "number",
+    FieldType.BIGINT: "number",
+    FieldType.FLOAT: "number",
+    FieldType.DECIMAL: "number",
+    FieldType.MONEY: "number",
+    FieldType.TIME: "time",
+    # No native control, so the same text box the form's duration field starts
+    # as -- and the same `HH:MM:SS` the parser reads.
+    FieldType.DURATION: "text",
+}
+
 #: Types whose columns are right-aligned with tabular figures, so digits line up.
 _NUMERIC_TYPES = frozenset(
     {FieldType.INTEGER, FieldType.BIGINT, FieldType.DECIMAL, FieldType.FLOAT}
@@ -1789,6 +1809,27 @@ async def _filter_controls(
                         with_time=field.type is FieldType.DATETIME,
                         translate=label_of,
                     ),
+                }
+            )
+            continue
+
+        if field.type in _BOUNDED_FILTER_TYPES:
+            # The same two-bound control the dates get, without the presets --
+            # there is no "this month" for a price. Offered because the
+            # alternative for a number is an exact match, and nobody has ever
+            # wanted to filter a price list to exactly 19.99; they want under
+            # twenty. `__gte`/`__lte` are what the query layer already reads.
+            controls.append(
+                {
+                    "kind": "range",
+                    "name": name,
+                    "label": label,
+                    "from_name": f"{name}__gte",
+                    "to_name": f"{name}__lte",
+                    "from_value": params.get(f"{name}__gte", ""),
+                    "to_value": params.get(f"{name}__lte", ""),
+                    "input_type": _BOUNDED_FILTER_TYPES[field.type],
+                    "presets": [],
                 }
             )
             continue

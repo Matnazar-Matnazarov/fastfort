@@ -328,3 +328,75 @@ async def test_the_script_carries_the_live_behaviour(client: httpx.AsyncClient) 
     body = (await client.get("/admin/static/js/fastfort.js")).text
     assert "X-FastFort-Partial" in body
     assert "AbortController" in body
+
+
+async def test_a_number_filter_is_a_pair_of_bounds(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> None:
+    """Nobody filters a price list to exactly 19.99; they filter it to under
+    twenty. An exact-match dropdown -- the only thing a value filter can offer
+    for a number -- cannot ask that question at all, so a number gets the same
+    two bounds a date gets, minus the presets, because there is no "this month"
+    for a price."""
+    from fastfort.admin.site import _filter_controls
+
+    class Priced(admin.ModelAdmin):
+        list_filter = ("price", "stock")
+
+    spec = backend.introspect(Product, key="shop.product")
+    model_admin = Priced(spec)
+
+    async with backend.unit_of_work() as uow:
+        controls = await _filter_controls(
+            spec,
+            model_admin,
+            {"price__gte": "10"},
+            backend.adapter(Product, uow, key="shop.product"),
+        )
+
+    by_name = {control["name"]: control for control in controls}
+    assert by_name["price"]["kind"] == "range"
+    assert by_name["price"]["from_name"] == "price__gte"
+    assert by_name["price"]["from_value"] == "10"
+    assert by_name["price"]["input_type"] == "number"
+    # No presets: they are what a *date* filter is used for.
+    assert by_name["price"]["presets"] == []
+    assert by_name["stock"]["kind"] == "range"
+
+
+async def test_a_number_range_actually_narrows_the_list(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> None:
+    """The control is only half of it -- `__gte`/`__lte` have to reach the query
+    builder as numbers, not as the strings they arrive from the URL as, or
+    PostgreSQL refuses the comparison outright."""
+
+    class Priced(admin.ModelAdmin):
+        list_display = ("id", "name", "price")
+        list_filter = ("price",)
+
+    fort = FastFort(
+        FastFortSettings(  # type: ignore[call-arg]
+            secret_key=SECRET,
+            security={"cookie_secure": False},  # type: ignore[arg-type]
+        ),
+        backend=backend,
+    )
+    fort.set_user_model(StaffUser)
+    fort.register(Product, Priced, key="shop.product")
+    app = FastAPI()
+    fort.mount(app)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as opened:
+        await sign_in(opened)
+        expensive = await page(opened, "/admin/shop.product/?price__gte=1000")
+        cheap = await page(opened, "/admin/shop.product/?price__lte=100")
+
+    # 1200.00 and 799.00 either side of the lower bound; 19.50 and 5.00 either
+    # side of the upper one.
+    assert "Retired Laptop" in expensive
+    assert "Pixel Phone" not in expensive
+    assert "pixel case" in cheap
+    assert "Retired Laptop" not in cheap

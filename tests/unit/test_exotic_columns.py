@@ -385,3 +385,25 @@ def test_multirange_round_trips_through_its_control() -> None:
     rendered = render_value(value, spec)
     assert rendered == "[1, 10)\n[20, 30)"
     assert parse_value(rendered, spec) == [(1, 10, "[)"), (20, 30, "[)")]
+
+
+# ---------------------------------------------------------------------------
+# List cells
+# ---------------------------------------------------------------------------
+
+
+def test_a_key_value_column_is_not_rendered_as_python_source() -> None:
+    """`str(dict)` is Python's own repr, so an hstore or a JSON object read
+    "{'theme': 'dark'}" in the table -- braces, quotes and all. The same
+    `key: value` shape the field's own control uses, on one line."""
+    from fastfort.ui.renderer import display_value
+
+    assert display_value({"theme": "dark", "lang": "uz"}) == "theme: dark, lang: uz"
+
+
+def test_an_empty_mapping_reads_as_missing_rather_than_as_nothing() -> None:
+    """An empty cell is ambiguous -- it could equally be a value. The em dash is
+    what every other empty cell in the table already shows."""
+    from fastfort.ui.renderer import EMPTY, display_value
+
+    assert display_value({}) == EMPTY
