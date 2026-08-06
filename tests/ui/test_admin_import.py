@@ -444,3 +444,102 @@ async def test_a_relation_that_does_not_exist_names_the_row_and_the_cell(
     assert "Orphan" not in listing
     # And the good row went back out with the bad one.
     assert "Fine" not in listing
+
+
+# ---------------------------------------------------------------------------
+# Dates, which a spreadsheet does not store as dates
+# ---------------------------------------------------------------------------
+
+SHEET_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+
+
+def workbook(
+    cell_format: str,
+    *,
+    custom: str = "",
+    serial: str = "46218",
+    from_1904: bool = False,
+) -> bytes:
+    """A one-cell workbook shaped the way a spreadsheet writes one.
+
+    Not the way `export.py` writes one: that uses inline strings and no styles
+    at all, which is exactly the case this file already covered and exactly the
+    case that never sees a date serial.
+    """
+    styles = (
+        f'<?xml version="1.0"?><styleSheet xmlns="{SHEET_NS}">{custom}'
+        f'<cellXfs count="2"><xf numFmtId="0"/>{cell_format}</cellXfs></styleSheet>'
+    )
+    book = (
+        f'<?xml version="1.0"?><workbook xmlns="{SHEET_NS}">'
+        f'<workbookPr date1904="{"1" if from_1904 else "0"}"/></workbook>'
+    )
+    sheet = (
+        f'<?xml version="1.0"?><worksheet xmlns="{SHEET_NS}"><sheetData>'
+        f'<row r="1"><c r="A1" t="inlineStr"><is><t>Released on</t></is></c></row>'
+        f'<row r="2"><c r="A2" s="1"><v>{serial}</v></c></row></sheetData></worksheet>'
+    )
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("xl/workbook.xml", book)
+        archive.writestr("xl/styles.xml", styles)
+        archive.writestr("xl/worksheets/sheet1.xml", sheet)
+    return buffer.getvalue()
+
+
+def numfmt(identifier: int, code: str) -> str:
+    return f'<numFmts><numFmt numFmtId="{identifier}" formatCode="{code}"/></numFmts>'
+
+
+@pytest.mark.parametrize(
+    ("label", "blob", "expected"),
+    [
+        # The one a person actually hits. `export.py` writes an ISO date as
+        # text; a spreadsheet turns it into a real date cell the moment the file
+        # is opened and saved, and a real date cell is a *number*.
+        (
+            "a custom yyyy-mm-dd format",
+            workbook('<xf numFmtId="176"/>', custom=numfmt(176, "yyyy\\-mm\\-dd")),
+            "2026-07-15",
+        ),
+        ("the built-in short date", workbook('<xf numFmtId="14"/>'), "2026-07-15"),
+        (
+            "a built-in date and time",
+            workbook('<xf numFmtId="22"/>', serial="46218.5"),
+            "2026-07-15 12:00:00",
+        ),
+        (
+            "a workbook counting from 1904",
+            workbook('<xf numFmtId="14"/>', serial="44756", from_1904=True),
+            "2026-07-15",
+        ),
+    ],
+)
+def test_a_date_cell_arrives_as_a_date(label: str, blob: bytes, expected: str) -> None:
+    """A date in a spreadsheet is a number of days with a format applied. Read
+    without the format it is a five-figure integer, which is what "46218" was --
+    and it broke the one workflow this feature exists for: export, edit, upload.
+    """
+    _, rows = read_table(blob, "xlsx")
+    assert rows[0][0] == expected, label
+
+
+@pytest.mark.parametrize(
+    ("label", "blob"),
+    [
+        ("no format at all", workbook('<xf numFmtId="0"/>', serial="2000")),
+        # The literal is stripped before the code is judged, or the letters in
+        # the word would make a plain number look like a date.
+        (
+            "a number whose format contains words",
+            workbook(
+                '<xf numFmtId="180"/>',
+                custom=numfmt(180, "0.00&quot; days&quot;"),
+                serial="2000",
+            ),
+        ),
+    ],
+)
+def test_a_number_that_is_not_a_date_keeps_its_digits(label: str, blob: bytes) -> None:
+    _, rows = read_table(blob, "xlsx")
+    assert rows[0][0] == "2000", label
