@@ -343,3 +343,70 @@ async def test_tiles_are_not_deferred(client: httpx.AsyncClient) -> None:
 
     assert 'loading: "lazy"' not in built
     assert 'decoding: "async"' in built
+
+
+# ---------------------------------------------------------------------------
+# Zooming past the imagery, and not asking a tile server for everything at once
+# ---------------------------------------------------------------------------
+
+
+async def test_the_view_zooms_further_than_the_tiles_go(client: httpx.AsyncClient) -> None:
+    """Pressing + at the old ceiling did nothing at all -- no movement, no
+    disabled button -- which reads as the map having broken rather than as the
+    map having run out of pictures.
+
+    Two ceilings now. Requests stop at the deepest level the server has, because
+    asking past it returns a 404 and a failed tile is a blank square; the view
+    keeps going and scales the last level up, which is what every map does past
+    its own imagery.
+    """
+    script = (await client.get("/admin/static/js/fastfort-geo.js")).text
+
+    assert "const MAX_TILE_ZOOM = 19" in script
+    assert "const MAX_ZOOM = 21" in script
+    # Tiles are requested at the tile level, never at the view's zoom.
+    assert 'replace("{z}", String(tileZoom))' in script
+    # And the button says so when there is nowhere further to go.
+    assert "this.zoomIn.disabled = this.zoom >= MAX_ZOOM" in script
+    assert "this.zoomOut.disabled = this.zoom <= MIN_ZOOM" in script
+
+
+async def test_the_shape_is_placed_in_the_views_pixels_not_the_tiles(
+    client: httpx.AsyncClient,
+) -> None:
+    """The two zooms are equal up to MAX_TILE_ZOOM and diverge past it. Tile
+    indices belong to the tile level, because that is the grid the server
+    serves; the marker, the shape and every handle belong to the view. Mixing
+    them put every vertex a whole world to one side, but only past zoom 19,
+    which is exactly the kind of bug that ships."""
+    script = (await client.get("/admin/static/js/fastfort-geo.js")).text
+    assert "this.drawShape(originX, width, 2 ** this.zoom)" in script
+
+
+async def test_a_map_is_not_built_until_it_is_scrolled_near(
+    client: httpx.AsyncClient,
+) -> None:
+    """One geometry column was fine. Nine -- which is what a page of shapes is
+    -- fired every map's first draw at once, twenty-odd tiles each: about two
+    hundred requests in one burst to one tile server. OpenStreetMap's policy
+    says not to and it answers by throttling, a throttled tile fails, and a
+    failed tile is `opacity: 0`. The map came out with a rectangular hole in
+    it."""
+    script = (await client.get("/admin/static/js/fastfort-geo.js")).text
+
+    assert "IntersectionObserver" in script
+    # A screen early, so scrolling to a field finds it drawn rather than filling.
+    assert 'rootMargin: "100% 0px"' in script
+    # And still built outright where the browser has no observer to offer.
+    assert "else build(control)" in script
+
+
+async def test_a_failed_tile_is_asked_for_once_more(client: httpx.AsyncClient) -> None:
+    """Throttling is temporary, and the alternative is a permanent hole. Once
+    only: a server that has refused twice is saying something, and a map that
+    keeps retrying is the behaviour those usage policies exist to stop."""
+    script = (await client.get("/admin/static/js/fastfort-geo.js")).text
+
+    assert "let retried = false" in script
+    # A different URL, so the browser's negative cache is not what answers.
+    assert "retry=1" in script
