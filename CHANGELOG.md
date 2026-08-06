@@ -10,6 +10,97 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-05
+
+Column types. FastFort classified a column into one of twenty-odd kinds and
+rendered whatever that kind implied; anything it did not recognise became a
+read-only row. This release makes the classification pluggable, makes the
+description rich enough for a control to be built from it, and covers every
+column type PostgreSQL ships bar three.
+
+### Added
+
+- `FieldType` gains `BINARY`, `INET`, `MACADDR`, `HSTORE`, `MONEY`, `BITS`,
+  `SEARCH_VECTOR`, `RANGE` and `MULTIRANGE`. Each one previously fell through to
+  `UNKNOWN` and rendered as text nobody could edit
+- `FieldSpec` describes as well as classifies: `item` carries an array's element
+  spec, `geometry` carries a shape's kind, SRID, dimension and whether it is a
+  geography, `bounds` carries a range's endpoint type, and `precision` pairs with
+  the scale that was already there
+- `fastfort.orm.sqlalchemy.register_type`, the way a project teaches FastFort its
+  own SQLAlchemy type instead of forking. Rules run in order, first match wins,
+  and `first=True` puts a project's rule ahead of the built-ins
+- `fastfort.admin.widgets.register_widget`, the same extension point for controls.
+  The renderer already searches a project's template directory first, so a project
+  can ship the partial to go with it
+- `fastfort.spec.geo`: a complete WKB/EWKB ↔ GeoJSON ↔ EWKT codec in pure Python,
+  covering all seven geometry kinds, both byte orders and the EWKB SRID prefix.
+  No Shapely, no GeoAlchemy2 import
+- Controls for every new type: a tag input for arrays that validates each entry
+  against the item type, a key/value editor for hstore, two typed boxes and a
+  bounds selector for a range, pattern-checked address boxes, a JSON editor that
+  formats and reports a parse error as you type
+- A geometry editor for every shape, not just points: draw and edit a line or a
+  ring by clicking, dragging a vertex or shift-clicking to remove one; multi-
+  geometries and collections are drawn faithfully and edited as text
+- Spatial filters: `within`, `contains`, `intersects`, `overlaps`, `touches`,
+  `crosses`, `dwithin` and `bbox`, offered only where the backend reports PostGIS.
+  A radius arrives in kilometres and both sides go through PostGIS's `geography()`
+  cast, so it means metres on a geometry column too
+- Range filters for numbers, times and durations. An exact match is the one
+  question nobody asks of a price
+- CHECK constraints are read at introspection time into `min_value`/`max_value`,
+  so the browser rejects the value before the database does -- and when the
+  database rejects one anyway, the constraint name is matched back to the field
+  and reported as "Rating must be between 1 and 5" rather than as SQL
+
+### Changed
+
+- **The front end is three bundles.** `fastfort.js` is what every page loads and
+  publishes a small kit through `window.FastFort`; `fastfort-geo.js` and
+  `fastfort-data.js` are requested only by a page whose fields need them. The
+  everyday page went from 65,884 to 61,317 bytes gzipped -- lighter than before,
+  with the geometry editor and four data editors added
+- The size budget is two numbers: what every page downloads, and what ships in
+  total. One number alone would let any weight escape counting by moving into an
+  on-demand file
+- `admin/forms.py` split into `forms.py`, `widgets.py`, `values.py` and the codec
+  that moved to `spec/geo.py`
+- `model/form.html` split into `model/_widgets.html`, one macro per control
+- A `Numeric(precision, scale)` derives its own `max_value`; `Identity()` joins
+  `Computed` as a generated-column signal
+- A unique foreign key is reported as a one-to-one. The parent side already
+  reported it as one, so the same relationship was two different kinds depending
+  on which model's page you were looking at
+- `docker-compose.test.yml` runs `postgis/postgis:16-3.4`, a drop-in superset, so
+  the spatial filters are tested against a database rather than a SQL string
+
+### Fixed
+
+- A column classified read-only -- a raster, a search vector, an OID -- kept
+  `editable=True`, so the only thing stopping a hand-crafted POST from reaching it
+  was the absent input. `FieldSpec.editable` is documented as the mass-assignment
+  boundary with no second flag allowed to disagree
+- An unknown widget name raised under `StrictUndefined` instead of falling back to
+  a text box, which is exactly what a newly registered widget name always is
+- A geometry that was not a point printed raw WKB hex at whoever opened the page:
+  the old decoder gave up past 21 bytes
+- A `CITEXT` column rendered as a four-row textarea. It subclasses `TEXT`, so it
+  needs a rule ahead of the one for prose
+- An hstore or JSON object rendered `str(dict)` in a list cell, so a settings
+  column read `{'theme': 'dark'}` -- quotes, braces and all
+- Duration filtering reached the database as the string it arrived as, which
+  PostgreSQL refuses against an `interval` column; the filter that looked
+  available was a 500 waiting to be clicked
+- Latitude and longitude range checks applied at every SRID. They are meaningless
+  in a projected system measured in metres
+
+### Not included
+
+Raster, PostgreSQL composite types and domain types classify through the registry
+and render read-only. Each needs a project-declared SQLAlchemy type to be
+reachable at all, so the hook is there and the fallback is honest.
+
 ## [0.1.0] - 2026-08-04
 
 The first release. Everything below is new, because there was nothing before it.
@@ -576,5 +667,6 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Matnazar-Matnazarov/fastfort/releases/tag/v0.1.0

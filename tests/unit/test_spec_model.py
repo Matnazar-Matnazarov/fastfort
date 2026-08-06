@@ -14,7 +14,9 @@ from fastfort.spec import (
     Choice,
     FieldSpec,
     FieldType,
+    GeometrySpec,
     ModelSpec,
+    RangeSpec,
     RelationSpec,
 )
 from fastfort.spec._json import jsonify
@@ -93,6 +95,164 @@ def test_field_is_immutable_but_replaceable() -> None:
     assert derived.editable is False
     assert derived.label == "Title"
     assert original.editable is True  # the adapter's spec is untouched
+
+
+def test_there_is_deliberately_no_smallint_type() -> None:
+    """A small integer is an INTEGER with a narrower bound (`min_value`/
+    `max_value`), not a second type to branch on -- see `FieldType`'s docstring."""
+    assert not hasattr(FieldType, "SMALLINT")
+
+
+# ---------------------------------------------------------------------------
+# GeometrySpec / RangeSpec / structured FieldSpec attachments
+# ---------------------------------------------------------------------------
+
+
+def test_item_spec_is_only_allowed_on_an_array() -> None:
+    with pytest.raises(ValueError, match="item spec but type"):
+        string("name", item=string("inner"))
+
+
+def test_an_array_without_an_item_spec_is_allowed() -> None:
+    """An untyped array degrades to a list of strings rather than being refused."""
+    spec = FieldSpec(name="tags", type=FieldType.ARRAY, label="Tags")
+    assert spec.item is None
+
+
+def test_an_array_item_spec_can_itself_be_an_array() -> None:
+    """Recursive by design, so `ARRAY(ARRAY(...))` has somewhere to put its shape."""
+    inner = FieldSpec(name="grid[][]", type=FieldType.INTEGER, label="Grid")
+    middle = FieldSpec(name="grid[]", type=FieldType.ARRAY, label="Grid", item=inner)
+    outer = FieldSpec(name="grid", type=FieldType.ARRAY, label="Grid", item=middle)
+    assert outer.item is middle
+    assert outer.item.item is inner  # type: ignore[union-attr]
+
+
+def test_geometry_spec_is_only_allowed_on_a_geometry_field() -> None:
+    with pytest.raises(ValueError, match="GeometrySpec but type"):
+        string("location", geometry=GeometrySpec())
+
+
+def test_a_geometry_field_carries_its_shape() -> None:
+    spec = FieldSpec(
+        name="location",
+        type=FieldType.GEOMETRY,
+        label="Location",
+        geometry=GeometrySpec(kind="POINT", srid=4326, geography=True, spatial_index=False),
+    )
+    assert spec.geometry is not None
+    assert spec.geometry.kind == "POINT"
+    assert spec.geometry.geography is True
+    assert spec.geometry.spatial_index is False
+
+
+def test_bounds_is_only_allowed_on_a_range_or_multirange_field() -> None:
+    with pytest.raises(ValueError, match="RangeSpec but type"):
+        string("window", bounds=RangeSpec())
+
+
+@pytest.mark.parametrize(
+    ("field_type", "multi"),
+    [(FieldType.RANGE, True), (FieldType.MULTIRANGE, False)],
+)
+def test_bounds_multi_must_agree_with_the_field_type(field_type: FieldType, multi: bool) -> None:
+    with pytest.raises(ValueError, match="disagrees with"):
+        FieldSpec(
+            name="window",
+            type=field_type,
+            label="Window",
+            bounds=RangeSpec(bound=FieldType.INTEGER, multi=multi),
+        )
+
+
+def test_bounds_agreeing_with_the_field_type_is_accepted() -> None:
+    spec = FieldSpec(
+        name="window",
+        type=FieldType.RANGE,
+        label="Window",
+        bounds=RangeSpec(bound=FieldType.DATE, multi=False),
+    )
+    assert spec.bounds is not None
+    assert spec.bounds.bound is FieldType.DATE
+
+
+def test_geometry_spec_to_dict_is_json_safe() -> None:
+    payload = GeometrySpec(
+        kind="POINT", srid=4326, geography=True, dimension=3, spatial_index=False
+    ).to_dict()
+    assert payload == {
+        "kind": "POINT",
+        "srid": 4326,
+        "geography": True,
+        "dimension": 3,
+        "spatial_index": False,
+    }
+    assert json.loads(json.dumps(payload)) == payload
+
+
+def test_range_spec_to_dict_serialises_the_bound_type_as_its_value() -> None:
+    assert RangeSpec(bound=FieldType.INTEGER, multi=True).to_dict() == {
+        "bound": "integer",
+        "multi": True,
+    }
+
+
+def test_field_to_dict_carries_precision_alongside_decimal_places() -> None:
+    spec = FieldSpec(
+        name="price", type=FieldType.DECIMAL, label="Price", precision=10, decimal_places=2
+    )
+    payload = spec.to_dict()
+    assert payload["precision"] == 10
+    assert payload["decimal_places"] == 2
+
+
+def test_field_to_dict_recurses_into_its_item_spec() -> None:
+    item = FieldSpec(name="tags[]", type=FieldType.STRING, label="Tags", max_length=30)
+    spec = FieldSpec(name="tags", type=FieldType.ARRAY, label="Tags", item=item)
+    payload = spec.to_dict()
+    assert payload["item"] == item.to_dict()
+    assert payload["item"]["max_length"] == 30
+    assert json.loads(json.dumps(payload)) == payload
+
+
+def test_field_to_dict_is_none_for_absent_structured_attachments() -> None:
+    payload = string("name").to_dict()
+    assert payload["item"] is None
+    assert payload["geometry"] is None
+    assert payload["bounds"] is None
+
+
+@pytest.mark.parametrize(
+    "field_type",
+    [
+        FieldType.HSTORE,
+        FieldType.BINARY,
+        FieldType.SEARCH_VECTOR,
+        FieldType.RANGE,
+        FieldType.MULTIRANGE,
+    ],
+)
+def test_the_new_structured_types_are_not_displayed_as_plain_text(field_type: FieldType) -> None:
+    bounds = None
+    if field_type in (FieldType.RANGE, FieldType.MULTIRANGE):
+        bounds = RangeSpec(multi=field_type is FieldType.MULTIRANGE)
+    spec = FieldSpec(name="x", type=field_type, label="X", bounds=bounds)
+    assert not spec.displayable
+
+
+@pytest.mark.parametrize("field_type", [FieldType.INET, FieldType.MACADDR])
+def test_inet_and_macaddr_are_not_text_like(field_type: FieldType) -> None:
+    """PostgreSQL has no `LIKE` for `inet`; an `icontains` search against one is
+    a 500, not a filter with zero results."""
+    assert not FieldSpec(name="x", type=field_type, label="X").is_text_like
+
+
+@pytest.mark.parametrize(
+    ("field_type", "expected"),
+    [(FieldType.GEOMETRY, True), (FieldType.STRING, False), (FieldType.ARRAY, False)],
+)
+def test_is_spatial_classification(field_type: FieldType, expected: bool) -> None:
+    assert field_type.is_spatial is expected
 
 
 @pytest.mark.parametrize(

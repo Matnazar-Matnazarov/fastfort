@@ -1,0 +1,516 @@
+{#
+  One macro per form control, dispatched from `form.html`'s field loop.
+
+  Split out once that loop's `{% if field.widget == ... %}` chain reached 449
+  lines and kept growing with every column type Phase 3 added -- a page-layout
+  template and a control library are two different things to review, and
+  mixing them meant every new widget's diff also touched the page around it.
+
+  `Renderer` runs with `undefined=StrictUndefined` (see `ui/renderer.py`'s
+  docstring: a security control, not a preference), and a macro does not
+  inherit the caller's template context the way an included file would -- so
+  every value a macro needs is a parameter, spelled out at the call site in
+  `form.html`. A macro that quietly relied on some ambient `settings` or `_`
+  would raise the moment it was called from anywhere that variable was not
+  already in scope, which is exactly the failure mode `StrictUndefined` exists
+  to surface early rather than let happen once, in production, on whichever
+  field a project opens first.
+#}
+
+{% macro readonly_control(field) %}
+  <div class="ff-readonly" id="ff-{{ field.name }}">{{ field.value|ff_display }}</div>
+{% endmacro %}
+
+{% macro textarea_control(field) %}
+  <textarea
+    class="ff-textarea {% if field.widget == 'json' %}ff-mono{% endif %}"
+    id="ff-{{ field.name }}"
+    name="{{ field.name }}"
+    rows="{{ 10 if field.widget == 'json' else 4 }}"
+    {% if field.widget == "json" %}data-ff-json{% endif %}
+    {% if field.required %}required{% endif %}
+    {% if field.errors %}aria-invalid="true"{% endif %}
+  >{{ field.raw }}</textarea>
+{% endmacro %}
+
+{% macro geometry_control(field, map_tile_url, map_center, map_attribution) %}
+  {#
+    Every kind gets the map's `data-` hooks -- Phase 4 turns the control next
+    to them into an editor -- but only when a tile host is configured. The
+    admin's CSP names exactly one (`script-src`/`img-src` widen by one origin
+    each, in `admin/security.py`), so without one there is nowhere for a tile
+    to come from and the field is a text box with nothing beside it.
+
+    A POINT stays the single-line input it has always been: "41.2995,
+    69.2401" reads and types naturally as one line. Every other kind's WKT
+    does not -- a polygon's rings do not fit a line at all, and making someone
+    scroll a one-line box sideways to check their own coordinates is the kind
+    of thing that sends people around the admin to edit the database directly.
+
+    A missing `GeometrySpec` defaults to POINT rather than to the untyped
+    "GEOMETRY" kind: it is what a project's own `formfield_overrides =
+    {"col": "point"}` looks like once `canonical_widget` resolves that name to
+    "geometry" -- a plain column standing in for a spatial one has no real
+    kind to read, and the single-line box is what "point" has rendered since
+    before this control had a `kind` to branch on at all. A genuine spatial
+    column always carries a `GeometrySpec` (`_check_spatial` in
+    `orm/sqlalchemy/types.py` sets one on every match), so this default is
+    never read for a real GEOMETRY column.
+  #}
+  {% set kind = field.spec.geometry.kind if field.spec.geometry else "POINT" %}
+  {% if kind == "POINT" %}
+    <input
+      class="ff-input ff-mono"
+      id="ff-{{ field.name }}"
+      name="{{ field.name }}"
+      type="text"
+      value="{{ field.raw }}"
+      spellcheck="false"
+      placeholder="41.2995, 69.2401"
+      {% if field.required %}required{% endif %}
+      {% if field.errors %}aria-invalid="true"{% endif %}
+      {% if map_tile_url %}
+        data-ff-map="{{ map_tile_url }}"
+        data-ff-map-center="{{ map_center }}"
+        {# Drawn on the map itself, where every other map puts its credit and
+           where it stays attached to the tiles it is crediting. Under the
+           field it read as help text for the input rather than as a notice
+           about the pictures. #}
+        data-ff-map-credit="{{ map_attribution }}"
+        data-ff-geometry-kind="{{ kind }}"
+        data-ff-srid="{{ field.spec.geometry.srid if field.spec.geometry else 4326 }}"
+        data-ff-geography="{{ "true" if (field.spec.geometry and field.spec.geometry.geography) else "false" }}"
+      {% endif %}
+    />
+  {% else %}
+    <textarea
+      class="ff-textarea ff-mono"
+      id="ff-{{ field.name }}"
+      name="{{ field.name }}"
+      rows="4"
+      spellcheck="false"
+      {% if field.required %}required{% endif %}
+      {% if field.errors %}aria-invalid="true"{% endif %}
+      {% if map_tile_url %}
+        data-ff-map="{{ map_tile_url }}"
+        data-ff-map-center="{{ map_center }}"
+        data-ff-map-credit="{{ map_attribution }}"
+        data-ff-geometry-kind="{{ kind }}"
+        data-ff-srid="{{ field.spec.geometry.srid if field.spec.geometry else 4326 }}"
+        data-ff-geography="{{ "true" if (field.spec.geometry and field.spec.geometry.geography) else "false" }}"
+      {% endif %}
+    >{{ field.raw }}</textarea>
+  {% endif %}
+{% endmacro %}
+
+{% macro file_control(field, media_url, upload_limit, _) %}
+  {#
+    A native file input cannot be prefilled -- browsers refuse, for good
+    reason -- so a stored value is shown as a link (or a thumbnail, for an
+    image) beside the input rather than inside it. Choosing a new file
+    replaces it on save; the "Clear" checkbox removes it without replacing it,
+    and only appears when there is something to remove.
+
+    This is also the whole control with script off. With it, the uploader
+    reads this block for the stored value and the clear checkbox, adopts
+    both, and replaces the pair with a drop target that previews what is
+    there and what is about to replace it.
+  #}
+  {% if field.value %}
+    <div class="ff-file-current">
+      {% if field.widget == "image" %}
+        <img class="ff-file-current__thumb" src="{{ media_url }}/{{ field.value }}" alt="" />
+      {% endif %}
+      <a
+        class="ff-file-current__link"
+        href="{{ media_url }}/{{ field.value }}"
+        target="_blank"
+        rel="noopener"
+      >{{ field.value.rsplit("/", 1)[-1] }}</a>
+      <label class="ff-checkbox ff-file-current__clear">
+        <input type="checkbox" name="{{ field.clear_name }}" value="1" />
+        <span>{{ _("Clear") }}</span>
+      </label>
+    </div>
+  {% endif %}
+  <input
+    class="ff-input"
+    id="ff-{{ field.name }}"
+    name="{{ field.name }}"
+    type="file"
+    accept="{{ 'image/*' if field.widget == 'image' else '' }}"
+    data-ff-file="{{ field.widget }}"
+    {# The server enforces this either way; saying it up front is the
+       difference between a rejected upload and one nobody started. #}
+    data-ff-file-limit="{{ upload_limit }}"
+    {% if field.errors %}aria-invalid="true"{% endif %}
+  />
+{% endmacro %}
+
+{% macro color_control(field) %}
+  {#
+    A swatch and the hex beside it, kept in step. The native picker alone
+    cannot be typed into and cannot be read aloud; the text box alone cannot
+    be pointed at. Both, bound together, is the only version that serves
+    everyone.
+  #}
+  <div class="ff-color" data-ff-color>
+    <input
+      class="ff-color__swatch"
+      type="color"
+      value="{{ field.raw or "#000000" }}"
+      aria-hidden="true"
+      tabindex="-1"
+    />
+    <input
+      class="ff-input ff-color__hex ff-mono"
+      id="ff-{{ field.name }}"
+      name="{{ field.name }}"
+      type="text"
+      value="{{ field.raw }}"
+      placeholder="#000000"
+      spellcheck="false"
+      {% if field.errors %}aria-invalid="true"{% endif %}
+    />
+  </div>
+{% endmacro %}
+
+{% macro richtext_control(field) %}
+  {#
+    The editor is the project's to choose. FastFort renders the textarea and
+    marks it; `UISettings.richtext_url` names a script that upgrades it --
+    CKEditor, TinyMCE, whatever the project already licences. Without one
+    this is a textarea, which is a working control rather than a broken
+    editor.
+  #}
+  <textarea
+    class="ff-textarea"
+    id="ff-{{ field.name }}"
+    name="{{ field.name }}"
+    rows="10"
+    data-ff-richtext
+    {% if field.required %}required{% endif %}
+    {% if field.errors %}aria-invalid="true"{% endif %}
+  >{{ field.raw }}</textarea>
+{% endmacro %}
+
+{% macro nullboolean_control(field, _) %}
+  {#
+    Three states, because the column has three. A checkbox would turn "not
+    answered yet" into "answered no" the first time anyone pressed Save.
+  #}
+  <select
+    class="ff-select"
+    id="ff-{{ field.name }}"
+    name="{{ field.name }}"
+    data-ff-combo
+    data-ff-clearable="false"
+    {% if field.errors %}aria-invalid="true"{% endif %}
+  >
+    <option value="" {% if field.raw == "" %}selected{% endif %}>{{ _("Unknown") }}</option>
+    <option value="1" {% if field.raw == "1" %}selected{% endif %}>{{ _("Yes") }}</option>
+    <option value="0" {% if field.raw == "0" %}selected{% endif %}>{{ _("No") }}</option>
+  </select>
+{% endmacro %}
+
+{% macro checkbox_control(field, _) %}
+  <label class="ff-checkbox">
+    <input
+      type="checkbox"
+      id="ff-{{ field.name }}"
+      name="{{ field.name }}"
+      value="1"
+      {% if field.value %}checked{% endif %}
+    />
+    <span>{{ field.help_text or _("Enabled") }}</span>
+  </label>
+{% endmacro %}
+
+{% macro password_control(field, _) %}
+  {#
+    Two boxes, both empty. The stored hash is never sent to the browser, so
+    there is nothing to prefill and nothing to leak.
+  #}
+  <input
+    class="ff-input"
+    id="ff-{{ field.name }}"
+    name="{{ field.name }}"
+    type="password"
+    autocomplete="new-password"
+    {% if field.errors %}aria-invalid="true"{% endif %}
+  />
+  <input
+    class="ff-input ff-mt-2"
+    name="{{ field.confirm_name }}"
+    type="password"
+    autocomplete="new-password"
+    placeholder="{{ _("Confirm {name}", name=_(field.label)|lower) }}"
+    aria-label="{{ _("Confirm {name}", name=_(field.label)|lower) }}"
+  />
+{% endmacro %}
+
+{% macro _related_actions(field, relation_links, _) %}
+  {% if relation_links.get(field.name) %}
+    {#
+      The buttons Django puts beside a foreign key. `add` opens the target's
+      own form in a popup and drops the row it creates into this control;
+      `change` and `view` open whatever is selected. Script-only: a popup
+      that hands its result back has no meaning without one, and the picker
+      works fine without them.
+    #}
+    <div
+      class="ff-related ff-js-only"
+      data-ff-related="{{ field.name }}"
+      data-ff-related-add="{{ relation_links[field.name].add }}"
+      data-ff-related-base="{{ relation_links[field.name].base }}"
+    >
+      <button
+        class="ff-action"
+        type="button"
+        data-ff-related-action="change"
+        data-ff-tip="{{ _("Edit") }}"
+        disabled
+      >{{ ff_icon("edit", size=15) }}</button>
+      <button
+        class="ff-action"
+        type="button"
+        data-ff-related-action="add"
+        data-ff-tip="{{ _("Add") }}"
+      >{{ ff_icon("plus", size=15) }}</button>
+      <button
+        class="ff-action"
+        type="button"
+        data-ff-related-action="view"
+        data-ff-tip="{{ _("View") }}"
+        data-ff-tip-align="end"
+        disabled
+      >{{ ff_icon("eye", size=15) }}</button>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro select_control(field, autocomplete_url, relation_links, _) %}
+  <div class="ff-with-related">
+  {#
+    A real <select>, upgraded in place to a searchable listbox. `data-ff-url`
+    is set when the target table has more rows than can be sent to the
+    browser, and the control then searches the server as you type instead of
+    listing everything.
+  #}
+  <select
+    class="ff-select"
+    id="ff-{{ field.name }}"
+    name="{{ field.name }}"
+    data-ff-combo
+    {# Relations always get a search box, whatever the count. The target
+       table is the one that grows, and a picker that offers search only past
+       some threshold is one people learn is not searchable. #}
+    {% if field.spec.is_relation %}data-ff-search="always"{% endif %}
+    data-ff-placeholder="{{ _("Choose…") }}"
+    data-ff-clearable="{{ "false" if field.required else "true" }}"
+    {% if field.remote %}data-ff-url="{{ autocomplete_url }}?field={{ field.name }}"{% endif %}
+    {% if field.errors %}aria-invalid="true"{% endif %}
+  >
+    {% if not field.required %}
+      <option value="">{{ _("— none —") }}</option>
+    {% endif %}
+    {% for choice in field.choices %}
+      <option
+        value="{{ choice.value }}"
+        {% if field.raw == choice.value|string %}selected{% endif %}
+      >{{ choice.label }}</option>
+    {% endfor %}
+  </select>
+  {{ _related_actions(field, relation_links, _) }}
+  </div>
+{% endmacro %}
+
+{% macro relations_control(field, autocomplete_url, relation_links, _) %}
+  <div class="ff-with-related">
+  {#
+    Many-to-many, drawn as removable chips. The native control this replaces
+    asked people to hold Ctrl to attach three tags to a product, which is not
+    a thing anyone should have to know.
+  #}
+  <select
+    class="ff-select"
+    id="ff-{{ field.name }}"
+    name="{{ field.name }}[]"
+    multiple
+    size="{{ [field.choices|length, 6]|min if field.choices else 3 }}"
+    data-ff-combo
+    data-ff-search="always"
+    data-ff-placeholder="{{ _("Choose…") }}"
+    {% if field.remote %}data-ff-url="{{ autocomplete_url }}?field={{ field.name }}"{% endif %}
+  >
+    {% for choice in field.choices %}
+      <option
+        value="{{ choice.value }}"
+        {% if choice.value|string in field.selected %}selected{% endif %}
+      >{{ choice.label }}</option>
+    {% endfor %}
+  </select>
+  {{ _related_actions(field, relation_links, _) }}
+  </div>
+  <span class="ff-help ff-no-js">{{ _("Hold Ctrl (or Cmd) to select more than one.") }}</span>
+{% endmacro %}
+
+{% macro tags_control(field) %}
+  {#
+    Today's behaviour, unchanged: one comma-separated text input. `values.py`
+    still splits on commas and drops blank entries, so a hostile control here
+    would only be a control the parser does not actually reflect.
+    `data-ff-item-type` is what lets Phase 4 validate each entry as the item
+    spec's own type -- an `ARRAY(Integer)` rejecting "banana" client-side, the
+    same way the server already does in `_parse_array`.
+  #}
+  <input
+    class="ff-input"
+    id="ff-{{ field.name }}"
+    name="{{ field.name }}"
+    type="text"
+    value="{{ field.raw }}"
+    data-ff-tags
+    {% if field.spec.item %}data-ff-item-type="{{ field.spec.item.type.value }}"{% endif %}
+    {% if field.spec.placeholder %}placeholder="{{ field.spec.placeholder }}"{% endif %}
+    {% if field.required %}required{% endif %}
+    {% if field.errors %}aria-invalid="true"{% endif %}
+  />
+{% endmacro %}
+
+{% macro keyvalue_control(field) %}
+  {# One `key: value` pair per line -- what `_parse_hstore` reads and
+     `_hstore_text` writes back, and the shape a plain textarea can hold
+     without any control needing a newline it cannot type. #}
+  <textarea
+    class="ff-textarea ff-mono"
+    id="ff-{{ field.name }}"
+    name="{{ field.name }}"
+    rows="4"
+    data-ff-keyvalue
+    {% if field.required %}required{% endif %}
+    {% if field.errors %}aria-invalid="true"{% endif %}
+  >{{ field.raw }}</textarea>
+{% endmacro %}
+
+{% macro range_control(field, input_types, _) %}
+  {% if field.spec.type == "multirange" %}
+    {# Repeatable groups of two boxes and a bounds selector, without script
+       to add and remove them, are not worth the complexity -- one range per
+       line in a textarea is `_parse_multirange`'s own shape, typed
+       directly. #}
+    <textarea
+      class="ff-textarea ff-mono"
+      id="ff-{{ field.name }}"
+      name="{{ field.name }}"
+      rows="4"
+      {% if field.required %}required{% endif %}
+      {% if field.errors %}aria-invalid="true"{% endif %}
+    >{{ field.raw }}</textarea>
+  {% else %}
+    {#
+      Two inputs, not one text box carrying `[1, 10)` notation: a date range
+      typed as brackets and a comma is a hostile control, and the whole point
+      of splitting it is that a date range becomes two date pickers once
+      Phase 4 sees `data-ff-date` on a box whose bound type is DATE -- exactly
+      the marker a plain date column already carries. `Form.bind` reassembles
+      `field__lower`, `field__upper` and `field__bounds` into the one string
+      `values.parse_value` accepts before it ever runs; see `_bind_range`'s
+      docstring in `admin/forms.py`.
+    #}
+    {% set bound_input = input_types.get(field.range_widget, "text") %}
+    <div
+      class="ff-range-field"
+      data-ff-range
+      data-ff-bound-type="{{ field.spec.bounds.bound.value if field.spec.bounds else "string" }}"
+    >
+      <select
+        class="ff-select ff-select--sm ff-range-field__bounds"
+        name="{{ field.name }}__bounds"
+        aria-label="{{ _("Bounds") }}"
+        {% if field.errors %}aria-invalid="true"{% endif %}
+      >
+        <option value="[)" {% if field.range_bounds == "[)" %}selected{% endif %}>[ … )</option>
+        <option value="(]" {% if field.range_bounds == "(]" %}selected{% endif %}>( … ]</option>
+        <option value="[]" {% if field.range_bounds == "[]" %}selected{% endif %}>[ … ]</option>
+        <option value="()" {% if field.range_bounds == "()" %}selected{% endif %}>( … )</option>
+      </select>
+      <input
+        class="ff-input ff-range-field__bound"
+        id="ff-{{ field.name }}"
+        type="{{ bound_input }}"
+        name="{{ field.name }}__lower"
+        value="{{ field.range_lower }}"
+        aria-label="{{ _("From") }}"
+        {% if bound_input in ("date", "datetime-local") %}data-ff-date{% endif %}
+        {% if field.errors %}aria-invalid="true"{% endif %}
+      />
+      <span class="ff-range-field__sep" aria-hidden="true">–</span>
+      <input
+        class="ff-input ff-range-field__bound"
+        type="{{ bound_input }}"
+        name="{{ field.name }}__upper"
+        value="{{ field.range_upper }}"
+        aria-label="{{ _("To") }}"
+        {% if bound_input in ("date", "datetime-local") %}data-ff-date{% endif %}
+        {% if field.errors %}aria-invalid="true"{% endif %}
+      />
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{% macro generic_control(field, input_types) %}
+  {#
+    Every widget with no control of its own above -- text, number, decimal,
+    money, date, datetime, time, duration, email, url, uuid, inet, mac, bits,
+    and anything a project registered with `register_widget` but has not yet
+    shipped a template partial for. `input_types.get(field.widget, "text")`
+    is why the last case renders a text box instead of the 500 this used to
+    be: `input_types[field.widget]` raised under `StrictUndefined` for any
+    name `INPUT_TYPES` did not carry, which is exactly the name a brand-new
+    widget always starts out as.
+  #}
+  <input
+    class="ff-input"
+    id="ff-{{ field.name }}"
+    name="{{ field.name }}"
+    type="{{ input_types.get(field.widget, "text") }}"
+    value="{{ field.raw }}"
+    {# Upgraded in place to a calendar drawn in the page. The native input
+       stays the element that holds and submits the value, so without script
+       it is exactly the control it has always been -- only the picker is
+       replaced. #}
+    {% if field.widget in ("date", "datetime") %}data-ff-date{% endif %}
+    {# Likewise: split into days/hours/minutes/seconds boxes, which is the
+       format the text box was asking people to type out. #}
+    {% if field.widget == "duration" %}data-ff-duration{% endif %}
+    {% if field.widget == "decimal" %}step="{{ field.spec.decimal_places|step }}"{% endif %}
+    {# `money` rarely carries a `decimal_places` of its own -- Postgres's
+       `money` type is fixed at two, and nothing in the column tells the
+       adapter that, so the box assumes cents rather than whole units when
+       the spec is silent. #}
+    {% if field.widget == "money" %}step="{{ (field.spec.decimal_places or 2)|step }}"{% endif %}
+    {% if field.widget == "bits" %}pattern="[01]*" inputmode="numeric"{% endif %}
+    {# A client-side hint only -- `ipaddress.ip_interface` in `_parse_inet` is
+       what actually validates, so the pattern only has to be permissive
+       enough to admit every shape that passes there. #}
+    {% if field.widget == "inet" %}
+      inputmode="numeric"
+      pattern="[0-9A-Fa-f:.]+(/\d{1,3})?"
+      spellcheck="false"
+      data-ff-inet
+    {% endif %}
+    {# Same story: `_parse_macaddr` accepts colon-, hyphen- and dot-grouped
+       forms plus bare hex, so the pattern admits all four rather than
+       forcing one spelling the parser would have accepted anyway. #}
+    {% if field.widget == "mac" %}
+      pattern="([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}|([0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}|[0-9A-Fa-f]{12}([0-9A-Fa-f]{4})?"
+      spellcheck="false"
+      data-ff-mac
+    {% endif %}
+    {% if field.spec.max_length %}maxlength="{{ field.spec.max_length }}"{% endif %}
+    {% if field.spec.placeholder %}placeholder="{{ field.spec.placeholder }}"{% endif %}
+    {% if field.required %}required{% endif %}
+    {% if field.errors %}aria-invalid="true"{% endif %}
+  />
+{% endmacro %}

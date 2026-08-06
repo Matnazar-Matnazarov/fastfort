@@ -107,6 +107,17 @@ class ModelSpec:
         return tuple(f.name for f in self.fields if f.filterable)
 
     @property
+    def spatial_fields(self) -> dict[str, int]:
+        """Geometry fields, mapped to the SRID each one is stored in.
+
+        The allow-list `ListQuery.from_params` checks a spatial filter against,
+        and the reason it is a mapping rather than a set: the geometry a filter
+        carries has to be parsed against the column's own SRID, or a viewport in
+        Web Mercator would be compared to a column in WGS 84 and match nothing.
+        """
+        return {f.name: f.geometry.srid for f in self.fields if f.geometry is not None}
+
+    @property
     def sensitive_fields(self) -> frozenset[str]:
         """Fields whose values are masked in audit records and never re-rendered."""
         return frozenset(f.name for f in self.fields if f.sensitive)

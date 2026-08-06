@@ -1,27 +1,33 @@
 """Column types the browser has no native control for.
 
-A duration, an array and a geometry all end up in a plain text box, so each one
-needs a shape it accepts and a shape it renders. All three used to degrade to a
-read-only row -- or worse, in the geometry's case, print raw WKB hex at whoever
-opened the page.
+A duration, an array, a range and a handful of PostgreSQL scalars each need a
+shape they accept and a shape they render -- what this file tests is that
+shape, at the `parse_value`/`render_value` level, independent of which control
+draws it (that half lives in `tests/ui/test_admin_widgets.py`, which drives a
+real form). Geometry has its own file, `test_geo_codec.py`, since the codec
+underneath it is large enough to want fixtures of its own.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+from decimal import Decimal
 
 import pytest
 
-from fastfort.admin.forms import _parse_point, _point_text, widget_for
-from fastfort.spec import FieldSpec, FieldType
+from fastfort.admin.values import (
+    check_bounds,
+    duration_text,
+    parse_duration,
+    parse_value,
+    render_value,
+)
+from fastfort.admin.widgets import widget_for
+from fastfort.spec import FieldSpec, FieldType, RangeSpec
 
-# A point in Tashkent, as EWKB with an SRID prefix and as plain WKB without one.
-TASHKENT_EWKB = "0101000020E610000041F163CC5D4F51407593180456A64440"
-TASHKENT_WKB = "010100000041f163cc5d4f51407593180456a64440"
 
-
-def field(name: str, kind: FieldType) -> FieldSpec:
-    return FieldSpec(name=name, label=name.title(), type=kind)
+def field(name: str, kind: FieldType, **kwargs: object) -> FieldSpec:
+    return FieldSpec(name=name, label=name.title(), type=kind, **kwargs)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -33,14 +39,41 @@ def field(name: str, kind: FieldType) -> FieldSpec:
     ("kind", "expected"),
     [
         (FieldType.DURATION, "duration"),
-        (FieldType.ARRAY, "list"),
-        (FieldType.GEOMETRY, "point"),
+        (FieldType.ARRAY, "tags"),
+        (FieldType.GEOMETRY, "geometry"),
+        (FieldType.INET, "inet"),
+        (FieldType.MACADDR, "mac"),
+        (FieldType.MONEY, "money"),
+        (FieldType.BITS, "bits"),
+        # RANGE and MULTIRANGE share one widget -- `range_control` in
+        # `_widgets.html` is what actually tells them apart, by `FieldType`
+        # rather than by widget name; see `widgets.py`'s `_WIDGETS` docstring.
+        (FieldType.RANGE, "range"),
+        (FieldType.MULTIRANGE, "range"),
+        (FieldType.HSTORE, "keyvalue"),
+        (FieldType.BINARY, "readonly"),
+        (FieldType.SEARCH_VECTOR, "readonly"),
     ],
 )
 def test_each_exotic_type_has_a_control(kind: FieldType, expected: str) -> None:
-    """Not `readonly`. These are editable columns, and rendering them read-only
-    made them uneditable through the admin for no reason anyone could see."""
+    """Not `readonly` for the editable ones. These are writable columns, and
+    rendering them read-only made them uneditable through the admin for no
+    reason anyone could see."""
     assert widget_for(field("x", kind)) == expected
+
+
+def test_the_old_widget_names_still_validate() -> None:
+    """`formfield_overrides = {"keywords": "list"}`, written before `ARRAY` had
+    a widget of its own, must not turn into a start-up error on upgrade."""
+    from fastfort.admin.widgets import WIDGET_NAMES, canonical_widget
+
+    assert "list" in WIDGET_NAMES
+    assert "point" in WIDGET_NAMES
+    assert canonical_widget("list") == "tags"
+    assert canonical_widget("point") == "geometry"
+    # Unknown names pass through unchanged -- `canonical_widget` only ever
+    # redirects the two names this phase renamed.
+    assert canonical_widget("richtext") == "richtext"
 
 
 # ---------------------------------------------------------------------------
@@ -60,25 +93,20 @@ def test_each_exotic_type_has_a_control(kind: FieldType, expected: str) -> None:
 )
 def test_a_duration_reads_the_shapes_people_write(text: str, expected: dt.timedelta) -> None:
     """Right-aligned, so "90" is ninety seconds rather than ninety hours."""
-    from fastfort.admin.forms import _parse_duration
-
-    assert _parse_duration(text) == expected
+    assert parse_duration(text) == expected
 
 
 def test_a_duration_that_is_not_one_says_so() -> None:
-    from fastfort.admin.forms import _parse_duration
-
     with pytest.raises(ValueError, match="HH:MM:SS"):
-        _parse_duration("about an hour")
+        parse_duration("about an hour")
 
 
 def test_a_duration_round_trips_through_its_control() -> None:
     """What the box renders has to be what the box accepts back."""
-    from fastfort.admin.forms import _parse_duration, _render
-
     original = dt.timedelta(days=2, hours=4, minutes=15)
-    rendered = _render(original, field("runs_for", FieldType.DURATION))
-    assert _parse_duration(rendered) == original
+    rendered = render_value(original, field("runs_for", FieldType.DURATION))
+    assert parse_duration(rendered) == original
+    assert render_value(original, field("runs_for", FieldType.DURATION)) == duration_text(original)
 
 
 # ---------------------------------------------------------------------------
@@ -87,60 +115,358 @@ def test_a_duration_round_trips_through_its_control() -> None:
 
 
 def test_an_array_is_comma_separated_both_ways() -> None:
-    from fastfort.admin.forms import _parse, _render
-
     spec = field("keywords", FieldType.ARRAY)
-    assert _render(["alpha", "beta"], spec) == "alpha, beta"
-    assert _parse("alpha, beta", spec) == ["alpha", "beta"]
+    assert render_value(["alpha", "beta"], spec) == "alpha, beta"
+    assert parse_value("alpha, beta", spec) == ["alpha", "beta"]
 
 
 def test_an_array_drops_blank_entries() -> None:
     """ "a, b," is a typo, not a three-element list with an empty string in it."""
-    from fastfort.admin.forms import _parse
+    assert parse_value("a, b, ,", field("keywords", FieldType.ARRAY)) == ["a", "b"]
 
-    assert _parse("a, b, ,", field("keywords", FieldType.ARRAY)) == ["a", "b"]
+
+def test_an_array_with_an_item_spec_parses_each_entry() -> None:
+    """`ARRAY(Integer)` rejects "banana" the same way a bare INTEGER column
+    would, not by silently keeping it as a string."""
+    item = field("item", FieldType.INTEGER)
+    spec = field("scores", FieldType.ARRAY, item=item)
+    assert parse_value("1, 2, 3", spec) == [1, 2, 3]
+
+
+def test_an_array_names_the_offending_entry_and_its_position() -> None:
+    item = field("item", FieldType.INTEGER)
+    spec = field("scores", FieldType.ARRAY, item=item)
+    with pytest.raises(ValueError, match=r'Entry 2 \("banana"\)'):
+        parse_value("1, banana, 3", spec)
+
+
+def test_an_arrays_max_length_applies_per_entry() -> None:
+    """The old bounds check only ever bounded a `str`, so it never fired for an
+    ARRAY at all -- `value` there is a `list`."""
+    spec = field("tags", FieldType.ARRAY, max_length=3)
+    error = check_bounds(["ok", "toolong"], spec)
+    assert error is not None
+    assert "toolong" in error
 
 
 # ---------------------------------------------------------------------------
-# Points
+# Decimal precision
 # ---------------------------------------------------------------------------
 
 
-def test_a_point_is_written_latitude_first() -> None:
-    """Every map, phone and street sign puts latitude first. WKT does not, which
-    is exactly the trap this converts away from."""
-    assert _parse_point("41.2995, 69.2401") == "SRID=4326;POINT(69.2401 41.2995)"
-
-
-@pytest.mark.parametrize("raw", [TASHKENT_EWKB, TASHKENT_WKB])
-def test_a_point_decodes_without_a_geometry_library(raw: str) -> None:
-    """Both with and without the EWKB SRID prefix, and with no Shapely present.
-
-    The alternative was printing the hex, which reads as corruption to anyone
-    who opens the page.
+def test_decimal_excess_scale_is_rejected_not_silently_rounded() -> None:
+    """PostgreSQL rounds a `NUMERIC(12, 2)` given three decimal places with no
+    error at all (confirmed against a live database) -- caught here instead,
+    since nothing in this module is supposed to change a value without saying
+    so.
     """
-    assert _point_text(raw) == "41.2995, 69.2401"
+    spec = field("price", FieldType.DECIMAL, precision=12, decimal_places=2)
+    error = check_bounds(Decimal("123.456"), spec)
+    assert error is not None
+    assert "2 decimal place" in error
 
 
-def test_a_point_round_trips() -> None:
-    assert _parse_point(_point_text(TASHKENT_EWKB)) == "SRID=4326;POINT(69.2401 41.2995)"
+def test_decimal_within_scale_is_accepted() -> None:
+    spec = field("price", FieldType.DECIMAL, precision=12, decimal_places=2)
+    assert check_bounds(Decimal("123.45"), spec) is None
+
+
+def test_decimal_excess_whole_digits_is_rejected() -> None:
+    """The database itself raises `NumericValueOutOfRangeError` for this one
+    (confirmed live) -- as a raw driver exception, not a field-level message,
+    which is exactly what this check exists to pre-empt."""
+    spec = field("price", FieldType.DECIMAL, precision=12, decimal_places=2)
+    error = check_bounds(Decimal("12345678901.23"), spec)
+    assert error is not None
+    assert "digit" in error
+
+
+# ---------------------------------------------------------------------------
+# INET / CIDR
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("text", ["192.168.1.5", "10.0.0.0/8", "192.168.1.5/24"])
+def test_inet_accepts_a_host_or_a_network(text: str) -> None:
+    spec = field("address", FieldType.INET)
+    assert parse_value(text, spec) == text
+
+
+def test_inet_that_is_not_one_says_so() -> None:
+    with pytest.raises(ValueError, match="IP address"):
+        parse_value("not an address", field("address", FieldType.INET))
+
+
+# ---------------------------------------------------------------------------
+# MACADDR
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    ("text", "message"),
+    "text",
+    ["aa:bb:cc:dd:ee:ff", "AA-BB-CC-DD-EE-FF", "aabb.ccdd.eeff", "AABBCCDDEEFF"],
+)
+def test_macaddr_accepts_every_separator(text: str) -> None:
+    spec = field("mac", FieldType.MACADDR)
+    assert parse_value(text, spec) == "aa:bb:cc:dd:ee:ff"
+
+
+def test_macaddr_round_trips() -> None:
+    spec = field("mac", FieldType.MACADDR)
+    parsed = parse_value("AA:BB:CC:DD:EE:FF", spec)
+    rendered = render_value(parsed, spec)
+    assert parse_value(rendered, spec) == parsed
+
+
+def test_macaddr_that_is_not_one_says_so() -> None:
+    with pytest.raises(ValueError, match="MAC address"):
+        parse_value("not a mac", field("mac", FieldType.MACADDR))
+
+
+# ---------------------------------------------------------------------------
+# HSTORE
+# ---------------------------------------------------------------------------
+
+
+def test_hstore_reads_one_pair_per_line() -> None:
+    spec = field("attrs", FieldType.HSTORE)
+    assert parse_value("colour: red\nsize: large", spec) == {"colour": "red", "size": "large"}
+
+
+def test_hstore_renders_sorted_by_key() -> None:
+    spec = field("attrs", FieldType.HSTORE)
+    rendered = render_value({"size": "large", "colour": "red"}, spec)
+    assert rendered == "colour: red\nsize: large"
+
+
+def test_hstore_round_trips_through_its_control() -> None:
+    spec = field("attrs", FieldType.HSTORE)
+    original = {"colour": "red", "size": "large"}
+    rendered = render_value(original, spec)
+    assert parse_value(rendered, spec) == original
+
+
+def test_hstore_without_a_colon_says_so() -> None:
+    with pytest.raises(ValueError, match="colon"):
+        parse_value("colour red", field("attrs", FieldType.HSTORE))
+
+
+# ---------------------------------------------------------------------------
+# MONEY
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
     [
-        ("nowhere", "latitude and a longitude"),
-        ("41.2995", "latitude and a longitude"),
-        ("91, 0", "-90 to 90"),
-        ("0, 200", "-180 to 180"),
+        ("1234.56", "1234.56"),
+        ("1,234.56", "1234.56"),
+        ("$1234.56", "1234.56"),
+        ("$1,234.56", "1234.56"),
+        ("-$1,234.56", "-1234.56"),
     ],
 )
-def test_a_point_that_is_not_one_says_why(text: str, message: str) -> None:
-    with pytest.raises(ValueError, match=message):
-        _parse_point(text)
+def test_money_accepts_currency_formatting(text: str, expected: str) -> None:
+    assert parse_value(text, field("price", FieldType.MONEY)) == expected
 
 
-def test_an_undecodable_geometry_falls_back_rather_than_raising() -> None:
-    """A polygon is not editable as two numbers, but it must not take the page
-    down either."""
-    assert _point_text("not hex at all") == "not hex at all"
+def test_money_renders_as_plain_decimal() -> None:
+    """PostgreSQL's own `money` codec hands back "$1,234.56" against an
+    `en_US.utf8` server (confirmed live) -- the box has to show the plain
+    number, or a value nobody touched round-trips into something that no
+    longer matches what `parse_value` normally sees typed."""
+    rendered = render_value("$1,234.56", field("price", FieldType.MONEY))
+    assert rendered == "1234.56"
+
+
+def test_money_round_trips_through_its_control() -> None:
+    spec = field("price", FieldType.MONEY)
+    db_value = "-$1,234.56"  # what PostgreSQL's money codec actually returns
+    rendered = render_value(db_value, spec)
+    assert parse_value(rendered, spec) == "-1234.56"
+
+
+def test_money_that_is_not_one_says_so() -> None:
+    with pytest.raises(ValueError, match="amount"):
+        parse_value("free", field("price", FieldType.MONEY))
+
+
+# ---------------------------------------------------------------------------
+# BITS
+# ---------------------------------------------------------------------------
+
+
+def test_bits_accepts_zeros_and_ones() -> None:
+    assert parse_value("01010101", field("flags", FieldType.BITS)) == "01010101"
+
+
+def test_bits_rejects_anything_else() -> None:
+    with pytest.raises(ValueError, match="0s and 1s"):
+        parse_value("0102", field("flags", FieldType.BITS))
+
+
+def test_bits_renders_a_bitstring_like_object_without_the_grouping_space() -> None:
+    """`asyncpg.BitString.as_string()` groups digits in fours ("0101 0101");
+    `parse_value` rejects the space, so it must not reach the box."""
+
+    class FakeBitString:
+        def as_string(self) -> str:
+            return "0101 0101"
+
+    rendered = render_value(FakeBitString(), field("flags", FieldType.BITS))
+    assert rendered == "01010101"
+    assert parse_value(rendered, field("flags", FieldType.BITS)) == "01010101"
+
+
+# ---------------------------------------------------------------------------
+# RANGE / MULTIRANGE
+# ---------------------------------------------------------------------------
+
+
+def test_range_parses_into_a_plain_tuple_not_a_sqlalchemy_object() -> None:
+    """`values.py` may not import SQLAlchemy -- `orm/sqlalchemy/adapter.py` is
+    the layer that turns this tuple into a real `Range`."""
+    spec = field("span", FieldType.RANGE, bounds=RangeSpec(FieldType.INTEGER, multi=False))
+    assert parse_value("[1, 10)", spec) == (1, 10, "[)")
+
+
+def test_range_endpoints_parse_through_the_bound_type() -> None:
+    """A `daterange` gets the date parser's own message, reused rather than
+    duplicated."""
+    spec = field("span", FieldType.RANGE, bounds=RangeSpec(FieldType.DATE, multi=False))
+    with pytest.raises(ValueError, match="YYYY-MM-DD"):
+        parse_value("[not-a-date, 2026-02-01]", spec)
+
+
+def test_range_allows_an_unbounded_end() -> None:
+    spec = field("span", FieldType.RANGE, bounds=RangeSpec(FieldType.INTEGER, multi=False))
+    assert parse_value("(, 5]", spec) == (None, 5, "(]")
+
+
+def test_range_that_is_not_one_says_so() -> None:
+    spec = field("span", FieldType.RANGE, bounds=RangeSpec(FieldType.INTEGER, multi=False))
+    with pytest.raises(ValueError, match="range"):
+        parse_value("nonsense", spec)
+
+
+class _FakeRange:
+    """Duck-types `sqlalchemy.dialects.postgresql.Range` -- `values.py` cannot
+    import the real thing, so `render_value` has to work off attributes alone.
+    """
+
+    def __init__(self, lower: object, upper: object, bounds: str) -> None:
+        self.lower = lower
+        self.upper = upper
+        self.bounds = bounds
+        self.isempty = False
+
+
+def test_range_round_trips_through_its_control() -> None:
+    spec = field("span", FieldType.RANGE, bounds=RangeSpec(FieldType.INTEGER, multi=False))
+    rendered = render_value(_FakeRange(1, 10, "[)"), spec)
+    assert rendered == "[1, 10)"
+    assert parse_value(rendered, spec) == (1, 10, "[)")
+
+
+def test_multirange_reads_one_range_per_line() -> None:
+    spec = field("spans", FieldType.MULTIRANGE, bounds=RangeSpec(FieldType.INTEGER, multi=True))
+    assert parse_value("[1, 10)\n[20, 30)", spec) == [(1, 10, "[)"), (20, 30, "[)")]
+
+
+def test_multirange_names_the_offending_line() -> None:
+    spec = field("spans", FieldType.MULTIRANGE, bounds=RangeSpec(FieldType.INTEGER, multi=True))
+    with pytest.raises(ValueError, match="Line 2"):
+        parse_value("[1, 10)\nnonsense", spec)
+
+
+def test_multirange_round_trips_through_its_control() -> None:
+    spec = field("spans", FieldType.MULTIRANGE, bounds=RangeSpec(FieldType.INTEGER, multi=True))
+    value = [_FakeRange(1, 10, "[)"), _FakeRange(20, 30, "[)")]
+    rendered = render_value(value, spec)
+    assert rendered == "[1, 10)\n[20, 30)"
+    assert parse_value(rendered, spec) == [(1, 10, "[)"), (20, 30, "[)")]
+
+
+# ---------------------------------------------------------------------------
+# List cells
+# ---------------------------------------------------------------------------
+
+
+def test_a_key_value_column_is_not_rendered_as_python_source() -> None:
+    """`str(dict)` is Python's own repr, so an hstore or a JSON object read
+    "{'theme': 'dark'}" in the table -- braces, quotes and all. The same
+    `key: value` shape the field's own control uses, on one line."""
+    from fastfort.ui.renderer import display_value
+
+    assert display_value({"theme": "dark", "lang": "uz"}) == "theme: dark, lang: uz"
+
+
+def test_an_empty_mapping_reads_as_missing_rather_than_as_nothing() -> None:
+    """An empty cell is ambiguous -- it could equally be a value. The em dash is
+    what every other empty cell in the table already shows."""
+    from fastfort.ui.renderer import EMPTY, display_value
+
+    assert display_value({}) == EMPTY
+
+
+# ---------------------------------------------------------------------------
+# What the database says, said in words
+# ---------------------------------------------------------------------------
+
+
+def constraint_error(text: str) -> object:
+    """An IntegrityError shaped the way a driver hands one over."""
+    import sqlalchemy as sa
+
+    return sa.exc.IntegrityError("INSERT ...", {}, Exception(text))
+
+
+@pytest.mark.parametrize(
+    "reported",
+    [
+        # PostgreSQL, SQLite and MySQL each spell it differently, and each quotes
+        # the constraint name differently or not at all.
+        'new row for relation "exotic_column" violates check constraint '
+        '"exotic_column_rating_check"',
+        "CHECK constraint failed: exotic_column_rating_check",
+        "Check constraint 'exotic_column_rating_check' is violated.",
+    ],
+)
+def test_a_failed_check_constraint_names_the_field_and_the_rule(reported: str) -> None:
+    """The database's own sentence is accurate and unusable. "violates check
+    constraint "exotic_column_rating_check"" tells somebody filling in a form
+    nothing they can act on, and the constraint name is the only part of it that
+    means anything -- so it is matched back to the field whose bounds were read
+    off that same constraint at introspection time."""
+    from tests.orm.exotic_models import ExoticColumn
+
+    from fastfort.orm.sqlalchemy import introspect_model
+    from fastfort.orm.sqlalchemy.adapter import constraint_message
+
+    spec = introspect_model(ExoticColumn, key="lab.exotic")
+    assert constraint_message(constraint_error(reported), spec) == "Rating must be between 1 and 5."
+
+
+def test_a_violation_that_is_not_a_check_keeps_the_driver_wording() -> None:
+    """A unique index has no bound on the spec to turn back into a sentence, and
+    the driver's own line does name the constraint -- which is more use than a
+    generic message would be."""
+    from fastfort.orm.sqlalchemy.adapter import constraint_message
+
+    reported = 'duplicate key value violates unique constraint "users_email_key"'
+    assert constraint_message(constraint_error(reported), None) == reported
+
+
+def test_a_unique_foreign_key_is_a_one_to_one() -> None:
+    """`ForeignKey(unique=True)` on the child side is many-to-one as far as
+    SQLAlchemy's direction goes. The parent side already reports it as a
+    one-to-one, so without this the same relationship was two different kinds
+    depending on which model's page you were looking at."""
+    from tests.orm.models import Product
+
+    from fastfort.orm.sqlalchemy import introspect_model
+    from fastfort.spec import FieldType
+
+    spec = introspect_model(Product, key="shop.product")
+    # `category` is an ordinary, non-unique foreign key and must stay one.
+    assert spec.field("category").type is FieldType.FOREIGN_KEY

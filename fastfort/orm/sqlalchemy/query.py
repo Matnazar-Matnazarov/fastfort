@@ -20,7 +20,7 @@ from sqlalchemy.orm import InstrumentedAttribute, joinedload, selectinload
 from fastfort.core.exceptions import ValidationError
 from fastfort.spec import FieldSpec, FieldType, Filter, FilterOperator, ListQuery, ModelSpec
 
-from .dialects import DialectProfile, icontains, order_term
+from .dialects import DialectProfile, icontains, order_term, spatial_condition
 
 __all__ = ["QueryBuilder"]
 
@@ -113,6 +113,20 @@ class QueryBuilder:
         for condition in query.filters:
             statement = self._join_for(statement, condition.field, joined)
             statement = statement.where(self._condition(condition))
+
+        for spatial in query.spatial:
+            # `None` where the database has no PostGIS. A saved link carrying a
+            # spatial filter is still a perfectly good request for a list page,
+            # so the condition is dropped rather than the page.
+            predicate = spatial_condition(
+                self._attribute(spatial.field),
+                spatial.operator.value,
+                spatial.geometry,
+                spatial.distance,
+                self.profile,
+            )
+            if predicate is not None:
+                statement = statement.where(predicate)
 
         if query.search and self.search_fields:
             clauses: list[sa.ColumnElement[bool]] = []
@@ -307,7 +321,37 @@ def _coerce_datetime(raw: str) -> dt.datetime:
     return dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
 
 
+def _coerce_duration(raw: str) -> dt.timedelta:
+    """`HH:MM:SS`, `MM:SS` or `Nd HH:MM:SS` into a timedelta.
+
+    A near-twin of `parse_duration` in `fastfort/admin/values.py`, and
+    deliberately not shared with it: `fastfort/orm/` may import the spec layer
+    but not the admin layer, and inverting that to save fifteen lines would put
+    the ORM adapter downstream of the web layer it exists to be independent of.
+
+    It exists at all because `DURATION` is offered as a filter, and without a
+    coercer the bound reaches the database as the string it arrived as --
+    which PostgreSQL refuses against an `interval` column, so the filter that
+    looked available was a 500 waiting to be clicked.
+    """
+    text = raw.strip()
+    days = 0
+    if "d" in text:
+        head, _, text = text.partition("d")
+        days = int(head.strip())
+    parts = text.strip().split(":") if text.strip() else ["0"]
+    if len(parts) > 3:
+        raise ValueError(f"{raw!r} is not a duration")
+    numbers = [float(part) for part in parts]
+    # Right-aligned, so "90" is ninety seconds rather than ninety hours -- the
+    # same rule the form's box follows.
+    while len(numbers) < 3:
+        numbers.insert(0, 0.0)
+    return dt.timedelta(days=days, hours=numbers[0], minutes=numbers[1], seconds=numbers[2])
+
+
 _COERCERS: dict[FieldType, Callable[[str], Any]] = {
+    FieldType.DURATION: _coerce_duration,
     FieldType.INTEGER: int,
     FieldType.BIGINT: int,
     FieldType.FLOAT: float,

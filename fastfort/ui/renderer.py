@@ -103,6 +103,13 @@ def display_value(value: Any) -> Any:
         return f"{value:,}"
     if isinstance(value, list | tuple):
         return ", ".join(str(item) for item in value) or EMPTY
+    if isinstance(value, dict):
+        # An hstore or a JSON object. `str(dict)` is Python's own repr, so a
+        # settings column read "{'theme': 'dark'}" in the table -- quotes,
+        # braces and all -- which is source code leaking into an interface.
+        # The same `key: value` shape the field's own control uses, joined for
+        # one line.
+        return ", ".join(f"{key}: {item}" for key, item in value.items()) or EMPTY
     return str(value)
 
 

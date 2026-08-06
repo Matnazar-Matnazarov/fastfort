@@ -257,7 +257,7 @@ async def test_the_tiles_cannot_steal_the_drag(client: httpx.AsyncClient) -> Non
     came before this one changed nothing anybody could see.
     """
     sheet = (await client.get("/admin/static/fastfort.css")).text
-    script = (await client.get("/admin/static/js/fastfort.js")).text
+    script = (await client.get("/admin/static/js/fastfort-geo.js")).text
     tiles = sheet[sheet.index(".ff-map__tiles {") :].split("}", 1)[0]
 
     # The layer is inert, so every pointer event lands on the canvas that pans.
@@ -269,7 +269,7 @@ async def test_the_tiles_cannot_steal_the_drag(client: httpx.AsyncClient) -> Non
 
 async def test_the_marker_is_a_pin_anchored_at_its_point(client: httpx.AsyncClient) -> None:
     """The place is where the tip touches the map. A dot has to be guessed at."""
-    script = (await client.get("/admin/static/js/fastfort.js")).text
+    script = (await client.get("/admin/static/js/fastfort-geo.js")).text
     sheet = (await client.get("/admin/static/fastfort.css")).text
     marker = sheet[sheet.index(".ff-map__marker {") :].split("}", 1)[0]
 
@@ -281,7 +281,7 @@ async def test_the_marker_is_a_pin_anchored_at_its_point(client: httpx.AsyncClie
 async def test_the_map_offers_to_find_where_you_are(client: httpx.AsyncClient) -> None:
     """The commonest thing anyone puts in a location field is where they are
     standing, and without this that means dragging there from the whole world."""
-    script = (await client.get("/admin/static/js/fastfort.js")).text
+    script = (await client.get("/admin/static/js/fastfort-geo.js")).text
     sprite = await form_body(client)
 
     assert "getCurrentPosition" in script
@@ -315,7 +315,7 @@ async def test_the_locate_control_has_a_translated_label(client: httpx.AsyncClie
 
 
 async def test_the_script_draws_a_layer_per_zoom_level(client: httpx.AsyncClient) -> None:
-    script = (await client.get("/admin/static/js/fastfort.js")).text
+    script = (await client.get("/admin/static/js/fastfort-geo.js")).text
 
     assert "ff-map__layer" in script
     assert "layerFor" in script
@@ -338,7 +338,7 @@ async def test_tiles_are_not_deferred(client: httpx.AsyncClient) -> None:
     """A lazily loaded tile never fires the event that retires the backdrop, so
     the level underneath would stay there for as long as the map was off screen.
     """
-    script = (await client.get("/admin/static/js/fastfort.js")).text
+    script = (await client.get("/admin/static/js/fastfort-geo.js")).text
     built = script[script.index('class: "ff-map__tile"') :].split("});", 1)[0]
 
     assert 'loading: "lazy"' not in built

@@ -7,6 +7,7 @@ from .forms import Form, FormField
 from .messages import Message, MessageLevel, Messages
 from .options import Action, ModelAdmin, action
 from .site import build_admin_router
+from .widgets import register_widget
 
 __all__ = [
     "Action",
@@ -20,4 +21,5 @@ __all__ = [
     "build_admin_router",
     "display",
     "register",
+    "register_widget",
 ]

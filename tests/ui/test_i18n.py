@@ -458,3 +458,37 @@ def test_every_string_the_script_asks_for_is_one_the_server_sends() -> None:
     missing = sorted(attribute(name) for name in asked if attribute(name) not in sent)
 
     assert not missing, f"the script asks for strings the server never sends: {missing}"
+
+
+def test_the_on_demand_bundles_only_ask_for_strings_that_exist() -> None:
+    """`fastfort-geo.js` and `fastfort-data.js` call the same `t()`.
+
+    They reach it through the kit `fastfort.js` publishes, so it reads the same
+    `FALLBACK_TEXT` and the same attributes on `<html>` -- one table of strings
+    for every bundle. That also means the check above, which only reads the main
+    script, cannot see a `t("Format")` added to one of these: the key would be
+    missing from both sides and the control would show the literal key. Hence
+    this, which starts from the calls rather than from the table.
+    """
+    from fastfort.admin.site import _ui_text
+
+    js = Path(__file__).resolve().parents[2] / "fastfort" / "ui" / "static" / "js"
+    main = (js / "fastfort.js").read_text(encoding="utf-8")
+    block = re.search(r"const FALLBACK_TEXT = \{(.*?)\n  \};", main, re.S)
+    assert block, "the script should declare its fallbacks in one place"
+    declared = set(re.findall(r"^\s{4}(\w+):", block.group(1), re.M))
+
+    def attribute(name: str) -> str:
+        return re.sub(r"(?<!^)(?=[A-Z])", "-", name).lower()
+
+    sent = set(_ui_text(Translator()))
+    problems: list[str] = []
+
+    for bundle in sorted(js.glob("fastfort-*.js")):
+        for key in sorted(set(re.findall(r'\bt\("(\w+)"\)', bundle.read_text(encoding="utf-8")))):
+            if key not in declared:
+                problems.append(f"{bundle.name}: t({key!r}) has no fallback")
+            elif attribute(key) not in sent:
+                problems.append(f"{bundle.name}: t({key!r}) is never sent as {attribute(key)!r}")
+
+    assert not problems, problems

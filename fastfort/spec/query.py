@@ -23,6 +23,8 @@ __all__ = [
     "ListQuery",
     "Page",
     "SortSpec",
+    "SpatialFilter",
+    "SpatialOperator",
 ]
 
 T = TypeVar("T")
@@ -89,6 +91,65 @@ class Filter:
         }
 
 
+class SpatialOperator(StrEnum):
+    """Comparisons a spatial filter may request.
+
+    Deliberately *not* members of `FilterOperator`, whose docstring states the
+    rule that enum lives by: every operator in it has to mean the same thing on
+    SQLite, PostgreSQL and MySQL. `ST_DWithin` does not exist on two of the
+    three. Rather than quietly weakening that promise, spatial filtering is its
+    own vocabulary carried in its own field, offered only where the backend
+    reports PostGIS -- so a filter that cannot run is never rendered, instead of
+    being rendered and then failing when it is used.
+    """
+
+    #: The row's geometry lies inside the one the filter names, and vice versa.
+    WITHIN = "within"
+    CONTAINS = "contains"
+    #: They share any point at all. The cheapest useful question, and the one an
+    #: index answers directly.
+    INTERSECTS = "intersects"
+    OVERLAPS = "overlaps"
+    TOUCHES = "touches"
+    CROSSES = "crosses"
+    #: Within `distance` of the named geometry. Metres on a `geography` column,
+    #: SRID units on a `geometry` one -- the distinction `GeometrySpec.geography`
+    #: exists to keep.
+    DWITHIN = "dwithin"
+    #: Bounding-box overlap, which is what a map viewport actually asks.
+    BBOX = "bbox"
+
+    @property
+    def needs_distance(self) -> bool:
+        return self is SpatialOperator.DWITHIN
+
+
+@dataclass(frozen=True, slots=True)
+class SpatialFilter:
+    """A single validated spatial condition.
+
+    `geometry` is EWKT, already parsed and re-rendered by `spec.geo` before it
+    got here -- so what reaches the query builder is a string this package
+    produced, never the one the query string carried. That matters more than
+    usual: the value ends up as an argument to a SQL function, and the one thing
+    it must not be is text a request chose.
+    """
+
+    field: str
+    operator: SpatialOperator
+    geometry: str
+    #: Metres, for `dwithin`. `None` for every other operator.
+    distance: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "field": self.field,
+            "operator": self.operator.value,
+            "geometry": self.geometry,
+            "distance": self.distance,
+        }
+
+
 @dataclass(frozen=True, slots=True)
 class SortSpec:
     """One ordering term."""
@@ -120,6 +181,10 @@ class ListQuery:
 
     search: str = ""
     filters: tuple[Filter, ...] = ()
+    #: Spatial conditions, kept apart from `filters` because they compile to SQL
+    #: only PostGIS has. A backend without it ignores them; `from_params` never
+    #: produces one for a field the caller did not declare spatial.
+    spatial: tuple[SpatialFilter, ...] = ()
     ordering: tuple[SortSpec, ...] = ()
     page: int = 1
     page_size: int = 25
@@ -141,6 +206,7 @@ class ListQuery:
         return {
             "search": self.search,
             "filters": [f.to_dict() for f in self.filters],
+            "spatial": [f.to_dict() for f in self.spatial],
             "ordering": [s.to_dict() for s in self.ordering],
             "page": self.page,
             "page_size": self.page_size,
@@ -153,6 +219,7 @@ class ListQuery:
         *,
         sortable_fields: Iterable[str] = (),
         filterable_fields: Iterable[str] = (),
+        spatial_fields: Mapping[str, int] | None = None,
         searchable: bool = True,
         default_ordering: Sequence[SortSpec] = (),
         page_size: int = 25,
@@ -176,7 +243,14 @@ class ListQuery:
         if not ordering:
             ordering = tuple(default_ordering)
 
-        filters = _parse_filters(params, filterable, rejected)
+        spatial = _parse_spatial(params, spatial_fields or {}, rejected)
+        # Spatial keys are `field__within`, and `field` is a real field name, so
+        # `_split_filter_key` would happily read them as an ordinary filter with
+        # an unknown operator and reject them by name. Taken out first.
+        remaining = {
+            key: value for key, value in params.items() if key not in _spatial_keys(spatial)
+        }
+        filters = _parse_filters(remaining, filterable, rejected)
 
         size = _clamp_int(params.get(PAGE_SIZE_PARAM), default=page_size, low=1, high=max_page_size)
         page = _clamp_int(params.get(PAGE_PARAM), default=1, low=1, high=None)
@@ -184,6 +258,7 @@ class ListQuery:
         return cls(
             search=search,
             filters=filters,
+            spatial=spatial,
             ordering=ordering,
             page=page,
             page_size=size,
@@ -280,6 +355,91 @@ def _split_filter_key(key: str, filterable: frozenset[str]) -> tuple[str, Filter
         return name, FilterOperator(suffix)
     except ValueError:
         return None
+
+
+#: Suffix carrying the radius of a `dwithin`, in metres.
+DISTANCE_SUFFIX = "__km"
+
+#: Largest radius a single request may ask for, in metres. Ten thousand
+#: kilometres is a quarter of the way round the planet -- past that the query is
+#: "every row", which the unfiltered list already answers more cheaply.
+MAX_DISTANCE_M = 10_000_000.0
+
+
+def _spatial_keys(filters: tuple[SpatialFilter, ...]) -> frozenset[str]:
+    keys: set[str] = set()
+    for condition in filters:
+        keys.add(f"{condition.field}__{condition.operator.value}")
+        keys.add(f"{condition.field}{DISTANCE_SUFFIX}")
+    return frozenset(keys)
+
+
+def _parse_spatial(
+    params: Mapping[str, str], spatial_fields: Mapping[str, int], rejected: list[str]
+) -> tuple[SpatialFilter, ...]:
+    """Read `field__within=<geometry>` and friends.
+
+    `spatial_fields` maps a field name to its SRID, and it is the allow-list: a
+    name that is not in it never becomes a spatial condition, so a column that
+    is not a geometry can never reach an `ST_` function.
+
+    The geometry itself is parsed by `spec.geo` and re-rendered from what that
+    produced, never passed through. It ends up as an argument to a SQL function,
+    and the one thing it must not be is the string a request supplied.
+    """
+    from .fields import FieldSpec, FieldType, GeometrySpec
+    from .geo import parse as parse_geometry
+
+    found: list[SpatialFilter] = []
+
+    for key, raw_value in params.items():
+        name, separator, suffix = key.rpartition("__")
+        if not separator or name not in spatial_fields:
+            continue
+        try:
+            operator = SpatialOperator(suffix)
+        except ValueError:
+            continue
+
+        srid = spatial_fields[name]
+        try:
+            geometry = parse_geometry(
+                raw_value,
+                FieldSpec(
+                    name=name,
+                    type=FieldType.GEOMETRY,
+                    label=name,
+                    # No `kind`, so any shape is accepted: a viewport is a
+                    # polygon and a "near here" is a point, against the same
+                    # column.
+                    geometry=GeometrySpec(srid=srid),
+                ),
+            )
+        except ValueError:
+            # A stale bookmark should still render a list page -- the same rule
+            # every other rejected parameter here follows.
+            rejected.append(key)
+            continue
+
+        distance: float | None = None
+        if operator.needs_distance:
+            try:
+                kilometres = float(params.get(f"{name}{DISTANCE_SUFFIX}", ""))
+            except ValueError:
+                rejected.append(f"{name}{DISTANCE_SUFFIX}")
+                continue
+            if not 0 < kilometres * 1000 <= MAX_DISTANCE_M:
+                rejected.append(f"{name}{DISTANCE_SUFFIX}")
+                continue
+            distance = kilometres * 1000
+
+        found.append(
+            SpatialFilter(field=name, operator=operator, geometry=geometry, distance=distance)
+        )
+        if len(found) >= MAX_FILTERS:
+            break
+
+    return tuple(found)
 
 
 def _parse_filters(

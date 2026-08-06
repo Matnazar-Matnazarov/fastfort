@@ -147,8 +147,20 @@ def test_motion_is_disabled_when_the_viewer_asks(css: str) -> None:
     assert "prefers-reduced-motion" in css
 
 
-def test_the_front_end_stays_within_budget(css: str) -> None:
-    """The whole front end is budgeted at 72 KB gzipped, CSS and JavaScript.
+#: Scripts every single page downloads. Anything not named here is asked for
+#: only by a page whose fields need it -- see `_extra_scripts` in `admin/site.py`.
+ALWAYS_LOADED = ("boot.js", "fastfort.js")
+
+
+def _gzipped(*blobs: bytes) -> int:
+    import gzip
+
+    return sum(len(gzip.compress(blob)) for blob in blobs)
+
+
+def test_the_everyday_page_stays_within_budget(css: str) -> None:
+    """What every page downloads is budgeted at 66 KB gzipped: the stylesheet,
+    `boot.js` and `fastfort.js`.
 
     Both halves are weighed, not just the stylesheet. The budget exists to keep
     the admin from acquiring a front-end framework by degrees, and a framework
@@ -161,32 +173,52 @@ def test_the_front_end_stays_within_budget(css: str) -> None:
     stops being true. For comparison, React and ReactDOM alone are about twice
     this before a single component is written.
 
-    Every script that ships is weighed, `boot.js` included. It is small, but it
-    is served on every page, and a budget that quietly excludes a file is a
-    budget with a hole in it.
+    This is the number that matters, and it is the reason the front end is no
+    longer one bundle. The column-types round added a polygon editor and four
+    structured-data editors, together about a third of the JavaScript that
+    existed before them -- and the great majority of admin pages have no
+    geometry, array or hstore column at all. Charging every list view for them
+    is exactly the accumulation this test exists to prevent, so they moved into
+    files a page asks for only when one of its fields needs one, and the weight
+    of the everyday page went *down*.
 
     The assertion sits below the stated ceiling rather than at it, so growth is
-    noticed before it becomes a problem. It has been raised three times: from
-    40 KB when the related-object popup, the appearance panel, the filter drawer
-    and the export menu landed together; again for the date picker, the duration
-    boxes and the map; and again for the upload card, the date picker's month and
-    year views and its clock, and the map's own controls. Each was a feature
-    rather than an accumulation.
-
-    The gap between the assertion and the ceiling is deliberate headroom. Raising
+    noticed before it becomes a problem. The gap is deliberate headroom: raising
     this number by fifty bytes every time something lands is the failure mode the
     budget exists to catch, so a raise should be one considered step with room
     left in it -- and trimming the comments to squeeze under is never the fix.
     """
-    import gzip
+    js = CSS_DIR.parent / "js"
+    scripts = [js / name for name in ALWAYS_LOADED]
+    missing = [path.name for path in scripts if not path.exists()]
+    assert not missing, f"the budget cannot pass by measuring nothing: {missing}"
 
+    compressed = _gzipped(css.encode("utf-8"), *(path.read_bytes() for path in scripts))
+    assert compressed < 64_000, f"{compressed} bytes gzipped"
+
+
+def test_the_whole_front_end_stays_within_budget(css: str) -> None:
+    """Everything that ships, on-demand bundles included, is budgeted at 88 KB.
+
+    The per-page budget above is the one that protects the common case, but on
+    its own it would be a budget with a hole in it: anything could be moved into
+    an on-demand file and stop being counted. This one counts every byte in the
+    package, so the split has to earn its place by being genuinely optional
+    rather than by relabelling weight.
+
+    It has been raised three times before this round: from 40 KB when the
+    related-object popup, the appearance panel, the filter drawer and the export
+    menu landed together; again for the date picker, the duration boxes and the
+    map; and again for the upload card, the date picker's month and year views
+    and its clock, and the map's own controls. This round adds the geometry
+    editor for all seven shapes and the array, hstore, JSON and address editors.
+    Each was a feature rather than an accumulation.
+    """
     scripts = sorted((CSS_DIR.parent / "js").glob("*.js"))
     assert scripts, "the budget cannot pass by measuring nothing"
 
-    compressed = len(gzip.compress(css.encode("utf-8"))) + sum(
-        len(gzip.compress(script.read_bytes())) for script in scripts
-    )
-    assert compressed < 68_000, f"{compressed} bytes gzipped"
+    compressed = _gzipped(css.encode("utf-8"), *(script.read_bytes() for script in scripts))
+    assert compressed < 84_000, f"{compressed} bytes gzipped"
 
 
 # ---------------------------------------------------------------------------

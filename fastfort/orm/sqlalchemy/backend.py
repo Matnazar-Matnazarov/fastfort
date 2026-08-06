@@ -9,6 +9,7 @@ engine would quietly create a second one alongside it.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from types import TracebackType
 from typing import Any
 
@@ -125,6 +126,8 @@ class SQLAlchemyBackend:
         self._resolve_key = resolve_key
         self._count_cap = count_cap
         self._specs: dict[type, ModelSpec] = {}
+        # `None` until `check_connection` has asked. See `profile`.
+        self._has_postgis: bool | None = None
 
     def __repr__(self) -> str:
         return f"<SQLAlchemyBackend {self.dialect}>"
@@ -159,7 +162,40 @@ class SQLAlchemyBackend:
 
     @property
     def profile(self) -> DialectProfile:
-        return profile_for(self.dialect)
+        """What this database can do.
+
+        Everything but PostGIS is read off the dialect name and is therefore
+        free. PostGIS is an extension, so two PostgreSQL servers disagree about
+        it and the only honest answer comes from asking -- which `check_connection`
+        does once, at start-up, and caches here. Until it has, the answer is
+        "no", which is the safe direction: a spatial filter that is never
+        offered is a missing feature, and one that is offered and then fails is
+        a broken page.
+        """
+        base = profile_for(self.dialect)
+        if self._has_postgis is None:
+            return base
+        return replace(base, has_postgis=self._has_postgis)
+
+    async def _probe_postgis(self, session: AsyncSession) -> None:
+        """Ask once whether PostGIS is installed, and remember the answer.
+
+        A failure is an answer too: `postgis_version()` does not exist without
+        the extension, so the error *is* the "no". The transaction has to be
+        rolled back after it, because PostgreSQL aborts one on any failed
+        statement and everything after it in the same transaction would fail
+        with "current transaction is aborted" rather than with its own problem.
+        """
+        if self.dialect not in ("postgresql", "postgres"):
+            self._has_postgis = False
+            return
+        try:
+            await session.execute(sa.text("SELECT postgis_version()"))
+        except Exception:
+            self._has_postgis = False
+            await session.rollback()
+        else:
+            self._has_postgis = True
 
     def supports(self, model: type) -> bool:
         if not is_sqlalchemy_model(model):
@@ -219,6 +255,11 @@ class SQLAlchemyBackend:
         try:
             async with self._session_factory() as session:
                 await session.execute(sa.text("SELECT 1"))
+                # Here rather than lazily on first use: the answer decides
+                # whether a filter panel offers a spatial control at all, and
+                # a probe that runs mid-request would have to do so inside
+                # whatever transaction that request had already opened.
+                await self._probe_postgis(session)
         except Exception as exc:
             # The driver reports the address it dialled and nothing else, which
             # leaves "Connection refused, 127.0.0.1:55433" as the whole of what

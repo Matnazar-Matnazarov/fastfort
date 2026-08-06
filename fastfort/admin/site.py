@@ -68,6 +68,46 @@ CSS_SHEETS = (
     "06-widgets.css",
 )
 
+#: Every script this admin will serve. An allow-list, because the route reads a
+#: file by a name the request chose.
+#:
+#: The first two load on every page. The other two are asked for only by a page
+#: that renders a field needing them, which is what `_extra_scripts` decides:
+#: the map editor and the structured-data editors together are about a third of
+#: the front end's weight, and the great majority of admin pages have no
+#: geometry, array or hstore column at all.
+SCRIPTS = frozenset({"boot.js", "fastfort.js", "fastfort-geo.js", "fastfort-data.js"})
+
+#: The bundle each widget needs, over and above the everyday one.
+_WIDGET_SCRIPTS = {
+    "geometry": "fastfort-geo.js",
+    "tags": "fastfort-data.js",
+    "keyvalue": "fastfort-data.js",
+    "json": "fastfort-data.js",
+    "inet": "fastfort-data.js",
+    "mac": "fastfort-data.js",
+}
+
+#: Filterable types that ask for a lower and an upper bound rather than a list of
+#: values, mapped to the input the two boxes use.
+#:
+#: A number, a time and a duration all have the same problem an exact-match
+#: dropdown cannot solve: nobody filters a price list to exactly 19.99, they
+#: filter it to under twenty. Dates are handled separately, above -- they get the
+#: same two boxes plus the presets ("this month") that are what a date filter is
+#: actually used for, and no equivalent exists for a price.
+_BOUNDED_FILTER_TYPES = {
+    FieldType.INTEGER: "number",
+    FieldType.BIGINT: "number",
+    FieldType.FLOAT: "number",
+    FieldType.DECIMAL: "number",
+    FieldType.MONEY: "number",
+    FieldType.TIME: "time",
+    # No native control, so the same text box the form's duration field starts
+    # as -- and the same `HH:MM:SS` the parser reads.
+    FieldType.DURATION: "text",
+}
+
 #: Types whose columns are right-aligned with tabular figures, so digits line up.
 _NUMERIC_TYPES = frozenset(
     {FieldType.INTEGER, FieldType.BIGINT, FieldType.DECIMAL, FieldType.FLOAT}
@@ -218,6 +258,11 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             "palette": _palette_entries(fort, list_url, translator),
             "accents": ACCENT_PRESETS,
             "ui_text": _ui_text(translator),
+            # Nothing beyond the everyday bundle, unless a view says otherwise.
+            # Declared here rather than per page because the renderer runs with
+            # StrictUndefined, so a template reading a name one view forgot to
+            # set is an error, not an empty loop.
+            "extra_scripts": (),
             "breadcrumbs": (),
             # Only a form opened from a relation field is a popup; every other
             # page gets the shell. Declared here so no template has to guard.
@@ -389,7 +434,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         # An allow-list, not a path join: `name` comes from the URL, and
         # anything that reads a file by a name a request chose is one `..` away
         # from serving the rest of the disk.
-        if name not in {"fastfort.js", "boot.js"}:
+        if name not in SCRIPTS:
             raise HTTPException(status_code=404, detail="No such script.")
         return asset(request, _bundled_js(name, debug=settings.debug), "text/javascript")
 
@@ -485,6 +530,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             params,
             sortable_fields=spec.sortable_fields,
             filterable_fields=model_admin.list_filter or spec.filterable_fields,
+            spatial_fields=spec.spatial_fields,
             searchable=bool(model_admin.searchable()),
             default_ordering=model_admin.default_ordering(),
             page_size=model_admin.page_size(settings.admin.page_size),
@@ -628,6 +674,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             params,
             sortable_fields=spec.sortable_fields,
             filterable_fields=model_admin.list_filter or spec.filterable_fields,
+            spatial_fields=spec.spatial_fields,
             searchable=bool(model_admin.searchable()),
             default_ordering=model_admin.default_ordering(),
             page_size=settings.admin.export_chunk_size,
@@ -836,6 +883,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             ),
             "version_token": None,
             "input_types": INPUT_TYPES,
+            "extra_scripts": _extra_scripts(form),
         }
 
     @router.get("/{model_key}/add", response_class=HTMLResponse, name="fastfort:add")
@@ -1241,19 +1289,29 @@ def build_admin_router(fort: FastFort) -> APIRouter:
 
 #: HTML input types, keyed by widget name. Kept beside the widget map rather than
 #: in the template, so adding a widget touches one file.
+#:
+#: Only widgets the generic `<input>` branch in `_widgets.html` actually
+#: renders belong here -- "tags", "keyvalue", "range" and "geometry" draw their
+#: own markup and never reach this lookup. A name this dict does not carry
+#: still renders: `generic_control` reads it with `.get(field.widget, "text")`,
+#: which is the fix for the crash this dict used to cause (see the widget's own
+#: comment in `widgets.py`) -- so a project's `register_widget()` name degrades
+#: to a plain text box instead of a 500 until it ships a template partial.
 INPUT_TYPES = {
     "text": "text",
     "number": "number",
     "decimal": "number",
+    "money": "number",
     "date": "date",
     "datetime": "datetime-local",
     "time": "time",
     "duration": "text",
-    "list": "text",
-    "point": "text",
     "email": "email",
     "url": "url",
     "password": "password",
+    "inet": "text",
+    "mac": "text",
+    "bits": "text",
 }
 
 
@@ -1544,7 +1602,36 @@ def _ui_text(translate: Translator) -> dict[str, str]:
         "undo": translate("Undo"),
         "too-large": translate("Too large"),
         "wrong-type": translate("Not an image"),
+        # The key/value (HSTORE), tag (ARRAY) and JSON editors, which live in
+        # `fastfort-data.js` rather than the everyday bundle. They read these
+        # off `<html>` exactly like every widget above, because `t()` reaches
+        # them through the kit the main script publishes -- one table of
+        # strings for every bundle, not one per file.
+        "add": translate("Add"),
+        "key": translate("Key"),
+        "value": translate("Value"),
+        "format": translate("Format"),
+        "from": translate("From"),
+        "to": translate("To"),
+        "bounds": translate("Bounds"),
+        "invalid-address": translate("Invalid address"),
     }
+
+
+def _extra_scripts(form: Form) -> tuple[str, ...]:
+    """The bundles this form's controls need, beyond the everyday one.
+
+    Read off the widgets actually rendered rather than off the model's fields:
+    a geometry column a `ModelAdmin` marked read-only draws no map, and asking
+    the browser for the map editor anyway is exactly the download this split
+    exists to avoid.
+
+    Ordered rather than a set, so the same page produces the same tags in the
+    same order on every request -- a `<script>` list that reshuffles between
+    responses defeats the browser cache it is trying to use.
+    """
+    wanted = {_WIDGET_SCRIPTS[f.widget] for f in form.fields if f.widget in _WIDGET_SCRIPTS}
+    return tuple(name for name in ("fastfort-data.js", "fastfort-geo.js") if name in wanted)
 
 
 def _title_of(admin: Any, key: str) -> str:
@@ -1724,6 +1811,27 @@ async def _filter_controls(
                         with_time=field.type is FieldType.DATETIME,
                         translate=label_of,
                     ),
+                }
+            )
+            continue
+
+        if field.type in _BOUNDED_FILTER_TYPES:
+            # The same two-bound control the dates get, without the presets --
+            # there is no "this month" for a price. Offered because the
+            # alternative for a number is an exact match, and nobody has ever
+            # wanted to filter a price list to exactly 19.99; they want under
+            # twenty. `__gte`/`__lte` are what the query layer already reads.
+            controls.append(
+                {
+                    "kind": "range",
+                    "name": name,
+                    "label": label,
+                    "from_name": f"{name}__gte",
+                    "to_name": f"{name}__lte",
+                    "from_value": params.get(f"{name}__gte", ""),
+                    "to_value": params.get(f"{name}__lte", ""),
+                    "input_type": _BOUNDED_FILTER_TYPES[field.type],
+                    "presets": [],
                 }
             )
             continue

@@ -11,12 +11,9 @@ down with it.
 
 from __future__ import annotations
 
-import datetime as dt
-import decimal
-import enum
 import re
-import uuid
 from collections.abc import Callable
+from decimal import Decimal
 from typing import Any
 
 import sqlalchemy as sa
@@ -26,7 +23,9 @@ from sqlalchemy.orm.interfaces import MANYTOMANY, MANYTOONE, ONETOMANY
 
 from fastfort.core.exceptions import AdapterError
 from fastfort.core.registry import default_model_key
-from fastfort.spec import Choice, FieldSpec, FieldType, ModelSpec, RelationSpec
+from fastfort.spec import FieldSpec, FieldType, ModelSpec, RelationSpec
+
+from .types import classify
 
 __all__ = ["humanise", "introspect_model", "is_sqlalchemy_model", "pluralise"]
 
@@ -43,40 +42,26 @@ _FILTERABLE_TYPES = frozenset(
         FieldType.DATETIME,
         FieldType.INTEGER,
         FieldType.BIGINT,
+        FieldType.FLOAT,
+        FieldType.DECIMAL,
+        FieldType.MONEY,
+        FieldType.TIME,
+        FieldType.DURATION,
         FieldType.FOREIGN_KEY,
         FieldType.ONE_TO_ONE,
         FieldType.UUID,
     }
 )
 
-#: Python types SQLAlchemy reports for a column, mapped onto our vocabulary.
-#: Consulted after the concrete SQL types below, as a last resort.
-_PYTHON_TYPE_MAP: dict[type, FieldType] = {
-    bool: FieldType.BOOLEAN,
-    int: FieldType.INTEGER,
-    float: FieldType.FLOAT,
-    str: FieldType.STRING,
-    bytes: FieldType.UNKNOWN,
-    decimal.Decimal: FieldType.DECIMAL,
-    dt.date: FieldType.DATE,
-    dt.datetime: FieldType.DATETIME,
-    dt.time: FieldType.TIME,
-    dt.timedelta: FieldType.DURATION,
-    uuid.UUID: FieldType.UUID,
-    dict: FieldType.JSON,
-    list: FieldType.JSON,
-}
-
-
-def _is_spatial(column_type: Any) -> bool:
-    """Whether a column holds a geometry, without importing GeoAlchemy2.
-
-    Detected by where the type class comes from rather than by `isinstance`,
-    because the library must not depend on GeoAlchemy2 to recognise that a
-    project is using it -- and a project that is not must not pay an import for
-    a package it never installed.
-    """
-    return type(column_type).__module__.split(".", 1)[0] == "geoalchemy2"
+#: A simple `<column> >= <number>` style comparison, the only shape of CHECK
+#: constraint this reads as a bound. Anything else (an OR, a second column, a
+#: function call) is left alone rather than guessed at -- a wrong bound would
+#: reject a value the database was going to accept anyway.
+_CHECK_BOUND_RE = re.compile(
+    r'(?:"(?P<quoted>[^"]+)"|(?P<bare>[A-Za-z_][A-Za-z0-9_]*))'
+    r"\s*(?P<op>>=|<=|>|<)\s*"
+    r"(?P<value>-?\d+(?:\.\d+)?)"
+)
 
 
 def is_sqlalchemy_model(model: type) -> bool:
@@ -164,12 +149,21 @@ def _columns_used_by_relations(mapper: Mapper[Any]) -> frozenset[str]:
 
 
 def _column_field(mapper: Mapper[Any], name: str, column: sa.Column[Any]) -> FieldSpec:
-    field_type, choices = _classify(column)
+    classification = classify(column)
+    field_type = classification.type
     is_pk = column.primary_key
 
     # A key the database generates cannot be supplied by a form; offering the box
-    # invites someone to collide with an existing row.
-    generated = bool(column.computed) or (is_pk and _is_autoincrement(mapper, column))
+    # invites someone to collide with an existing row. `column.identity` is
+    # Postgres's `GENERATED ... AS IDENTITY`, which `column.computed` (a
+    # generated *expression* column) does not cover on its own -- without this,
+    # `mapped_column(Identity(), primary_key=True)` was offered as an editable
+    # box, same trap as an autoincrementing key with no `Identity()` at all.
+    generated = (
+        bool(column.computed)
+        or column.identity is not None
+        or (is_pk and _is_autoincrement(mapper, column))
+    )
     has_default = column.default is not None or column.server_default is not None
 
     # A UUID the application mints is an identity, not a value someone fills in.
@@ -180,7 +174,33 @@ def _column_field(mapper: Mapper[Any], name: str, column: sa.Column[Any]) -> Fie
         generated = True
 
     max_length = getattr(column.type, "length", None)
-    precision = getattr(column.type, "scale", None)
+    scale = getattr(column.type, "scale", None)
+    decimal_places = scale if isinstance(scale, int) else None
+    digits = getattr(column.type, "precision", None)
+    precision = digits if isinstance(digits, int) else None
+
+    min_value, max_value = _check_bounds(column)
+    if max_value is None and precision is not None and decimal_places is not None:
+        # Nothing in a CHECK constraint said so, but `Numeric(precision, scale)`
+        # itself is a hard ceiling: the database rejects anything larger, so
+        # catching it in the browser turns a 500 into a field-level message.
+        max_value = Decimal(10) ** (precision - decimal_places) - Decimal(10) ** -decimal_places
+
+    widget = classification.widget
+    if widget is None and _is_long_text(field_type, max_length):
+        widget = "textarea"
+
+    # A classification that hands back `widget="readonly"` (a raster, a search
+    # vector, an OID -- see `types.py`) is saying the column cannot be written
+    # back at all, not just that it looks best undrawn. Without folding that
+    # into `generated` too, `editable` stayed `True` for it: `_writable()` is
+    # documented as *the* mass-assignment boundary with "deliberately no
+    # second flag that could disagree with it" (`CLAUDE.md`), so a form field
+    # nobody can see was still one a hand-crafted POST could reach -- not a
+    # data breach (the column's real type rejects the string `values.py`
+    # would hand it), but exactly the "control that 500s on save" Phase 2's
+    # write path exists to avoid.
+    generated = generated or widget == "readonly"
 
     return FieldSpec(
         name=name,
@@ -193,66 +213,57 @@ def _column_field(mapper: Mapper[Any], name: str, column: sa.Column[Any]) -> Fie
         unique=bool(column.unique),
         primary_key=is_pk,
         max_length=max_length if isinstance(max_length, int) else None,
-        decimal_places=precision if isinstance(precision, int) else None,
-        choices=choices,
+        min_value=min_value,
+        max_value=max_value,
+        decimal_places=decimal_places,
+        precision=precision,
+        choices=classification.choices,
         default=_static_default(column),
         has_db_default=has_default,
+        item=classification.item,
+        geometry=classification.geometry,
+        bounds=classification.bounds,
         searchable=field_type in {FieldType.STRING, FieldType.TEXT, FieldType.EMAIL},
         filterable=field_type in _FILTERABLE_TYPES,
-        widget="textarea" if _is_long_text(field_type, max_length) else None,
+        widget=widget,
         sensitive=_looks_sensitive(name),
     )
 
 
-def _classify(column: sa.Column[Any]) -> tuple[FieldType, tuple[Choice, ...]]:
-    """Map a SQLAlchemy column type onto a `FieldType` and its choices."""
-    column_type = column.type
+def _check_bounds(column: sa.Column[Any]) -> tuple[Decimal | None, Decimal | None]:
+    """Read `min_value`/`max_value` off a simple CHECK constraint naming this column.
 
-    if isinstance(column_type, sa.Enum):
-        return FieldType.ENUM, _enum_choices(column_type)
-    if isinstance(column_type, sa.Boolean):
-        return FieldType.BOOLEAN, ()
-    if isinstance(column_type, sa.BigInteger):
-        return FieldType.BIGINT, ()
-    if isinstance(column_type, sa.Integer):
-        return FieldType.INTEGER, ()
-    if isinstance(column_type, sa.Numeric) and not isinstance(column_type, sa.Float):
-        return FieldType.DECIMAL, ()
-    if isinstance(column_type, sa.Float):
-        return FieldType.FLOAT, ()
-    if isinstance(column_type, sa.DateTime):
-        return FieldType.DATETIME, ()
-    if isinstance(column_type, sa.Date):
-        return FieldType.DATE, ()
-    if isinstance(column_type, sa.Time):
-        return FieldType.TIME, ()
-    if isinstance(column_type, sa.Interval):
-        return FieldType.DURATION, ()
-    if isinstance(column_type, sa.Uuid):
-        return FieldType.UUID, ()
-    if isinstance(column_type, sa.JSON):
-        return FieldType.JSON, ()
-    if isinstance(column_type, sa.Text):
-        return FieldType.TEXT, ()
-    if isinstance(column_type, sa.String):
-        return FieldType.STRING, ()
-    if isinstance(column_type, sa.ARRAY):
-        return FieldType.ARRAY, ()
-    if _is_spatial(column_type):
-        return FieldType.GEOMETRY, ()
+    Walks every `CheckConstraint` on the table looking for a plain `<column> >=
+    <number>` (or `>`, `<=`, `<`) comparison; anything with more than one
+    comparison, another column, or a function call does not match and is
+    skipped, per `_CHECK_BOUND_RE`'s docstring above.
 
-    try:
-        python_type = column_type.python_type
-    except NotImplementedError:
-        return FieldType.UNKNOWN, ()
-    return _PYTHON_TYPE_MAP.get(python_type, FieldType.UNKNOWN), ()
+    A strict `> 0` is recorded as an inclusive `>= 0`, because the spec has no
+    exclusive bound. That errs towards accepting one value the database will
+    reject rather than rejecting one it would have taken -- the same direction
+    every other guess in this function leans, since the database remains the
+    authority and a false rejection is the failure nobody can work around.
 
-
-def _enum_choices(column_type: sa.Enum) -> tuple[Choice, ...]:
-    native = column_type.enum_class
-    if native is not None and issubclass(native, enum.Enum):
-        return tuple(Choice(value=member.value, label=humanise(member.name)) for member in native)
-    return tuple(Choice(value=item, label=humanise(item)) for item in column_type.enums)
+    `getattr` for the constraints: a class mapped onto a subquery rather than a
+    table has columns whose `.table` is a selectable with no constraints at all,
+    and an exotic mapping must not be able to take the whole admin page down.
+    """
+    min_value: Decimal | None = None
+    max_value: Decimal | None = None
+    for constraint in getattr(column.table, "constraints", ()):
+        if not isinstance(constraint, sa.CheckConstraint):
+            continue
+        match = _CHECK_BOUND_RE.fullmatch(str(constraint.sqltext).strip())
+        if match is None:
+            continue
+        if (match["quoted"] or match["bare"]) != column.name:
+            continue
+        value = Decimal(match["value"])
+        if match["op"] in (">=", ">"):
+            min_value = value
+        else:
+            max_value = value
+    return min_value, max_value
 
 
 def _is_autoincrement(mapper: Mapper[Any], column: sa.Column[Any]) -> bool:
@@ -343,10 +354,38 @@ def _relation_type(rel: RelationshipProperty[Any]) -> FieldType:
     if rel.direction is MANYTOMANY:
         return FieldType.MANY_TO_MANY
     if rel.direction is MANYTOONE:
-        return FieldType.FOREIGN_KEY
+        # A unique foreign key is a one-to-one, whatever SQLAlchemy calls the
+        # direction. The parent side already reports ONETOMANY-not-uselist as
+        # one, so without this the same relationship was two different kinds
+        # depending on which model's page you were looking at.
+        return FieldType.ONE_TO_ONE if _is_unique(rel) else FieldType.FOREIGN_KEY
     if rel.direction is ONETOMANY:
         return FieldType.REVERSE_FK if rel.uselist else FieldType.ONE_TO_ONE
     return FieldType.UNKNOWN
+
+
+def _is_unique(rel: RelationshipProperty[Any]) -> bool:
+    """Whether every local column behind a to-one relation is unique.
+
+    Read from the columns and from the table's own UNIQUE constraints, because
+    `Column(unique=True)` and `UniqueConstraint(...)` are the same statement
+    said two ways and a project picks whichever suits. A composite key counts
+    only when one constraint covers all of it -- two separately unique columns
+    do not make the pair unique.
+    """
+    local = list(rel.local_columns)
+    if not local:
+        return False
+    if all(column.unique or column.primary_key for column in local):
+        return True
+
+    names = {column.name for column in local}
+    table = local[0].table
+    return any(
+        isinstance(constraint, sa.UniqueConstraint)
+        and {column.name for column in constraint.columns} == names
+        for constraint in getattr(table, "constraints", ())
+    )
 
 
 # ---------------------------------------------------------------------------
