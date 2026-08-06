@@ -8,6 +8,8 @@ disabled and every view is a URL that can be bookmarked or shared.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -43,8 +45,19 @@ from .auth_views import build_auth_router
 from .export import EXPORT_FORMATS, stream_csv, stream_json, stream_xlsx
 from .files import UploadedFile
 from .forms import Form
+from .importing import (
+    ImportFileError,
+    Plan,
+    RowError,
+    build_plan,
+    column_hint,
+    importable_fields,
+    read_table,
+    sniff_format,
+    template_rows,
+)
 from .insights import Series, build_series
-from .messages import Message, Messages
+from .messages import Message, MessageLevel, Messages
 from .options import ModelAdmin
 from .security import LANGUAGE_COOKIE, make_guard, safe_next_url, set_csrf_cookie
 
@@ -628,6 +641,10 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 if model_admin.exportable
                 else []
             ),
+            # No query string on it, unlike the export: an import is not a view
+            # of anything, so carrying the list's filters onto it would suggest
+            # the upload is somehow scoped by them.
+            "import_url": (f"{admin_url}/{model_key}/import" if model_admin.importable else None),
             "ordering_param": ",".join(sort.as_token() for sort in query.ordering),
             "page_url": page_url,
             "page_links": _page_links(page_result, page_url),
@@ -698,6 +715,145 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             writer(headers, rows),
             media_type=export_format.media_type,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    # -- import ---------------------------------------------------------------
+
+    def _require_importable(model_key: str) -> ModelAdmin:
+        model_admin = _require_admin(admin_for, model_key)
+        if not model_admin.importable:
+            # 404 rather than 403, for the same reason a missing row is: a model
+            # that does not accept uploads should not confirm that it exists
+            # here any more than it would anywhere else.
+            raise HTTPException(status_code=404, detail="This model does not accept imports.")
+        return model_admin
+
+    def import_context(
+        request: Request, model_key: str, model_admin: ModelAdmin, translate: Translator
+    ) -> dict[str, Any]:
+        return base_context(request, model_key) | {
+            "page_title": translate("Import {name}", name=model_admin.title.lower()),
+            "model_title": model_admin.title,
+            "heading": translate("Import {name}", name=model_admin.title.lower()),
+            "breadcrumbs": (
+                {"label": model_admin.title, "url": list_url(model_key)},
+                {"label": translate("Import"), "url": None},
+            ),
+            "list_url": list_url(model_key),
+            "action_url": f"{admin_url}/{model_key}/import",
+            "template_url": f"{admin_url}/{model_key}/import/template",
+            "formats": list(EXPORT_FORMATS.values()),
+            "columns": _import_columns(model_admin),
+            "plan": None,
+            "error": None,
+            "filename": "",
+            "checked_only": False,
+        }
+
+    @router.get("/{model_key}/import/template", name="fastfort:import-template")
+    async def import_template(request: Request, model_key: str) -> Any:
+        """A file with the right columns, and a row saying what each one wants.
+
+        The hint row is the point. A duration, a range and a point have no
+        spelling anybody guesses right the first time, and being told in the file
+        beats being told by an error report afterwards. Every hint cell fails to
+        parse, so a template uploaded unchanged reports itself as one bad row
+        rather than importing a row of instructions.
+        """
+        model_admin = _require_importable(model_key)
+        chosen = request.query_params.get("format", "csv")
+        if chosen not in EXPORT_FORMATS:
+            raise HTTPException(status_code=404, detail="No such template format.")
+        template = EXPORT_FORMATS[chosen]
+
+        translate = translator_for(request)
+        headers, rows = template_rows(model_admin.spec, model_admin, translate)
+        writer = {"csv": stream_csv, "json": stream_json}.get(chosen, stream_xlsx)
+        filename = f"{model_key}-template.{template.extension}"
+
+        return StreamingResponse(
+            writer(headers, rows),
+            media_type=template.media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @router.get("/{model_key}/import", response_class=HTMLResponse, name="fastfort:import")
+    async def import_form(request: Request, model_key: str) -> Any:
+        model_admin = _require_importable(model_key)
+        return page(
+            request,
+            "model/import.html",
+            import_context(request, model_key, model_admin, translator_for(request)),
+        )
+
+    @router.post("/{model_key}/import", name="fastfort:import-submit")
+    async def import_submit(request: Request, model_key: str) -> Any:
+        """Check a whole file, then write all of it or none of it.
+
+        All-or-nothing on purpose. A half-applied spreadsheet is worse than a
+        rejected one: the rejection is a list of line numbers somebody can act
+        on, and the half-application is a data set nobody can tell apart from
+        the one they meant to upload. One unit of work covers every row, so a
+        failure on line nine hundred takes the first eight hundred and
+        ninety-nine back out with it.
+        """
+        model_admin = _require_importable(model_key)
+        entry = fort.registry.entry_for_key(model_key)
+        translate = translator_for(request)
+        submitted = await _form_data(request, settings.media)
+
+        upload = submitted.get("file")
+        context = import_context(request, model_key, model_admin, translate)
+
+        if not isinstance(upload, UploadedFile) or not upload.chosen:
+            context["error"] = translate("Choose a file to import.")
+            return page(request, "model/import.html", context)
+
+        try:
+            kind = sniff_format(upload.filename, upload.content)
+            headers, rows = read_table(upload.content, kind)
+            plan = build_plan(headers, rows, model_admin.spec, model_admin)
+        except ImportFileError as exc:
+            context["error"] = str(exc)
+            return page(request, "model/import.html", context)
+
+        async with fort.backend.unit_of_work() as uow:
+            adapter = fort.backend.adapter(entry.model, uow, key=model_key)
+            await _resolve_relations(
+                adapter,
+                model_admin,
+                plan,
+                lambda field: _target_search_fields(admin_for, field),
+            )
+
+            checking = str(submitted.get("check", "")) in ("1", "true", "on")
+            written = 0
+            if not plan.errors and not checking:
+                written = await _apply_import(adapter, model_admin, plan)
+
+            if plan.errors or checking:
+                # Rolled back explicitly rather than left to the context
+                # manager. On the checking path there is nothing to keep; on the
+                # error path there may be several hundred rows that were written
+                # before the failure, and taking them back out is the
+                # all-or-nothing this feature promises. Everything the page
+                # renders below was read before this point.
+                await uow.rollback()
+                context |= {
+                    "plan": plan,
+                    "filename": upload.filename,
+                    "checked_only": checking and not plan.errors,
+                }
+                return page(request, "model/import.html", context)
+
+        return redirect(
+            list_url(model_key),
+            Message(
+                MessageLevel.SUCCESS,
+                translate(
+                    "Imported {count} rows from {name}.", count=written, name=upload.filename
+                ),
+            ),
         )
 
     # -- autocomplete -------------------------------------------------------
@@ -2082,6 +2238,184 @@ def _target_search_fields(admin_for: Any, field_spec: Any) -> tuple[str, ...]:
 def _column_label(spec: ModelSpec, name: str) -> str:
     field = spec.get(name)
     return field.label if field else name.replace("_", " ").capitalize()
+
+
+def _import_columns(admin: ModelAdmin) -> list[dict[str, Any]]:
+    """What the page lists as acceptable columns, with each one's shape.
+
+    The same list the downloadable template is built from, so the page and the
+    file cannot disagree about what the import will take.
+    """
+    return [
+        {
+            "name": admin.field_label(field.name, field.label),
+            "required": field.required,
+            "hint": column_hint(field),
+        }
+        for field in importable_fields(admin.spec, admin)
+    ]
+
+
+async def _resolve_relations(
+    adapter: Any,
+    admin: ModelAdmin,
+    plan: Plan,
+    search_fields_of: Callable[[Any], tuple[str, ...]],
+) -> None:
+    """Turn every relation cell into an identity, or into an error naming the row.
+
+    This is the half `importing.py` cannot do: "is there a category called
+    Phones" is a question only the database answers. A cell may hold the
+    target's primary key or the label the export wrote for it -- both, because a
+    file edited by a person carries names and a file produced by a machine
+    carries ids, and refusing either would make one of those two workflows
+    impossible.
+
+    Every distinct value is looked up once and cached. A price list of three
+    thousand rows across nine categories is nine queries this way and three
+    thousand without, and it is the same nine answers either way.
+    """
+    seen: dict[tuple[str, str], Any] = {}
+
+    for row in plan.rows:
+        for name, text in row.relations.items():
+            field = admin.spec.field(name)
+            if not text:
+                # Blank clears the link. A required relation is caught by the
+                # database, which is the authority on whether NULL is allowed.
+                row.values[name] = [] if field.type.is_multi_valued else None
+                continue
+
+            wanted = (
+                [part.strip() for part in text.split(",")] if field.type.is_multi_valued else [text]
+            )
+            resolved: list[Any] = []
+            for item in wanted:
+                if not item:
+                    continue
+                if (name, item) in seen:
+                    cached = seen[(name, item)]
+                else:
+                    cached = await _lookup_related(adapter, admin, name, item, search_fields_of)
+                    seen[(name, item)] = cached
+                if cached is _MISSING:
+                    plan.errors.append(
+                        RowError(
+                            row.line,
+                            admin.field_label(name, field.label),
+                            f"No {field.label.lower()} matches this.",
+                            item,
+                        )
+                    )
+                else:
+                    resolved.append(cached)
+
+            row.values[name] = (
+                resolved if field.type.is_multi_valued else (resolved[0] if resolved else None)
+            )
+
+
+#: A lookup that found nothing, cached so the same missing name is not asked
+#: for once per row. `None` cannot stand in for it -- `None` is what a blank
+#: cell legitimately means.
+_MISSING = object()
+
+
+async def _lookup_related(
+    adapter: Any,
+    admin: ModelAdmin,
+    name: str,
+    text: str,
+    search_fields_of: Callable[[Any], tuple[str, ...]],
+) -> Any:
+    """One relation cell, by the target's own identity or by its label.
+
+    Both, because a file edited by a person carries names and a file produced by
+    a machine carries ids, and refusing either would make one of those two
+    workflows impossible.
+
+    A value that could be an identity is tried as one first, but only if it
+    matches exactly -- a category genuinely called "12" must not be shadowed by
+    whichever row happens to have id 12. An ambiguous name resolves to nothing
+    rather than to the first match: picking one of two "Phones" categories on
+    the person's behalf is a silent wrong answer, and the error names the cell.
+    """
+    field = admin.spec.field(name)
+    matches = await adapter.related_choices(
+        name, text, limit=2, search_fields=search_fields_of(field)
+    )
+
+    exact = [choice for choice in matches if (choice.label or "").strip().lower() == text.lower()]
+    if len(exact) == 1:
+        return exact[0].value
+    if len(matches) == 1 and not exact:
+        return matches[0].value
+    if matches:
+        # Two rows called the same thing. Picking one on the person's behalf is
+        # a silent wrong answer, so the cell is reported instead.
+        return _MISSING
+
+    # Nothing matched by label. It may still be an identity -- `related_choices`
+    # searches the target's *text* columns, so an id never matches there even
+    # when the row exists. Handed through as-is for the adapter to resolve,
+    # which is the same path a form's dropdown value takes; a key that does not
+    # exist comes back from the write as a `ValidationError` and is reported
+    # against this row's line by `_apply_import`.
+    if text.isdigit() or _looks_like_uuid(text):
+        return text
+    return _MISSING
+
+
+def _looks_like_uuid(text: str) -> bool:
+    try:
+        uuid.UUID(text)
+    except ValueError:
+        return False
+    return True
+
+
+async def _apply_import(adapter: Any, admin: ModelAdmin, plan: Plan) -> int:
+    """Write every row, updating where the file carried a key and creating where
+    it did not.
+
+    The second half of the validation, and the only half that can see the
+    database: a relation given as an identity is resolved here, and a unique
+    index or a check constraint has its say here too. Anything that goes wrong
+    becomes a `RowError` against the line it came from rather than a request
+    that fails with one sentence about the first problem -- which is the same
+    report the file pass produces, so the page has one table and not two.
+
+    The caller rolls back when this reports anything. Rows written before the
+    failure are part of the same unit of work and go back out with it, which is
+    the all-or-nothing this feature promises.
+
+    An unknown key is an error rather than an insert with that key: a file whose
+    id column holds a typo would otherwise create a row nobody asked for and
+    leave the one that was meant to change untouched.
+    """
+    written = 0
+    for row in plan.rows:
+        try:
+            if row.key is None:
+                await adapter.create(row.values)
+            else:
+                existing = await adapter.get(row.key)
+                if existing is None:
+                    plan.errors.append(
+                        RowError(
+                            row.line,
+                            admin.spec.primary_key[0],
+                            "No row with this key to update.",
+                            str(row.key[0]),
+                        )
+                    )
+                    continue
+                await adapter.update(existing, row.values)
+        except (ValidationError, AdapterError) as exc:
+            plan.errors.append(RowError(row.line, admin.title, str(exc)))
+            continue
+        written += 1
+    return written
 
 
 async def _export_rows(

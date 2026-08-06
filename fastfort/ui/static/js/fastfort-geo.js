@@ -41,7 +41,14 @@
   const { el, icon, t, once, register } = kit;
 
   const TILE = 256;
-  const MAX_ZOOM = 19;
+  //: The deepest level a tile server has pictures for. Standard OpenStreetMap
+  //: tiles stop at 19; asking for 20 returns a 404, and a failed tile is a
+  //: blank square, so this is a ceiling on *requests* rather than on the view.
+  const MAX_TILE_ZOOM = 19;
+  //: How far the view itself goes. Past `MAX_TILE_ZOOM` the last level is
+  //: scaled up rather than refetched -- blurrier, which is what every map does
+  //: past its own imagery, and far better than a + button that does nothing.
+  const MAX_ZOOM = 21;
   const MIN_ZOOM = 1;
   /* The projection is undefined at the poles and grows without bound towards
    * them; every slippy map clamps at the latitude that makes the world square. */
@@ -388,10 +395,12 @@
         return control;
       };
 
-      const controls = [
-        button("plus", t("ZoomIn"), () => this.zoomBy(1)),
-        button("minus", t("ZoomOut"), () => this.zoomBy(-1)),
-      ];
+      /* Kept, so `draw` can disable them at the ends. A + that silently does
+       * nothing is the single thing that makes a map feel broken -- there is no
+       * way to tell "at the limit" from "not responding" without being told. */
+      this.zoomIn = button("plus", t("ZoomIn"), () => this.zoomBy(1));
+      this.zoomOut = button("minus", t("ZoomOut"), () => this.zoomBy(-1));
+      const controls = [this.zoomIn, this.zoomOut];
 
       // Only where the browser offers it: geolocation needs a secure context,
       // and a button that can only ever fail is worse than no button.
@@ -829,17 +838,40 @@
       const { width, height } = this.size();
       if (!width || !height) return;
 
-      const span = 2 ** this.zoom;
       const originX = lngToX(this.center.lng, this.zoom) - width / 2;
       const originY = latToY(this.center.lat, this.zoom) - height / 2;
-      const first = { x: Math.floor(originX / TILE), y: Math.floor(originY / TILE) };
+
+      /* Tiles come from the deepest level the server actually has; the view can
+       * go further than that.
+       *
+       * Pressing + at the old ceiling did nothing at all -- no movement, no
+       * disabled button, nothing -- which reads as the map having broken rather
+       * than as the map having run out of pictures. Every map application in
+       * the world keeps zooming past its imagery and simply shows it larger, so
+       * this does the same: past `MAX_TILE_ZOOM` the last level is scaled up,
+       * which the layer transform was already doing for the fraction of a
+       * second after every other zoom.
+       *
+       * `factor` converts between the two. Tile indices are worked out in the
+       * tile level's own pixels, because that is the grid the server serves;
+       * the marker, the shape and the handles stay in the view's pixels, which
+       * is why only this block is converted and nothing below it is. */
+      const tileZoom = Math.min(this.zoom, MAX_TILE_ZOOM);
+      const factor = 2 ** (this.zoom - tileZoom);
+      const span = 2 ** tileZoom;
+      const tileOriginX = originX / factor;
+      const tileOriginY = originY / factor;
+      const first = { x: Math.floor(tileOriginX / TILE), y: Math.floor(tileOriginY / TILE) };
       const last = {
-        x: Math.floor((originX + width) / TILE),
-        y: Math.floor((originY + height) / TILE),
+        x: Math.floor((tileOriginX + width / factor) / TILE),
+        y: Math.floor((tileOriginY + height / factor) / TILE),
       };
 
-      const layer = this.layerFor(this.zoom);
-      this.current = this.zoom;
+      this.zoomIn.disabled = this.zoom >= MAX_ZOOM;
+      this.zoomOut.disabled = this.zoom <= MIN_ZOOM;
+
+      const layer = this.layerFor(tileZoom);
+      this.current = tileZoom;
       // Zooming out and back lands on a level that already exists but sits
       // under the one that replaced it, where a stale half-screen of tiles
       // would cover the fresh ones. Appending a node already in the tree moves
@@ -878,6 +910,11 @@
           // the edge before it arrived. A tile that is never accounted for holds
           // `pending` above zero for good, and the backdrop underneath the level
           // never goes away.
+          const source = this.template
+            .replace("{z}", String(tileZoom))
+            .replace("{x}", String(column))
+            .replace("{y}", String(y));
+
           let counted = false;
           const done = (shown) => {
             if (counted) return;
@@ -890,15 +927,34 @@
             // The level is complete: nothing is showing through it any more.
             if (layer.pending === 0 && this.layers.get(this.current) === layer) this.settle(layer);
           };
+
+          /* One retry, then give up.
+           *
+           * A tile that fails stays at `opacity: 0` -- a hole in the map, in the
+           * shape of a rectangle, which reads as the map being broken. The
+           * commonest cause is a tile server throttling a burst, and throttling
+           * is temporary: asking again a moment later usually works, and asking
+           * again immediately would be another request in the same burst that
+           * caused it. Once only, because a server that has refused twice is
+           * saying something, and a map that keeps retrying is the behaviour
+           * their usage policies exist to stop.
+           */
+          let retried = false;
           image.addEventListener("load", () => done(true), { once: true });
-          image.addEventListener("error", () => done(false), { once: true });
+          image.addEventListener("error", () => {
+            if (retried || counted) {
+              done(false);
+              return;
+            }
+            retried = true;
+            setTimeout(() => {
+              if (!counted) image.src = `${source}${source.includes("?") ? "&" : "?"}retry=1`;
+            }, 900);
+          });
           // Called when the tile is discarded before it settled. Removing an
           // <img> mid-request does not reliably fire either event.
           image.ffRetire = () => done(false);
-          image.src = this.template
-            .replace("{z}", String(this.zoom))
-            .replace("{x}", String(column))
-            .replace("{y}", String(y));
+          image.src = source;
 
           layer.element.append(image);
           layer.tiles.set(`${x},${y}`, image);
@@ -921,7 +977,12 @@
       // Kept for `project`, which is called once per vertex and would otherwise
       // recompute the same origin for each of them.
       this.originY = originY;
-      this.drawShape(originX, width, span);
+      // `2 ** this.zoom`, not the tile level's span: the shape and the handles
+      // are placed in the *view's* pixels, and `nearestCopy` needs the width of
+      // the world at that zoom to find which copy of it the map is over. Past
+      // MAX_TILE_ZOOM the two differ, and using the tile span here put every
+      // vertex a whole world to one side.
+      this.drawShape(originX, width, 2 ** this.zoom);
     }
 
     /* Every tile of the level on screen has loaded or failed, so whatever was
@@ -938,12 +999,46 @@
     }
   }
 
+  /* Built when it is scrolled near, not when the page loads.
+   *
+   * A model with one geometry column was fine. A model with nine -- which is
+   * exactly what a page full of shapes is -- fired every map's first draw at
+   * once, and each of those asks for twenty-odd tiles: about two hundred
+   * requests in one burst, from one browser, to one tile server. OpenStreetMap's
+   * usage policy says not to, and it answers by throttling; a throttled tile
+   * fails to load, and a tile that fails to load is `opacity: 0`. The result was
+   * a map with a rectangular hole in it, which reads as the map being broken
+   * rather than as the tiles having been refused.
+   *
+   * `rootMargin` builds the map a screen early, so scrolling to a field finds it
+   * already drawn rather than watching it fill in. Without IntersectionObserver
+   * -- and in a fragment swapped in by the live list, where the element may
+   * already be on screen -- it falls back to building immediately, which is the
+   * behaviour this replaces and is still correct, only chattier.
+   */
+  const build = (control) => new GeometryMap(control);
+
+  const watcher =
+    typeof IntersectionObserver === "function"
+      ? new IntersectionObserver(
+          (entries, self) => {
+            for (const entry of entries) {
+              if (!entry.isIntersecting) continue;
+              self.unobserve(entry.target);
+              build(entry.target);
+            }
+          },
+          { rootMargin: "100% 0px" }
+        )
+      : null;
+
   /* Both controls, because a POINT is one line and everything else is a
    * textarea -- see `geometry_control` in `model/_widgets.html`. */
   register((scope) => {
     for (const control of scope.querySelectorAll("[data-ff-map]")) {
       if (!once(control, "ffMapReady")) continue;
-      new GeometryMap(control);
+      if (watcher) watcher.observe(control);
+      else build(control);
     }
   });
 })();

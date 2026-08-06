@@ -56,6 +56,14 @@ def parse_value(raw: str, spec: FieldSpec) -> Any:
         # adapter resolves it to an object and reports a missing target itself.
         return text
 
+    if spec.type is FieldType.BOOLEAN:
+        # Unreachable from the change form, which decides a boolean from whether
+        # the control submitted anything at all and never gets this far. An
+        # import has no such signal -- a spreadsheet holds the word -- and
+        # without this branch a boolean column was written the *string* "false",
+        # which is true in every language that has a truthiness rule.
+        return _parse_boolean(text)
+
     if spec.type in {FieldType.INTEGER, FieldType.BIGINT}:
         try:
             return int(text)
@@ -145,6 +153,23 @@ def parse_value(raw: str, spec: FieldSpec) -> Any:
         raise ValueError(f"Choose one of: {allowed}.")
 
     return raw if spec.type is FieldType.TEXT else text
+
+
+#: What a spreadsheet, a JSON file and a person all mean by yes and no.
+#:
+#: `export.py` writes "true" and "false", so those two have to read back; the
+#: rest are what people actually type, and 1/0 is what a database dump carries.
+_TRUE = frozenset({"true", "t", "yes", "y", "1", "on"})
+_FALSE = frozenset({"false", "f", "no", "n", "0", "off"})
+
+
+def _parse_boolean(text: str) -> bool:
+    lowered = text.strip().lower()
+    if lowered in _TRUE:
+        return True
+    if lowered in _FALSE:
+        return False
+    raise ValueError("Enter true or false.")
 
 
 def parse_duration(text: str) -> dt.timedelta:

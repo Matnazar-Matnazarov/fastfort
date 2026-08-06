@@ -2799,3 +2799,42 @@ a.ff-upload__name {
 [data-ff-invalid="true"].ff-input {
   border-color: var(--ff-danger);
 }
+
+/* ===========================================================================
+ * Import
+ * ======================================================================== */
+
+/* Two cards side by side on a wide screen: the upload, and what the file is
+ * allowed to contain. Stacked below, because the column list is reference
+ * material and the upload is the thing being done. */
+.ff-import {
+  display: grid;
+  gap: var(--ff-space-4);
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+@media (min-width: 60rem) {
+  .ff-import {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* Name and shape on one row each, so a column and what it wants stay on the
+ * same line rather than the reader pairing them by position. */
+.ff-import__list {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--ff-space-1) var(--ff-space-3);
+  margin: 0;
+  font-size: var(--ff-text-sm);
+}
+
+.ff-import__list dt {
+  white-space: nowrap;
+}
+
+.ff-import__list dd {
+  margin: 0;
+  min-width: 0;
+}
