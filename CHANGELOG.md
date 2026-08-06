@@ -10,6 +10,53 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Import.** The mirror of export, in the same three formats: a file the writer
+  produced is a file the reader takes back, because download-edit-upload is the
+  loop people actually use. Off by default -- `ModelAdmin.importable` is opt-in,
+  unlike `exportable`, since writing several thousand rows in one request is a
+  different thing to hand somebody by accident.
+  - Headers match fields by label *or* by name, so an export and a hand-written
+    file both land on the same columns. Anything unmatched is ignored rather
+    than refused, or a single extra column would break the round trip.
+  - Every value goes through `values.parse_value` and `check_bounds` -- the
+    change form's own parsers. Import cannot be more permissive than the form,
+    which would be a way to write values the admin rejects, and must not be
+    stricter, or a row somebody can type by hand is a row the file cannot carry.
+  - Relations are resolved against the database by name or by id, and a name
+    that matches nothing comes back as a line number and a column rather than as
+    a dangling key or a sentence about a foreign-key constraint. An ambiguous
+    name resolves to nothing: picking one of two on the person's behalf is a
+    silent wrong answer.
+  - Every bad cell is reported at once, not the first. A downloadable template
+    carries the columns and a row saying what each one wants, because a
+    duration, a range and a point have no spelling anybody guesses right.
+  - Nothing is written unless everything parses, and the whole import is one
+    transaction. A half-applied spreadsheet is worse than a rejected one.
+  - An `id` column updates that row instead of duplicating it; an id that
+    matches nothing is an error rather than an insert.
+  - `FieldSpec.editable` bounds it as it bounds every other write, and sensitive
+    columns are excluded outright -- a spreadsheet must not become the one place
+    in the admin where an API key can be set in the clear.
+
+### Fixed
+
+- The map stopped at zoom 19 with no feedback of any kind -- no movement, no
+  disabled button -- which reads as the map having broken rather than as the map
+  having run out of pictures. Requests still stop at the deepest level the tile
+  server has; the view now goes further and scales the last level up, which is
+  what every map does past its own imagery.
+- A page with several geometry columns drew every map at once: nine maps of
+  twenty-odd tiles each, about two hundred requests in one burst to one tile
+  server. OpenStreetMap's policy says not to and answers by throttling, and a
+  throttled tile is `opacity: 0` -- so the map came out with a rectangular hole
+  in it. Maps are built when scrolled near, and a failed tile is retried once.
+- A boolean column had no parser of its own. The change form never needed one --
+  it decides from whether the control submitted anything at all -- but an import
+  reads the word, and without this a boolean was written the *string* `"false"`,
+  which is true in every language that has a truthiness rule.
+
 ## [0.2.0] - 2026-08-05
 
 Column types. FastFort classified a column into one of twenty-odd kinds and

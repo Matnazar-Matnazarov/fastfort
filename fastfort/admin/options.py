@@ -164,6 +164,24 @@ class ModelAdmin:
     #: the record but too many to put in a table.
     export_fields: ClassVar[Sequence[str]] = ()
 
+    #: Whether the list offers uploading a file back in.
+    #:
+    #: Off by default, unlike `exportable`. Reading rows out is a permission the
+    #: gate already grants; writing several thousand of them in one request is a
+    #: different thing to hand somebody by accident, and a model whose rows have
+    #: side effects -- an order that ships, a message that sends -- should say so
+    #: deliberately rather than inherit it.
+    importable: ClassVar[bool] = False
+
+    #: Columns an import may set. Defaults to every editable field, minus the
+    #: ones no file can carry: passwords, uploads, binary columns and anything
+    #: the spec marks sensitive. Narrow it to make the accepted file smaller than
+    #: the form -- a price list that may update prices but never the supplier.
+    #:
+    #: Never widens: `FieldSpec.editable` is checked first, so naming a
+    #: read-only field here does not make it writable.
+    import_fields: ClassVar[Sequence[str]] = ()
+
     #: Bulk actions offered once rows are selected. `"delete"` is built in and
     #: enabled by default; anything else is the name of a method carrying
     #: `@admin.action`. Set to `()` to offer none, which is how a model whose rows
@@ -198,6 +216,7 @@ class ModelAdmin:
             "readonly_fields",
             "password_fields",
             "export_fields",
+            "import_fields",
         ):
             for name in getattr(self, attribute):
                 if name not in known:

@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="ff-page-header">
+    <div class="ff-page-header__text">
+      <h1 class="ff-h1">{{ heading }}</h1>
+      <p class="ff-muted ff-mt-2">
+        {{ _("A file's columns are matched to fields by name, so an export of this model can be edited and uploaded back.") }}
+      </p>
+    </div>
+    <div class="ff-page-header__actions">
+      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">
+        {{ ff_icon("arrow-left", size=15) }}
+        {{ _("Back to {name}", name=model_title|lower) }}
+      </a>
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="ff-alert ff-alert--danger" role="alert">
+      <div>
+        <div class="ff-alert__title">{{ _("That file could not be read") }}</div>
+        <p class="ff-mt-2">{{ error }}</p>
+      </div>
+    </div>
+  {% endif %}
+
+  {# The report. Errors first and nothing written, or a count of what a commit
+     would do -- never both, because a file with one bad row writes none of it. #}
+  {% if plan and plan.errors %}
+    <div class="ff-alert ff-alert--danger" role="alert">
+      <div>
+        <div class="ff-alert__title">
+          {{ _("{count} problem in {name}. Nothing was imported.", count=plan.errors|length, name=filename)
+             if plan.errors|length == 1
+             else _("{count} problems in {name}. Nothing was imported.", count=plan.errors|length, name=filename) }}
+        </div>
+        <div class="ff-table-wrap ff-mt-3">
+          <table class="ff-table">
+            <thead>
+              <tr>
+                <th scope="col">{{ _("Line") }}</th>
+                <th scope="col">{{ _("Column") }}</th>
+                <th scope="col">{{ _("Value") }}</th>
+                <th scope="col">{{ _("Problem") }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {# Capped. A file where every row is wrong produces one error per
+                 row, and a page of ten thousand of them helps nobody read the
+                 first one. #}
+              {% for problem in plan.errors[:100] %}
+                <tr>
+                  <td class="ff-numeric">{{ problem.line }}</td>
+                  <td>{{ problem.column }}</td>
+                  <td class="ff-mono">{{ problem.value or EMPTY }}</td>
+                  <td>{{ problem.message }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if plan.errors|length > 100 %}
+          <p class="ff-muted ff-mt-2">
+            {{ _("and {count} more.", count=plan.errors|length - 100) }}
+          </p>
+        {% endif %}
+      </div>
+    </div>
+  {% elif plan and checked_only %}
+    <div class="ff-alert ff-alert--info" role="status">
+      <div>
+        <div class="ff-alert__title">{{ _("{name} is ready to import.", name=filename) }}</div>
+        <p class="ff-mt-2">
+          {{ _("{new} rows would be created and {existing} updated. Nothing has been written.",
+                new=plan.creates, existing=plan.updates) }}
+        </p>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="ff-import">
+    <form
+      class="ff-card ff-import__upload"
+      method="post"
+      action="{{ action_url }}"
+      enctype="multipart/form-data"
+    >
+      <div class="ff-card__body">
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+
+        <div class="ff-field">
+          <label class="ff-label" for="ff-import-file">{{ _("File") }}</label>
+          <input
+            class="ff-input"
+            id="ff-import-file"
+            name="file"
+            type="file"
+            accept=".csv,.tsv,.txt,.xlsx,.json"
+            required
+          />
+          <span class="ff-help">{{ _("CSV, Excel or JSON.") }}</span>
+        </div>
+
+        <label class="ff-checkbox ff-mt-3">
+          {# Checked by default. Somebody uploading a file for the first time
+             should find out what it would do before it does it, and unchecking
+             a box is a smaller thing to ask than undoing three thousand rows. #}
+          <input type="checkbox" name="check" value="1" checked />
+          <span>{{ _("Check the file without importing it") }}</span>
+        </label>
+
+        <div class="ff-form-actions">
+          <button class="ff-btn ff-btn--primary" type="submit">
+            {{ ff_icon("upload", size=15) }}
+            {{ _("Upload") }}
+          </button>
+        </div>
+      </div>
+    </form>
+
+    <div class="ff-card ff-import__columns">
+      <div class="ff-card__body">
+        <h2 class="ff-h2">{{ _("Columns") }}</h2>
+        <p class="ff-muted ff-mt-2">
+          {{ _("Any column not listed here is ignored, and any of these may be left out.") }}
+        </p>
+
+        <div class="ff-mt-3">
+          {% for format in formats %}
+            <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ template_url }}?format={{ format.name }}">
+              {{ ff_icon("download", size=14) }}
+              {{ format.label }}
+            </a>
+          {% endfor %}
+        </div>
+
+        <dl class="ff-import__list ff-mt-4">
+          {% for column in columns %}
+            <dt>
+              <span class="ff-mono">{{ column.name }}</span>
+              {% if column.required %}
+                <span class="ff-required" aria-hidden="true">*</span>
+                <span class="ff-sr-only">{{ _("(required)") }}</span>
+              {% endif %}
+            </dt>
+            <dd class="ff-muted">{{ column.hint or EMPTY }}</dd>
+          {% endfor %}
+        </dl>
+      </div>
+    </div>
+  </div>
+{% endblock %}

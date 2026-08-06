@@ -215,6 +215,16 @@
             </div>
           </div>
         {% endif %}
+        {% if import_url %}
+          {# Beside the export, because the two are a pair: the file this
+             downloads is the file that one takes back. A plain link rather
+             than a menu -- the format is decided by whatever gets uploaded,
+             not chosen up front. #}
+          <a class="ff-btn ff-btn--sm" href="{{ import_url }}">
+            {{ ff_icon("upload", size=15) }}
+            {{ _("Import") }}
+          </a>
+        {% endif %}
         {# Without script nothing applies on change, and a model with no filters
            would otherwise offer no submit at all -- leaving Enter in the search
            box as the only way to run it, which is not discoverable. #}
