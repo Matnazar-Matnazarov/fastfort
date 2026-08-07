@@ -67,8 +67,16 @@ def coerce_identity(raw: str) -> Any:
 
 
 def _datetime(raw: str) -> dt.datetime:
-    """ISO 8601, tolerating a trailing `Z`, which `fromisoformat` refuses."""
-    return dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    """ISO 8601, tolerating a trailing `Z`, which `fromisoformat` refuses.
+
+    A value with no offset is read as UTC, which is the same rule the form's own
+    parser follows -- a date filter carries "2026-08-06" and nothing else, so
+    without this a filter compared a naive datetime against a column the form
+    only ever writes aware ones to. PostgreSQL raises on that comparison and
+    Tortoise warns about it; both are saying the same thing.
+    """
+    parsed = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=dt.UTC)
 
 
 def _duration(raw: str) -> dt.timedelta:

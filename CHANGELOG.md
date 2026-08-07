@@ -10,6 +10,34 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A Tortoise connection the lifespan opened is now reachable from the views,
+  or else says why not.** Tortoise 1.1 keeps its connections in a `contextvars`
+  variable, and an ASGI server runs the lifespan in a different task from the
+  requests -- so `await Tortoise.init(...)` in a lifespan is invisible to every
+  view. Start-up looked healthy and the first page that touched the database was
+  a 500 carrying a bare "No TortoiseContext is currently active", which names no
+  fix. The backend now raises `ImproperlyConfigured` naming both ways out:
+  `_enable_global_fallback=True`, or `RegisterTortoise` from
+  `tortoise.contrib.fastapi`. The README's Tortoise snippet passes the flag.
+- **Sorting a list by a to-one relation** no longer returns a 500 on either
+  backend. The list header renders every sortable field as a link, so a list
+  showing a `category` column was one click from an error page: SQLAlchemy
+  raised `NotImplementedError` from `.asc()` on a relationship and Tortoise
+  answered "Filtering by relation is not possible". Both now order through the
+  key column beside the relation -- the same column filtering already used, and
+  what `order_by("category")` means to Django.
+- **A backward one-to-one is no longer offered as sortable or filterable.** Its
+  key lives on the other table, so there is no column on this side to name:
+  Tortoise raised, and SQLAlchemy quietly fell back to this model's own primary
+  key, which is the worse of the two because nothing failed.
+- The Tortoise adapter reads the column behind a relation from Tortoise's own
+  `source_field` rather than assembling `f"{name}_id"`, so a project that named
+  that column itself can be filtered and sorted like any other.
+
+## [0.3.0] - 2026-08-07
+
 ### Added
 
 - **A Tortoise ORM backend**, and with it the proof of what the layering has
@@ -32,6 +60,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Two architecture tests keep the pair honest: neither backend may import the
     other's ORM-specific modules, and neither ORM may be reached from the
     package root, so `fastfort[tortoise]` installs without SQLAlchemy.
+- **A second sandbox, `test_api_tortoise/`** -- a library rather than a shop, on
+  Tortoise and SQLite, with its own `Everything` covering every type Tortoise
+  can express. Run it beside `make sandbox` and the models, the ORM and the
+  database all differ while the admin does not, which is the whole of what the
+  layering buys. `make sandbox-tortoise`.
+- `test_api/` now covers **every one of the 36 `FieldType`s**. The last five --
+  `EMAIL`, `URL`, `PASSWORD`, `FILE`, `IMAGE` -- cannot be reached by
+  introspecting a stock column, because all five *are* `VARCHAR` and only the
+  project knows which is which; `test_api/types.py` declares them and one
+  `register_type` rule classifies every column that uses them.
 
 - **Vector search.** A pgvector column is recognised by the type registry the
   same way a PostGIS one is -- by where its type class lives, so a project that
@@ -791,7 +829,8 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Matnazar-Matnazarov/fastfort/releases/tag/v0.1.0

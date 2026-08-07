@@ -234,6 +234,40 @@ async def test_ordering_is_honoured_and_tie_broken_by_the_key(orm: Harness) -> N
     assert found == ["Retired Laptop", "Pixel Phone", "pixel case"]
 
 
+async def test_a_list_can_be_ordered_by_a_to_one_relation(orm: Harness) -> None:
+    """The list header renders every sortable field as a link, and `category` is
+    one -- so this is one click away on any list showing a relation.
+
+    Both backends order through the key column beside the relation rather than
+    through the relation itself, which is not a column on either: SQLAlchemy
+    raised `NotImplementedError` from `.asc()` and Tortoise answered "Filtering
+    by relation is not possible", both as a 500.
+    """
+    async with orm.backend.unit_of_work() as uow:
+        adapter = orm.adapter(uow, "Product")
+        ascending = await names(adapter, ListQuery(ordering=(SortSpec("category"),)))
+        descending = await names(
+            adapter, ListQuery(ordering=(SortSpec("category", descending=True),))
+        )
+
+    # Phones was created first, so it holds the lower key and sorts first.
+    assert ascending == ["Pixel Phone", "pixel case", "Retired Laptop"]
+    assert descending == ["Retired Laptop", "Pixel Phone", "pixel case"]
+
+
+def test_a_backward_one_to_one_is_neither_sortable_nor_filterable(orm: Harness) -> None:
+    """`Product.listing` is a key on the *other* table.
+
+    There is no column here to name in an `ORDER BY` or a `WHERE`, so the spec
+    does not offer either. Offered, Tortoise raised and SQLAlchemy quietly used
+    this model's own primary key -- the silent one being the worse of the two.
+    """
+    listing = orm.spec("Product").field("listing")
+    assert listing.type is FieldType.ONE_TO_ONE
+    assert listing.sortable is False
+    assert listing.filterable is False
+
+
 async def test_paging_walks_the_whole_set_without_repeating(orm: Harness) -> None:
     """Without a tiebreaker two rows with equal sort keys can swap places
     between pages and one of them is never shown."""

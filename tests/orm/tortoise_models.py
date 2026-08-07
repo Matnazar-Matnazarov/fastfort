@@ -82,6 +82,25 @@ class Product(models.Model):
         return self.name
 
 
+class Listing(models.Model):
+    """A one-to-one whose key is on this side.
+
+    The half that matters is the other one: `Product.listing` has no column on
+    the product's own table, so the spec must offer neither sorting nor
+    filtering by it.
+    """
+
+    class Meta:
+        table = "t_listing"
+
+    id = fields.IntField(primary_key=True)
+    code = fields.CharField(max_length=40, unique=True)
+    product = fields.OneToOneField("models.Product", null=True, related_name="listing")
+
+    def __str__(self) -> str:
+        return self.code
+
+
 class StaffUser(models.Model):
     class Meta:
         table = "t_staff"

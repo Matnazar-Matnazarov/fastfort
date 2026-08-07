@@ -98,9 +98,32 @@ class Product(Base):
     category_id: Mapped[int | None] = mapped_column(sa.ForeignKey("category.id"), default=None)
     category: Mapped[Category | None] = relationship(back_populates="products")
     tags: Mapped[list[Tag]] = relationship(secondary=product_tag)
+    listing: Mapped[Listing | None] = relationship(back_populates="product", uselist=False)
 
     def __str__(self) -> str:
         return self.name
+
+
+class Listing(Base):
+    """A one-to-one whose key is on this side.
+
+    The half that matters is the other one: `Product.listing` has no column on
+    the product's own table, so the spec must offer neither sorting nor
+    filtering by it. Nothing else in the suite had that shape, and the sandboxes
+    that did found it as a 500.
+    """
+
+    __tablename__ = "listing"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(sa.String(40), unique=True)
+    product_id: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("category_product.id"), unique=True, default=None
+    )
+    product: Mapped[Product | None] = relationship(back_populates="listing")
+
+    def __str__(self) -> str:
+        return self.code
 
 
 class StockLevel(Base):

@@ -186,7 +186,7 @@ class QueryBuilder:
             statement = self._join_for(statement, sort.field, joined)
             terms.extend(
                 order_term(
-                    self._attribute(sort.field),
+                    self._sort_attribute(sort.field),
                     descending=sort.descending,
                     profile=self.profile,
                 )
@@ -245,6 +245,23 @@ class QueryBuilder:
             if prop is not None:
                 return self._own_attribute(self.model, prop.key)
         raise ValidationError(f"{name!r} has no local column to filter on.")
+
+    def _sort_attribute(self, path: str) -> InstrumentedAttribute[Any]:
+        """The column an `ORDER BY` term reads.
+
+        A to-one relation sorts through its foreign key, for the same reason
+        `_condition` filters through it: the relationship is not a column, and
+        `.asc()` on one raises `NotImplementedError` rather than returning
+        something SQLAlchemy could compile. The list header renders every
+        sortable field as a link, so that was a 500 one click away on any list
+        showing a relation. Grouping rows by their target's identity is also
+        what `order_by("category")` means to Django, which is where the
+        expectation comes from.
+        """
+        field = self._field_spec(path)
+        if field is not None and field.is_relation and not field.type.is_multi_valued:
+            return self._foreign_key_attribute(path)
+        return self._attribute(path)
 
     def _attribute(self, path: str) -> InstrumentedAttribute[Any]:
         """Resolve ``name`` or ``relation__name`` to a mapped attribute."""

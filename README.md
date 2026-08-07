@@ -114,10 +114,13 @@ first time someone opens that page.
 | 👥 **Roles and permissions** | Object-level, row-level and field-level access control |
 | 📝 **Audit log** | Who changed what and when, with an old → new diff |
 | 🗄 **Three databases** | SQLite · PostgreSQL · MySQL, with identical behaviour |
-| 🔌 **ORM-agnostic** | SQLAlchemy 2.0 (async and sync) and Tortoise ORM behind one adapter contract |
+| 🔌 **Two ORMs, one admin** | SQLAlchemy 2.0 and Tortoise ORM behind one adapter contract — and a conformance suite that asks both the same questions, so "the second one behaves the same" is a test rather than a claim |
+| 🧩 **Every column type** | Text, numbers, money, dates, durations, UUIDs, JSON, hstore, arrays, enums, ranges and multiranges, inet/cidr/macaddr, bit strings — each with a real control, real validation and a filter where one makes sense. `register_type` adds your own |
+| 🗺 **PostGIS** | All seven geometry kinds, drawn and edited on a hand-rolled slippy map — point, line, polygon with holes, and the multi-shapes. Spatial filters: within, intersects, and "5 km from here" |
+| 🧠 **Vector search** | pgvector columns ranked by similarity — `?embedding__near=[…]` with cosine, L2, L1 or inner product, a neighbour count and a distance bound |
 | 🌍 **Eleven languages** | English, Uzbek, Russian, Turkish, German, French, Spanish, Chinese, Japanese, Korean and Arabic — the last of them right-to-left, which turns the whole layout around from one attribute. The catalogues ship in the package, so the admin is already translated the moment you install it — there is nothing to configure |
 | ⌨️ **A CLI that matters** | `createsuperuser` so a fresh install has a way in, and `check --deploy` that exits non-zero |
-| 📤 **Export** | The current view as CSV or Excel — filters, search and ordering included. No openpyxl, no pandas |
+| 📤 **Export and import** | The current view out as CSV, Excel or JSON — filters, search and ordering included. And back in again: the same parsers the form uses, foreign keys resolved by name or id, every bad cell reported at once with its line number, and nothing written unless the whole file parses. No openpyxl, no pandas |
 | 📦 **No Node.js** | CSS and JavaScript ship pre-built inside the package, served Brotli-compressed with a gzip fallback — 24 KB of CSS and 29 KB of JavaScript on the wire |
 
 ---
@@ -141,13 +144,41 @@ specs the templates render.
 ## Installation
 
 ```bash
-uv add "fastfort[sqlalchemy,postgres]"    # PostgreSQL
-uv add "fastfort[sqlalchemy,mysql]"       # MySQL
-uv add "fastfort[sqlalchemy,sqlite]"      # SQLite
+uv add "fastfort[sqlalchemy,postgres]"    # SQLAlchemy on PostgreSQL
+uv add "fastfort[sqlalchemy,mysql]"       # SQLAlchemy on MySQL
+uv add "fastfort[sqlalchemy,sqlite]"      # SQLAlchemy on SQLite
+uv add "fastfort[tortoise,postgres]"      # Tortoise on PostgreSQL
 uv add "fastfort[all]"                    # everything
 ```
 
-Requires Python 3.11 or newer.
+Requires Python 3.11 or newer. The ORMs are separate extras and neither is
+imported at package level, so installing one never pulls in the other.
+
+### Tortoise instead of SQLAlchemy
+
+Four lines differ. Everything else — the settings, `@admin.register`,
+`list_display`, actions, export, import — is identical, because everything else
+is above the ORM layer and never sees a model:
+
+```python
+from tortoise import Tortoise
+from fastfort.orm.tortoise import TortoiseBackend
+
+await Tortoise.init(
+    db_url="postgres://…",
+    modules={"models": ["app.models"]},
+    # Tortoise 1.1 keeps its connections in a contextvar, and an ASGI server runs
+    # the lifespan in a different task from the requests. Without this flag the
+    # init above is invisible to every view: start-up looks healthy and the first
+    # page that touches the database is a 500. `RegisterTortoise` from
+    # `tortoise.contrib.fastapi` passes it for you.
+    _enable_global_fallback=True,
+)
+
+fort = FastFort(settings=FastFortSettings(...), backend=TortoiseBackend())
+fort.set_user_model(User)
+fort.mount(app)
+```
 
 ---
 
@@ -163,6 +194,19 @@ uv run ruff check .           # linting
 uv run mypy fastfort          # type checking
 make check                    # every gate at once
 ```
+
+Two scratch applications come with the repository, and they are the fastest way
+to see any of this working:
+
+```bash
+make sandbox              # test_api/ on PostgreSQL — every column type,
+                          #   PostGIS geometry, pgvector, on :8000
+make sandbox-tortoise     # test_api_tortoise/ on SQLite — a different schema,
+                          #   the same admin, on :8001
+```
+
+Open them side by side. The models, the ORM and the database all differ; the
+admin does not, which is the whole of what the layering buys.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request, and
 [SECURITY.md](SECURITY.md) to report a vulnerability.
