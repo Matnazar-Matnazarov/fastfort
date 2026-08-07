@@ -12,6 +12,27 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A Tortoise ORM backend**, and with it the proof of what the layering has
+  claimed since the first release: adding it changed nothing in
+  `fastfort/admin/`, `fastfort/ui/` or `fastfort/spec/`. Everything above
+  `fastfort/orm/` reads a `ModelSpec` and a `ListQuery` and cannot tell which
+  ORM produced them.
+  - `fastfort.orm.tortoise.TortoiseBackend` -- introspection, query building,
+    CRUD, relations, bulk actions and deletion planning, behind the same
+    protocols the SQLAlchemy backend implements.
+  - `tests/orm/test_conformance.py` asks both backends the same questions over
+    identical model shapes: the spec each produces, every filter operator,
+    search, ordering, paging, writes, the mass-assignment boundary and rollback.
+    A second backend is correct when it answers the way the first does, and now
+    that is a test rather than a hope.
+  - `fastfort/orm/coerce.py` holds the one copy of "turn a query string into the
+    type this column compares against", shared by both. Two copies would drift,
+    and the first symptom would be a filter quietly matching different rows on
+    one backend than the other -- which nothing would fail on.
+  - Two architecture tests keep the pair honest: neither backend may import the
+    other's ORM-specific modules, and neither ORM may be reached from the
+    package root, so `fastfort[tortoise]` installs without SQLAlchemy.
+
 - **Vector search.** A pgvector column is recognised by the type registry the
   same way a PostGIS one is -- by where its type class lives, so a project that
   embeds nothing never pays for an import of pgvector -- and carries its width

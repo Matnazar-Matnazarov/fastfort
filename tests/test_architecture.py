@@ -113,3 +113,55 @@ def test_every_package_has_init() -> None:
 def test_package_ships_py_typed() -> None:
     """The `py.typed` marker is present so downstream users get type information."""
     assert (PACKAGE_ROOT / "py.typed").exists()
+
+
+def test_neither_orm_backend_imports_the_other() -> None:
+    """The two are independent implementations of one protocol.
+
+    They may share what is genuinely about the *database* -- `orm/coerce.py`
+    turns a query string into a column's type, and `dialects.py` records which
+    databases have `NULLS LAST` -- and neither may reach into the other's
+    ORM-specific modules. A Tortoise adapter that imported `sqlalchemy.query`
+    would make installing one ORM require the other, which is exactly what the
+    two optional extras exist to avoid.
+    """
+    shared = {"coerce", "dialects", "introspect"}
+    violations: list[str] = []
+
+    for backend, other in (("sqlalchemy", "tortoise"), ("tortoise", "sqlalchemy")):
+        for path in sorted((PACKAGE_ROOT / "orm" / backend).rglob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.ImportFrom) or not node.module:
+                    continue
+                # `from ..tortoise.adapter import ...` -- a relative import of
+                # the sibling backend, which is what this is looking for.
+                if node.module.split(".")[0] != other:
+                    continue
+                if node.module.split(".")[-1] in shared:
+                    continue
+                rel = path.relative_to(PACKAGE_ROOT.parent)
+                violations.append(f"{rel}: `from {node.module} import ...`")
+
+    assert not violations, (
+        "the two ORM backends must stay independent of each other:\n  " + "\n  ".join(violations)
+    )
+
+
+def test_a_project_can_install_one_orm_without_the_other() -> None:
+    """Both are optional extras, so neither may be imported at package level.
+
+    `import fastfort` on a project that installed only `fastfort[tortoise]` has
+    to work. The moment something in `fastfort/core/`, `fastfort/admin/` or
+    `fastfort/__init__.py` reaches for either ORM, that install is broken --
+    which the layering rules above already prevent, and this states as the
+    reason they exist.
+    """
+    for extra in ("sqlalchemy", "tortoise"):
+        entry = PACKAGE_ROOT / "orm" / extra / "__init__.py"
+        assert entry.is_file(), f"the {extra} backend should ship its own entry point"
+
+    # And the top level reaches for neither.
+    roots = _imported_roots((PACKAGE_ROOT / "__init__.py").read_text(encoding="utf-8"))
+    assert not roots & FORBIDDEN_ORM_MODULES

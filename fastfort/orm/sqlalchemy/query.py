@@ -8,18 +8,16 @@ and keep the SQL identical across the three supported databases.
 
 from __future__ import annotations
 
-import datetime as dt
-import uuid
 from collections.abc import Callable, Sequence
-from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
 import sqlalchemy as sa
 from sqlalchemy.orm import InstrumentedAttribute, joinedload, selectinload
 
 from fastfort.core.exceptions import ValidationError
-from fastfort.spec import FieldSpec, FieldType, Filter, FilterOperator, ListQuery, ModelSpec
+from fastfort.spec import FieldSpec, Filter, FilterOperator, ListQuery, ModelSpec
 
+from ..coerce import as_bool, coerce_filter_value
 from .dialects import (
     DialectProfile,
     icontains,
@@ -328,22 +326,13 @@ class QueryBuilder:
         return self.spec.get(path)
 
     def _coerce(self, field: FieldSpec | None, raw: str, path: str) -> Any:
-        """Convert a query-string value to the column's Python type."""
-        field_type = field.type if field is not None else FieldType.STRING
+        """Convert a query-string value to the column's Python type.
 
-        # A relation is filtered by the identity of its target, which is the
-        # value the related-object dropdown submits.
-        if field_type.is_relation:
-            return _coerce_scalar(raw, path)
-
-        try:
-            coercer = _COERCERS.get(field_type)
-            return raw if coercer is None else coercer(raw)
-        except (ValueError, TypeError, InvalidOperation) as exc:
-            raise ValidationError(
-                f"{raw!r} is not a valid value for {path!r}.",
-                field_errors={path: [f"Expected {field_type.value}."]},
-            ) from exc
+        Shared with the Tortoise backend, because it is about the column rather
+        than about either ORM -- and two copies would drift into filters that
+        quietly match different rows on the two backends.
+        """
+        return coerce_filter_value(field, raw, path)
 
 
 # ---------------------------------------------------------------------------
@@ -352,12 +341,7 @@ class QueryBuilder:
 
 
 def _as_bool(value: str | tuple[str, ...]) -> bool:
-    text = (value[0] if isinstance(value, tuple) else value).strip().lower()
-    if text in _TRUTHY:
-        return True
-    if text in _FALSY:
-        return False
-    raise ValidationError(f"{text!r} is not a boolean value.")
+    return as_bool(value[0] if isinstance(value, tuple) else value)
 
 
 def _as_str(condition: Filter) -> str:
@@ -366,63 +350,3 @@ def _as_str(condition: Filter) -> str:
 
 def _as_tuple(condition: Filter) -> tuple[str, ...]:
     return condition.value if isinstance(condition.value, tuple) else (condition.value,)
-
-
-def _coerce_scalar(raw: str, path: str) -> Any:
-    """Best-effort identity coercion for a relation target's key."""
-    try:
-        return int(raw)
-    except ValueError:
-        pass
-    try:
-        return uuid.UUID(raw)
-    except ValueError:
-        return raw
-
-
-def _coerce_datetime(raw: str) -> dt.datetime:
-    """Parse an ISO 8601 datetime, tolerating a trailing ``Z``."""
-    return dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
-
-
-def _coerce_duration(raw: str) -> dt.timedelta:
-    """`HH:MM:SS`, `MM:SS` or `Nd HH:MM:SS` into a timedelta.
-
-    A near-twin of `parse_duration` in `fastfort/admin/values.py`, and
-    deliberately not shared with it: `fastfort/orm/` may import the spec layer
-    but not the admin layer, and inverting that to save fifteen lines would put
-    the ORM adapter downstream of the web layer it exists to be independent of.
-
-    It exists at all because `DURATION` is offered as a filter, and without a
-    coercer the bound reaches the database as the string it arrived as --
-    which PostgreSQL refuses against an `interval` column, so the filter that
-    looked available was a 500 waiting to be clicked.
-    """
-    text = raw.strip()
-    days = 0
-    if "d" in text:
-        head, _, text = text.partition("d")
-        days = int(head.strip())
-    parts = text.strip().split(":") if text.strip() else ["0"]
-    if len(parts) > 3:
-        raise ValueError(f"{raw!r} is not a duration")
-    numbers = [float(part) for part in parts]
-    # Right-aligned, so "90" is ninety seconds rather than ninety hours -- the
-    # same rule the form's box follows.
-    while len(numbers) < 3:
-        numbers.insert(0, 0.0)
-    return dt.timedelta(days=days, hours=numbers[0], minutes=numbers[1], seconds=numbers[2])
-
-
-_COERCERS: dict[FieldType, Callable[[str], Any]] = {
-    FieldType.DURATION: _coerce_duration,
-    FieldType.INTEGER: int,
-    FieldType.BIGINT: int,
-    FieldType.FLOAT: float,
-    FieldType.DECIMAL: Decimal,
-    FieldType.BOOLEAN: _as_bool,
-    FieldType.DATE: dt.date.fromisoformat,
-    FieldType.DATETIME: _coerce_datetime,
-    FieldType.TIME: dt.time.fromisoformat,
-    FieldType.UUID: uuid.UUID,
-}

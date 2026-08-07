@@ -49,7 +49,7 @@ inter-test dependency, not flakiness to ignore.
 fastfort/
   core/       FastFort object, registry, settings, hooks, exceptions
   spec/       ModelSpec / FieldSpec / ListQuery -- pure data, no web, no ORM
-  orm/        base.py = the protocols; sqlalchemy/ = the only implementation
+  orm/        base.py = the protocols; sqlalchemy/ and tortoise/ implement them
   admin/      the HTTP surface: site.py (router), options.py (ModelAdmin), forms.py
   auth/       sessions, CSRF, Argon2 passwords, lockout, user-model detection
   ui/         Jinja renderer, theming, icons, static/{css,js}, templates/
@@ -70,8 +70,13 @@ tests/        unit, integration, orm, ui, security, cli + test_architecture.py
 2. **`fastfort/spec/` imports no web framework** — no `fastapi`, `starlette`, `jinja2`.
 3. Every package directory has an `__init__.py`.
 
-The payoff is that a second ORM adapter can be added without touching a line of the
-admin. `fastfort/orm/tortoise/` is an empty placeholder for the next one.
+The payoff was that a second ORM adapter could be added without touching a line of
+the admin, and `fastfort/orm/tortoise/` is now that adapter -- added without a
+change anywhere above `fastfort/orm/`. `tests/orm/test_conformance.py` asks both
+backends the same questions over identical model shapes, so "the second one is
+correct" is a test rather than a claim. `fastfort/orm/coerce.py` is the one thing
+they share, because turning a query string into a column's type is about the
+column rather than about either ORM.
 
 ### How a request flows
 
