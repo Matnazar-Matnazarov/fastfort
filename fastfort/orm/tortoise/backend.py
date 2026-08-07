@@ -32,6 +32,30 @@ from .introspect import introspect_model, is_tortoise_model
 
 __all__ = ["TortoiseBackend", "TortoiseUnitOfWork"]
 
+#: The substring Tortoise 1.1+ raises with when its state is not reachable from
+#: the task asking for it. Matched on text because the exception it comes in is a
+#: bare `RuntimeError` -- there is no type to catch.
+_NO_CONTEXT = "No TortoiseContext is currently active"
+
+#: Told to whoever hits it, in both places it can surface. Tortoise 1.1 moved its
+#: connection registry into a `contextvars.ContextVar`, and an ASGI server runs
+#: the lifespan in a different task from the requests -- so a `Tortoise.init()`
+#: in the lifespan sets the variable in a context the request handlers never see.
+#: Everything looks right at start-up and the first page that touches the
+#: database is a 500, which is exactly what happened to this project's own
+#: Tortoise sandbox.
+_CONTEXT_HINT = (
+    "Tortoise 1.1 keeps its connections in a contextvar, and an ASGI server runs the "
+    "lifespan in a different task from the requests -- so `await Tortoise.init(...)` in a "
+    "lifespan is invisible to every view. Pass `_enable_global_fallback=True` to it, or use "
+    "`async with RegisterTortoise(app, db_url=..., modules=...):` from "
+    "`tortoise.contrib.fastapi`, which passes it for you."
+)
+
+
+def _missing_context(exc: BaseException) -> bool:
+    return isinstance(exc, RuntimeError) and _NO_CONTEXT in str(exc)
+
 
 class TortoiseUnitOfWork:
     """One transaction.
@@ -64,8 +88,20 @@ class TortoiseUnitOfWork:
         return self._connection
 
     async def __aenter__(self) -> TortoiseUnitOfWork:
-        self._context = in_transaction(self._connection_name)
-        self._connection = await self._context.__aenter__()
+        try:
+            self._context = in_transaction(self._connection_name)
+            self._connection = await self._context.__aenter__()
+        except RuntimeError as exc:
+            if not _missing_context(exc):
+                raise
+            # Left as it was found, so the failed unit of work cannot be exited
+            # into a transaction that was never opened.
+            self._context = None
+            raise ImproperlyConfigured(
+                "Tortoise is initialised, but its connections are not reachable from the "
+                "task handling this request.",
+                hint=_CONTEXT_HINT,
+            ) from exc
         self._done = False
         return self
 
@@ -236,15 +272,25 @@ class TortoiseBackend:
         not answer is an operational one.
         """
         if not Tortoise._inited:
+            # `_inited` reads the *current* context on Tortoise 1.1+, so this is
+            # also what a caller sees when init happened in another task. Both
+            # fixes are named, because from here the two are indistinguishable.
             raise ImproperlyConfigured(
                 "Tortoise has not been initialised, so FastFort has no connection to use.",
                 hint=(
                     "Call `await Tortoise.init(db_url=..., modules=...)` before mounting "
-                    "the admin -- usually from the application's lifespan."
+                    f"the admin -- usually from the application's lifespan. {_CONTEXT_HINT}"
                 ),
             )
         try:
             await connections.get(self._connection_name).execute_query("SELECT 1")
+        except RuntimeError as exc:
+            if not _missing_context(exc):
+                raise
+            raise ImproperlyConfigured(
+                "Tortoise is initialised, but its connections are not reachable from here.",
+                hint=_CONTEXT_HINT,
+            ) from exc
         except Exception as exc:
             raise AdapterError(
                 f"Cannot reach the database on the {self._connection_name!r} connection: {exc}",

@@ -164,7 +164,16 @@ is above the ORM layer and never sees a model:
 from tortoise import Tortoise
 from fastfort.orm.tortoise import TortoiseBackend
 
-await Tortoise.init(db_url="postgres://…", modules={"models": ["app.models"]})
+await Tortoise.init(
+    db_url="postgres://…",
+    modules={"models": ["app.models"]},
+    # Tortoise 1.1 keeps its connections in a contextvar, and an ASGI server runs
+    # the lifespan in a different task from the requests. Without this flag the
+    # init above is invisible to every view: start-up looks healthy and the first
+    # page that touches the database is a 500. `RegisterTortoise` from
+    # `tortoise.contrib.fastapi` passes it for you.
+    _enable_global_fallback=True,
+)
 
 fort = FastFort(settings=FastFortSettings(...), backend=TortoiseBackend())
 fort.set_user_model(User)

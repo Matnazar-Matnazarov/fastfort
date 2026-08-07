@@ -8,7 +8,13 @@ proof of what the layering claims: adding it changed nothing in `fastfort/admin/
     from tortoise import Tortoise
     from fastfort.orm.tortoise import TortoiseBackend
 
-    await Tortoise.init(db_url="sqlite://db.sqlite3", modules={"models": ["app.models"]})
+    await Tortoise.init(
+        db_url="sqlite://db.sqlite3",
+        modules={"models": ["app.models"]},
+        # See `backend.py`: without this, an init in an ASGI lifespan is
+        # invisible to every view, because the two run in different tasks.
+        _enable_global_fallback=True,
+    )
     fort = FastFort(settings=..., backend=TortoiseBackend())
 """
 

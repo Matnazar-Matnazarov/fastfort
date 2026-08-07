@@ -10,6 +10,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A Tortoise connection the lifespan opened is now reachable from the views,
+  or else says why not.** Tortoise 1.1 keeps its connections in a `contextvars`
+  variable, and an ASGI server runs the lifespan in a different task from the
+  requests -- so `await Tortoise.init(...)` in a lifespan is invisible to every
+  view. Start-up looked healthy and the first page that touched the database was
+  a 500 carrying a bare "No TortoiseContext is currently active", which names no
+  fix. The backend now raises `ImproperlyConfigured` naming both ways out:
+  `_enable_global_fallback=True`, or `RegisterTortoise` from
+  `tortoise.contrib.fastapi`. The README's Tortoise snippet passes the flag.
+
 ## [0.3.0] - 2026-08-07
 
 ### Added
