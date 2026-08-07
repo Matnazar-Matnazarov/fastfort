@@ -29,6 +29,7 @@ one row-and-column error alongside all the others.
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import io
 import json
 import re
@@ -350,6 +351,8 @@ def _read_xlsx(content: bytes) -> tuple[list[str], list[list[str]]]:
             table = _parse_xml(archive.read("xl/sharedStrings.xml"))
             shared = ["".join(node.itertext()) for node in table.findall(f"{_SHEET_NS}si")]
 
+        date_styles = _date_styles(archive, names)
+        from_1904 = _uses_1904(archive, names)
         sheet = _parse_xml(archive.read(sheets[0]))
 
     rows: list[list[str]] = []
@@ -362,7 +365,7 @@ def _read_xlsx(content: bytes) -> tuple[list[str], list[list[str]]]:
             index = _column_index(cell.get("r", ""))
             while len(cells) < index:
                 cells.append("")
-            cells.append(_xlsx_cell(cell, shared))
+            cells.append(_xlsx_cell(cell, shared, date_styles, from_1904=from_1904))
         if any(cell for cell in cells):
             rows.append(cells)
 
@@ -389,7 +392,113 @@ def _column_index(reference: str) -> int:
     return index - 1
 
 
-def _xlsx_cell(cell: ElementTree.Element, shared: list[str]) -> str:
+#: Number formats that mean a date or a time, by the id the format has when a
+#: spreadsheet uses a built-in one. 14-22 are the dates and times everybody
+#: knows; 27-36 and 50-58 are the East Asian locale calendars; 45-47 are
+#: durations. Anything from 164 up is the file's own and has to be read.
+_BUILTIN_DATE_FORMATS = frozenset({*range(14, 23), *range(27, 37), *range(45, 48), *range(50, 59)})
+
+#: Anything left in a format code once the parts that are not the format itself
+#: are removed: quoted literals, escaped characters, colour and condition
+#: blocks, and the currency-ish `[$...]`.
+_FORMAT_NOISE = re.compile(r'"[^"]*"|\\.|\[[^\]]*\]')
+
+
+def _is_date_format(code: str) -> bool:
+    """Whether a custom number format draws a date or a time.
+
+    Read from the code rather than guessed from the id, because `yyyy-mm-dd` is
+    a format a person makes in the format dialog and it lands somewhere above
+    164 with no other clue about what it is. The literals are stripped first:
+    `0.00" days"` is a number, and the letters in the word would otherwise make
+    it look like one of these.
+    """
+    stripped = _FORMAT_NOISE.sub("", code).lower()
+    return any(token in stripped for token in "ymdhs")
+
+
+def _date_styles(archive: zipfile.ZipFile, names: list[str]) -> frozenset[int]:
+    """Which cell-style indices carry a date format.
+
+    A date in a spreadsheet is not a date. It is a *number* -- days since the
+    epoch -- with a format applied, and the format lives in `styles.xml` under
+    an index the cell refers to by its `s` attribute. Without reading it, a
+    column of perfectly good dates arrives as five-figure integers, which is
+    exactly what "46218" was.
+    """
+    if "xl/styles.xml" not in names:
+        return frozenset()
+
+    styles = _parse_xml(archive.read("xl/styles.xml"))
+    custom = {
+        int(node.get("numFmtId", "0")): node.get("formatCode", "")
+        for node in styles.iter(f"{_SHEET_NS}numFmt")
+    }
+
+    dated: set[int] = set()
+    formats = styles.find(f"{_SHEET_NS}cellXfs")
+    if formats is None:
+        return frozenset()
+
+    for index, entry in enumerate(formats.findall(f"{_SHEET_NS}xf")):
+        try:
+            number_format = int(entry.get("numFmtId", "0"))
+        except ValueError:
+            continue
+        if number_format in _BUILTIN_DATE_FORMATS or (
+            number_format in custom and _is_date_format(custom[number_format])
+        ):
+            dated.add(index)
+    return frozenset(dated)
+
+
+def _uses_1904(archive: zipfile.ZipFile, names: list[str]) -> bool:
+    """Whether the workbook counts days from 1904 rather than from 1900.
+
+    A Mac convention old enough that most people have never met it, and cheap
+    enough to honour that getting it wrong by four years and a day is not worth
+    the saving.
+    """
+    if "xl/workbook.xml" not in names:
+        return False
+    workbook = _parse_xml(archive.read("xl/workbook.xml"))
+    properties = workbook.find(f"{_SHEET_NS}workbookPr")
+    return properties is not None and properties.get("date1904") in ("1", "true")
+
+
+def _serial_to_text(serial: float, *, from_1904: bool) -> str:
+    """A spreadsheet's day number as the text the form's own parsers read.
+
+    The 1900 epoch is 1899-12-30, not 1900-01-01. Excel believes 1900 was a leap
+    year -- it was not -- so serial 60 is a day that never existed, and shifting
+    the epoch back two days is the standard way of making every serial from 61
+    onwards land on the right date while leaving the ones below it alone.
+
+    A whole number is a date and anything with a fraction is a date and a time,
+    which is the distinction the cell itself is making: a person who formatted
+    the column as a date gets `YYYY-MM-DD`, and `parse_value` takes both.
+    """
+    epoch = dt.date(1904, 1, 1) if from_1904 else dt.date(1899, 12, 30)
+    days = int(serial)
+    seconds = round((serial - days) * 86_400)
+    # Rounding a hair under midnight lands on the next day.
+    if seconds >= 86_400:
+        days += 1
+        seconds -= 86_400
+
+    moment = dt.datetime.combine(epoch + dt.timedelta(days=days), dt.time()) + dt.timedelta(
+        seconds=seconds
+    )
+    return moment.date().isoformat() if seconds == 0 else moment.isoformat(sep=" ")
+
+
+def _xlsx_cell(
+    cell: ElementTree.Element,
+    shared: list[str],
+    date_styles: frozenset[int],
+    *,
+    from_1904: bool,
+) -> str:
     kind = cell.get("t")
     if kind == "s":
         value = cell.findtext(f"{_SHEET_NS}v")
@@ -400,7 +509,25 @@ def _xlsx_cell(cell: ElementTree.Element, shared: list[str]) -> str:
     if kind == "inlineStr":
         node = cell.find(f"{_SHEET_NS}is")
         return "".join(node.itertext()) if node is not None else ""
-    return (cell.findtext(f"{_SHEET_NS}v") or "").strip()
+
+    text = (cell.findtext(f"{_SHEET_NS}v") or "").strip()
+
+    # A numeric cell whose style says "date". This is the whole reason styles
+    # are read at all: a spreadsheet turns the ISO date an export wrote into a
+    # real date cell the moment somebody opens and saves the file, so without
+    # this the round trip breaks on exactly the files people edit by hand.
+    if not text or kind not in (None, "n"):
+        return text
+    try:
+        style = int(cell.get("s", "-1"))
+    except ValueError:
+        return text
+    if style not in date_styles:
+        return text
+    try:
+        return _serial_to_text(float(text), from_1904=from_1904)
+    except (ValueError, OverflowError):
+        return text
 
 
 # ---------------------------------------------------------------------------

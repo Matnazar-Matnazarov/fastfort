@@ -52,6 +52,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server. OpenStreetMap's policy says not to and answers by throttling, and a
   throttled tile is `opacity: 0` -- so the map came out with a rectangular hole
   in it. Maps are built when scrolled near, and a failed tile is retried once.
+- A date edited in a spreadsheet came back as a five-figure integer. A date in
+  an `.xlsx` is not a date -- it is a *number* of days since 1899-12-30 with a
+  number format applied, and the format lives in `styles.xml` under an index the
+  cell refers to. So an export written as ISO text became a real date cell the
+  moment somebody opened and saved the file, and the upload reported "46218" as
+  not being a date. The reader now reads the styles, including custom format
+  codes and the 1904 epoch, which is the difference between the round trip
+  working and only appearing to.
 - A boolean column had no parser of its own. The change form never needed one --
   it decides from whether the control submitted anything at all -- but an import
   reads the word, and without this a boolean was written the *string* `"false"`,

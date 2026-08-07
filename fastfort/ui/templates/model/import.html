@@ -126,13 +126,24 @@
           {{ _("Any column not listed here is ignored, and any of these may be left out.") }}
         </p>
 
-        <div class="ff-mt-3">
-          {% for format in formats %}
-            <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ template_url }}?format={{ format.name }}">
-              {{ ff_icon("download", size=14) }}
-              {{ format.label }}
-            </a>
-          {% endfor %}
+        {# The same control the list's export offers, because it is the same
+           three formats and the same choice -- a menu there and a row of
+           buttons here would be two spellings of one idea. Hidden on arrival
+           and unfolded by a stylesheet rule without script, exactly as that
+           one is. #}
+        <div class="ff-dropdown ff-mt-3">
+          <button class="ff-btn ff-btn--sm" type="button" data-ff-menu>
+            {{ ff_icon("download", size=15) }}
+            {{ _("Template") }}
+          </button>
+          <div class="ff-pop ff-dropdown__panel" hidden>
+            {% for format in formats %}
+              <a class="ff-item" href="{{ template_url }}?format={{ format.name }}" download>
+                <span class="ff-item__icon">{{ ff_icon("file", size=15) }}</span>
+                <span class="ff-item__label">{{ format.label }}</span>
+              </a>
+            {% endfor %}
+          </div>
         </div>
 
         <dl class="ff-import__list ff-mt-4">
