@@ -13,10 +13,12 @@ none of it may leave half a file in the database.
 
 from __future__ import annotations
 
+import datetime as dt
 import io
 import json
 import zipfile
 from collections.abc import AsyncIterator
+from decimal import Decimal
 
 import httpx
 import pytest
@@ -327,17 +329,24 @@ async def test_the_list_offers_an_import_when_the_model_takes_one(
 
 
 @pytest.mark.parametrize("fmt", ["csv", "xlsx", "json"])
-async def test_the_template_downloads_and_reads_back(client: httpx.AsyncClient, fmt: str) -> None:
-    """Every hint cell fails to parse, so a template uploaded unchanged reports
-    itself as bad rows rather than importing a row of instructions."""
+async def test_the_template_downloads_with_a_hint_row_that_is_a_comment(
+    client: httpx.AsyncClient, fmt: str
+) -> None:
+    """It carries the shape of each column, and it carries it as a comment.
+
+    Written as data it was six parse errors on the one file that exists to
+    explain the format -- and downloading the template and uploading it back is
+    the first thing anybody does with one.
+    """
     response = await client.get(f"/admin/shop.product/import/template?format={fmt}")
     assert response.status_code == 200
     assert "attachment" in response.headers["content-disposition"]
 
-    spec, model_admin = spec_and_admin()
-    head, rows = read_table(response.content, fmt)
-    plan = build_plan(head, rows, spec, model_admin)  # type: ignore[arg-type]
-    assert not plan.ok
+    _, rows = read_table(response.content, fmt)
+    assert rows
+    assert rows[0][0].startswith("#")
+    # And the hints really are in it, or the file explains nothing.
+    assert "YYYY-MM-DD" in " ".join(rows[0])
 
 
 async def test_checking_a_file_writes_nothing(client: httpx.AsyncClient) -> None:
@@ -543,3 +552,151 @@ def test_a_date_cell_arrives_as_a_date(label: str, blob: bytes, expected: str) -
 def test_a_number_that_is_not_a_date_keeps_its_digits(label: str, blob: bytes) -> None:
     _, rows = read_table(blob, "xlsx")
     assert rows[0][0] == "2000", label
+
+
+# ---------------------------------------------------------------------------
+# The round trip, end to end
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("fmt", ["csv", "xlsx", "json"])
+def test_the_template_uploads_unchanged(fmt: str) -> None:
+    """The first thing anybody does with a template is upload it, and it used to
+    be the one file the format refuses -- one parse error per column, from the
+    file that exists to explain the format.
+
+    The hint row is a comment now. What is left is a header and no rows, which
+    is a different message and an honest one: fill something in.
+    """
+    from fastfort.admin.importing import template_rows
+
+    spec, model_admin = spec_and_admin()
+    headers, rows = template_rows(spec, model_admin, lambda text: text)  # type: ignore[arg-type]
+    writer = {"csv": stream_csv, "xlsx": stream_xlsx, "json": stream_json}[fmt]
+    blob = b"".join(writer(headers, rows))
+
+    head, body = read_table(blob, fmt)
+    with pytest.raises(ImportFileError, match="no rows to import"):
+        build_plan(head, body, spec, model_admin)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("fmt", ["csv", "xlsx", "json"])
+def test_a_template_with_a_row_filled_in_imports(fmt: str) -> None:
+    """Which is what a template is for. The comment row is skipped and the row
+    under it is read, so the file somebody downloads is the file they fill in."""
+    from fastfort.admin.importing import template_rows
+
+    spec, model_admin = spec_and_admin()
+    headers, rows = template_rows(spec, model_admin, lambda text: text)  # type: ignore[arg-type]
+    filled = [*rows, ["", "Filled In"] + [""] * (len(headers) - 2)]
+    writer = {"csv": stream_csv, "xlsx": stream_xlsx, "json": stream_json}[fmt]
+
+    head, body = read_table(b"".join(writer(headers, filled)), fmt)
+    plan = build_plan(head, body, spec, model_admin)  # type: ignore[arg-type]
+
+    assert plan.ok, [error.message for error in plan.errors]
+    assert len(plan.rows) == 1
+    assert plan.rows[0].values["name"] == "Filled In"
+
+
+@pytest.mark.parametrize("fmt", ["csv", "xlsx", "json"])
+def test_an_export_with_dates_reads_straight_back(fmt: str) -> None:
+    """The whole loop, with the two column types that used to break it: a date
+    and a datetime. An export the reader cannot take back is a bug in the pair,
+    and this is the pair."""
+    spec, model_admin = spec_and_admin()
+    headers = ["Id", "Name", "Price", "Is active", "Released on", "Created at"]
+    row = [
+        1,
+        "Pixel Phone",
+        Decimal("799.00"),
+        True,
+        dt.date(2026, 1, 15),
+        dt.datetime(2026, 1, 15, 9, 30, tzinfo=dt.UTC),
+    ]
+    writer = {"csv": stream_csv, "xlsx": stream_xlsx, "json": stream_json}[fmt]
+
+    head, body = read_table(b"".join(writer(headers, [row])), fmt)
+    plan = build_plan(head, body, spec, model_admin)  # type: ignore[arg-type]
+
+    assert plan.ok, [f"{e.column}: {e.message} ({e.value})" for e in plan.errors]
+    assert plan.rows[0].values["released_on"] == dt.date(2026, 1, 15)
+    assert plan.rows[0].values["is_active"] is True
+
+
+def test_a_date_leaves_the_xlsx_writer_as_a_date_cell() -> None:
+    """Written as text it looked right until somebody opened the file: a
+    spreadsheet converts what it recognises and leaves the rest alone, so a
+    column came back half real dates and half strings and re-uploading it was a
+    coin toss per row. One format for the whole column is the point."""
+    blob = b"".join(stream_xlsx(["When"], [[dt.date(2026, 7, 15)]]))
+
+    with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+        sheet = archive.read("xl/worksheets/sheet1.xml").decode()
+        # A styles part, and a cell pointing into it rather than an inline string.
+        assert "xl/styles.xml" in archive.namelist()
+        assert "yyyy" in archive.read("xl/styles.xml").decode()
+
+    assert 's="1"><v>46218.0<' in sheet or 's="1"><v>46218<' in sheet
+    assert "inlineStr" not in sheet.split('<row r="2">')[1]
+
+
+def test_a_row_beginning_with_a_hash_is_a_comment() -> None:
+    """Also the escape hatch for anybody keeping notes in the spreadsheet they
+    import from, which is a habit worth accommodating rather than arguing with."""
+    spec, model_admin = spec_and_admin()
+    plan = build_plan(
+        ["Name", "Price"],
+        [["# everything below is this quarter", ""], ["Real Row", "5.00"]],
+        spec,  # type: ignore[arg-type]
+        model_admin,
+    )
+
+    assert plan.ok, [error.message for error in plan.errors]
+    assert len(plan.rows) == 1
+    assert plan.rows[0].values["name"] == "Real Row"
+
+
+def test_a_json_export_writes_an_array_and_reads_one_back() -> None:
+    """JSON has arrays, so a JSON export uses one for a many-valued cell -- and
+    splitting `["new", "sale"]` on commas produces `["new"` and `"sale"]`, which
+    match nothing. The file's own native spelling has to read back, or a JSON
+    export is a file its own importer cannot take."""
+    from fastfort.admin.values import split_multi
+
+    assert split_multi('["new", "bestseller"]') == ["new", "bestseller"]
+    assert split_multi("new, bestseller") == ["new", "bestseller"]
+    assert split_multi('["refurbished"]') == ["refurbished"]
+    # A JSON column legitimately holds a list of objects, and that is one value
+    # rather than a list of them.
+    assert split_multi('[{"a": 1}, {"b": 2}]') == ['[{"a": 1}', '{"b": 2}]']
+
+
+def test_a_geometry_exports_as_something_an_import_can_read() -> None:
+    """A list cell summarises one -- "Polygon · 14 points" -- which is right to
+    read in a table and impossible to turn back into a polygon. A file is read
+    by a program at least as often as by a person."""
+    from tests.orm.exotic_models import SpatialColumn
+
+    from fastfort.admin.values import parse_value
+
+    spec = introspect_model(SpatialColumn, key="lab.spatial")
+
+    class Spatial(admin.ModelAdmin):
+        importable = True
+
+    model_admin = Spatial(spec)
+
+    class Row:
+        # A real polygon, as the WKB a spatial column hands back. Taken from
+        # `tests/unit/test_geo_codec.py`, where it came out of PostGIS itself.
+        area = (
+            "01030000000100000005000000CDCCCCCCCC4C51409A999999999944403333333333535140"
+            "9A9999999999444033333333335351406666666666A64440CDCCCCCCCC4C51406666666666"
+            "A64440CDCCCCCCCC4C51409A99999999994440"
+        )
+
+    exported = model_admin.export_cell(Row(), "area")
+    assert "POLYGON" in exported
+    # And the parser takes it back, which is the whole claim.
+    assert parse_value(exported, spec.field("area")).startswith("SRID=")

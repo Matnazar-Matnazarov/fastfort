@@ -172,6 +172,7 @@ _CONTENT_TYPES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Default Extension="xml" ContentType="application/xml"/>
 <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
 <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
 </Types>"""  # noqa: E501
 
 _ROOT_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -187,7 +188,40 @@ _WORKBOOK = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 _WORKBOOK_RELS = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
 <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>"""  # noqa: E501
+
+#: Two number formats and the cell styles that use them, so a date cell can say
+#: it is a date. Ids from 164 up are the file's own; 163 and below are reserved
+#: for the ones every spreadsheet has built in.
+#:
+#: ISO, not a locale format. An export is read by another program as often as by
+#: a person, and "31/12/2026" is ambiguous to every one of them -- which is the
+#: same reason `cell_value` writes ISO for the formats that stay text.
+#:
+#: The fonts, fills and borders are not decoration and cannot be dropped: a
+#: reader indexes into these lists by number, so a `cellXfs` entry referring to
+#: font 0 needs a font 0 to exist. Two fills specifically, the second `gray125`,
+#: because that is what the format's own defaults are and openpyxl refuses a
+#: file with fewer -- which is the check that caught this being wrong.
+_STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="2">
+<numFmt numFmtId="164" formatCode="yyyy\\-mm\\-dd"/>
+<numFmt numFmtId="165" formatCode="yyyy\\-mm\\-dd\\ hh:mm:ss"/>
+</numFmts>
+<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts>
+<fills count="2"><fill><patternFill patternType="none"/></fill>
+<fill><patternFill patternType="gray125"/></fill></fills>
+<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+<cellXfs count="3">
+<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+</cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+</styleSheet>"""
 
 
 def _column_name(index: int) -> str:
@@ -199,15 +233,53 @@ def _column_name(index: int) -> str:
     return name
 
 
-def _cell(reference: str, value: str | int | float) -> str:
-    if isinstance(value, int | float) and not isinstance(value, bool):
-        return f'<c r="{reference}"><v>{value}</v></c>'
-    if value == "":
+#: The style indices `_STYLES` below declares, in the order it declares them.
+#: 0 is the default; a date cell points at 1 and a datetime at 2.
+_DATE_STYLE = 1
+_DATETIME_STYLE = 2
+
+#: Day zero for a spreadsheet serial. Not 1900-01-01: Excel believes 1900 was a
+#: leap year, so serial 60 is a day that never existed, and starting two days
+#: earlier makes every serial above it land on the right date.
+_EPOCH = dt.date(1899, 12, 30)
+
+
+def _serial(value: dt.date | dt.datetime) -> float:
+    """A date as the number of days a spreadsheet stores it as."""
+    if isinstance(value, dt.datetime):
+        moment = value.replace(tzinfo=None)
+        days = (moment.date() - _EPOCH).days
+        seconds = moment.hour * 3600 + moment.minute * 60 + moment.second
+        return days + seconds / 86_400
+    return float((value - _EPOCH).days)
+
+
+def _cell(reference: str, value: Any) -> str:
+    """One cell, typed the way a spreadsheet types it.
+
+    A date goes out as a *number* with a date format on it rather than as text,
+    which is what a date in a workbook actually is. Written as text it looked
+    right until somebody opened the file: a spreadsheet converts what it
+    recognises and leaves the rest alone, so a column came back half real dates
+    and half strings, and re-uploading it was a coin toss per row. One format
+    for the whole column is the point.
+
+    `dt.date` covers `dt.datetime` too, so the narrower check comes first.
+    """
+    if isinstance(value, dt.datetime):
+        return f'<c r="{reference}" s="{_DATETIME_STYLE}"><v>{_serial(value)}</v></c>'
+    if isinstance(value, dt.date):
+        return f'<c r="{reference}" s="{_DATE_STYLE}"><v>{_serial(value)}</v></c>'
+
+    flattened = cell_value(value)
+    if isinstance(flattened, int | float) and not isinstance(flattened, bool):
+        return f'<c r="{reference}"><v>{flattened}</v></c>'
+    if flattened == "":
         return f'<c r="{reference}"/>'
     # `t="inlineStr"` rather than the shared-string table: sharing would mean
     # holding every distinct string in memory to build the table, which is the
     # one thing streaming is here to avoid.
-    text = escape(str(value))
+    text = escape(str(flattened))
     return f'<c r="{reference}" t="inlineStr"><is><t xml:space="preserve">{text}</t></is></c>'
 
 
@@ -230,7 +302,7 @@ def _sheet_xml(headers: Sequence[str], rows: Iterable[Sequence[Any]]) -> Iterato
         yield (
             f'<row r="{number}">'
             + "".join(
-                _cell(f"{_column_name(index)}{number}", cell_value(value))
+                _cell(f"{_column_name(index)}{number}", value)
                 for index, value in enumerate(row, start=1)
             )
             + "</row>"
@@ -252,6 +324,7 @@ def stream_xlsx(headers: Sequence[str], rows: Iterable[Sequence[Any]]) -> Iterat
         archive.writestr("_rels/.rels", _ROOT_RELS)
         archive.writestr("xl/workbook.xml", _WORKBOOK)
         archive.writestr("xl/_rels/workbook.xml.rels", _WORKBOOK_RELS)
+        archive.writestr("xl/styles.xml", _STYLES)
         archive.writestr("xl/worksheets/sheet1.xml", "".join(_sheet_xml(headers, rows)))
 
     yield buffer.getvalue()

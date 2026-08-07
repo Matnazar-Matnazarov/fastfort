@@ -17,9 +17,15 @@
   </div>
 
   {% if error %}
-    <div class="ff-alert ff-alert--danger" role="alert">
+    {# Red for a file that is genuinely broken, neutral for one that is simply
+       empty -- downloading the template and uploading it back is a normal thing
+       to do, and being shouted at for following the instructions is how a form
+       teaches people to ignore its warnings. #}
+    <div class="ff-alert ff-alert--{{ error_tone }}" role="alert">
       <div>
-        <div class="ff-alert__title">{{ _("That file could not be read") }}</div>
+        <div class="ff-alert__title">
+          {{ _("Nothing to import") if error_tone == "info" else _("That file could not be read") }}
+        </div>
         <p class="ff-mt-2">{{ error }}</p>
       </div>
     </div>

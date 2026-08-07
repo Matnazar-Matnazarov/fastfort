@@ -208,17 +208,44 @@ def parse_duration(text: str) -> dt.timedelta:
 # -- arrays -------------------------------------------------------------
 
 
+def split_multi(text: str) -> list[str]:
+    """The entries of a many-valued cell, however the file spelled them.
+
+    Comma-separated is what a person types, what the tag control shows and what
+    a CSV export writes. A JSON export writes a real array -- `["new", "sale"]`
+    -- because JSON has one and using it is the right thing for that format to
+    do. Both have to read back, or a JSON export is a file its own importer
+    cannot take: splitting `["new", "bestseller"]` on commas produces `["new"`
+    and `"bestseller"]`, and neither matches anything.
+
+    Only an array of scalars counts. A JSON *column* legitimately holds
+    `[{...}, {...}]`, and that is one value rather than a list of them.
+    """
+    stripped = text.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list) and all(
+            isinstance(item, str | int | float | bool) for item in parsed
+        ):
+            return [str(item).strip() for item in parsed if str(item).strip()]
+    return [part.strip() for part in stripped.split(",") if part.strip()]
+
+
 def _parse_array(text: str, spec: FieldSpec) -> list[Any]:
     """Comma-separated, which is what people type and what `render_value`
-    shows back. Blank entries are dropped rather than stored as empty
-    strings: "a, b," is a typo, not a three-element list.
+    shows back -- or a real JSON array, which is what a JSON export writes.
+    Blank entries are dropped rather than stored as empty strings: "a, b," is a
+    typo, not a three-element list.
 
     Each entry is parsed through `spec.item` when the adapter supplied one, so
     `ARRAY(Integer)` rejects "banana" the same way a bare `INTEGER` column
     would -- naming which entry failed, since "entry 3" is something a person
     can find and "invalid value" is not.
     """
-    entries = [part.strip() for part in text.split(",") if part.strip()]
+    entries = split_multi(text)
     if spec.item is None:
         return list(entries)
     parsed: list[Any] = []
