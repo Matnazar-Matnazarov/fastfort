@@ -10,6 +10,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-07
+
 ### Added
 
 - **A Tortoise ORM backend**, and with it the proof of what the layering has
@@ -32,6 +34,16 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Two architecture tests keep the pair honest: neither backend may import the
     other's ORM-specific modules, and neither ORM may be reached from the
     package root, so `fastfort[tortoise]` installs without SQLAlchemy.
+- **A second sandbox, `test_api_tortoise/`** -- a library rather than a shop, on
+  Tortoise and SQLite, with its own `Everything` covering every type Tortoise
+  can express. Run it beside `make sandbox` and the models, the ORM and the
+  database all differ while the admin does not, which is the whole of what the
+  layering buys. `make sandbox-tortoise`.
+- `test_api/` now covers **every one of the 36 `FieldType`s**. The last five --
+  `EMAIL`, `URL`, `PASSWORD`, `FILE`, `IMAGE` -- cannot be reached by
+  introspecting a stock column, because all five *are* `VARCHAR` and only the
+  project knows which is which; `test_api/types.py` declares them and one
+  `register_type` rule classifies every column that uses them.
 
 - **Vector search.** A pgvector column is recognised by the type registry the
   same way a PostGIS one is -- by where its type class lives, so a project that
@@ -791,7 +803,8 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Matnazar-Matnazarov/fastfort/releases/tag/v0.1.0

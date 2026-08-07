@@ -53,7 +53,7 @@ clean:  ## Remove caches and build artefacts
 # --- Sandbox -----------------------------------------------------------------
 # The scratch application in test_api/, on PostgreSQL with PostGIS.
 
-.PHONY: sandbox-up sandbox-down sandbox
+.PHONY: sandbox-up sandbox-down sandbox sandbox-tortoise
 
 sandbox-up:
 	docker compose -f docker-compose.sandbox.yml up -d
@@ -63,3 +63,10 @@ sandbox-down:
 
 sandbox: sandbox-up
 	uv run uvicorn test_api.main:app --reload
+
+# The same admin on the other backend. No services: Tortoise expresses no
+# geometry, no range and no vector, so `test_api_tortoise/` needs only SQLite --
+# which is also the point, since the two sandboxes side by side are what shows
+# the admin does not know which ORM is underneath.
+sandbox-tortoise:
+	uv run uvicorn test_api_tortoise.main:app --reload --port 8001
