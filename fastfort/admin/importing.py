@@ -70,6 +70,14 @@ IMPORT_FORMATS: dict[str, str] = {
 #: for and a lock nobody else can work around.
 MAX_ROWS = 10_000
 
+#: A row whose first cell starts with this is a note to the reader, not data.
+#:
+#: The downloadable template's hint row carries it, so that the file which
+#: exists to explain the format is not the one file the format refuses. It is
+#: also the escape hatch for anybody keeping notes in a spreadsheet they import
+#: from, which is a habit worth accommodating rather than arguing with.
+COMMENT_PREFIX = "#"
+
 #: Types no import may write. A password is hashed on its way in through the
 #: form and a file cannot carry a hash anyone should paste; the rest cannot be
 #: typed at all.
@@ -86,7 +94,18 @@ _UNIMPORTABLE = frozenset(
 
 
 class ImportFileError(Exception):
-    """The file could not be read at all -- not a row problem, a file problem."""
+    """The file could not be read at all -- not a row problem, a file problem.
+
+    `tone` is how the page should say it. Most of these are genuine faults and
+    render in red, but "you downloaded the template and uploaded it back" is a
+    normal thing to do and a normal state to be in: the file is perfectly well
+    formed and simply has nothing in it yet. Shouting at somebody for following
+    the instructions is how a form teaches people to distrust its warnings.
+    """
+
+    def __init__(self, message: str, *, tone: str = "danger") -> None:
+        super().__init__(message)
+        self.tone = tone
 
 
 @dataclass(frozen=True, slots=True)
@@ -655,6 +674,13 @@ def build_plan(
         )
 
     for offset, raw in enumerate(rows):
+        # A note to the reader rather than a row. The template's own hint row is
+        # marked this way, so downloading the template and uploading it back is
+        # a no-op instead of one parse error per column -- which is exactly what
+        # it was, on the one file that exists to explain the format.
+        if raw and raw[0].strip().startswith(COMMENT_PREFIX):
+            continue
+
         # +2: the header is line 1, and a spreadsheet counts from 1 -- so the
         # first data row is line 2, which is the number down the left edge.
         row = Row(line=offset + 2)
@@ -672,7 +698,10 @@ def build_plan(
             plan.rows.append(row)
 
     if not plan.rows:
-        raise ImportFileError("That file has a header but no rows under it.")
+        raise ImportFileError(
+            "That file has its headings but no rows to import. Add a row under them.",
+            tone="info",
+        )
     return plan
 
 
@@ -758,6 +787,11 @@ def template_rows(spec: ModelSpec, admin: Any, translate: Any) -> tuple[list[str
         headers.insert(0, key)
         hints.insert(0, "leave empty to create, or an existing id to update")
 
+    # Marked as a comment, so downloading the template and uploading it back is
+    # a no-op rather than six parse errors. It was not, and the first thing
+    # anybody does with a template is exactly that -- which made the file that
+    # exists to explain the format the one file the format rejects.
+    hints[0] = f"{COMMENT_PREFIX} {hints[0]}"
     return headers, [hints]
 
 

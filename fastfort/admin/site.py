@@ -60,6 +60,7 @@ from .insights import Series, build_series
 from .messages import Message, MessageLevel, Messages
 from .options import ModelAdmin
 from .security import LANGUAGE_COOKIE, make_guard, safe_next_url, set_csrf_cookie
+from .values import split_multi
 
 if TYPE_CHECKING:
     from fastfort.core.app import FastFort
@@ -746,6 +747,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             "columns": _import_columns(model_admin),
             "plan": None,
             "error": None,
+            "error_tone": "danger",
             "filename": "",
             "checked_only": False,
         }
@@ -814,7 +816,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             headers, rows = read_table(upload.content, kind)
             plan = build_plan(headers, rows, model_admin.spec, model_admin)
         except ImportFileError as exc:
-            context["error"] = str(exc)
+            context |= {"error": str(exc), "error_tone": exc.tone}
             return page(request, "model/import.html", context)
 
         async with fort.backend.unit_of_work() as uow:
@@ -2286,9 +2288,10 @@ async def _resolve_relations(
                 row.values[name] = [] if field.type.is_multi_valued else None
                 continue
 
-            wanted = (
-                [part.strip() for part in text.split(",")] if field.type.is_multi_valued else [text]
-            )
+            # `split_multi` rather than a comma split: a JSON export writes a
+            # real array for a many-valued cell, and splitting `["new", "sale"]`
+            # on commas produces two fragments that match nothing.
+            wanted = split_multi(text) if field.type.is_multi_valued else [text]
             resolved: list[Any] = []
             for item in wanted:
                 if not item:
@@ -2461,7 +2464,9 @@ async def _export_rows(
             if not result.items:
                 break
             for obj in result.items:
-                collected.append([admin.cell(obj, name) for name in columns])
+                # `export_cell`, not `cell`: a list summarises a geometry and a
+                # file has to carry one an importer can read back.
+                collected.append([admin.export_cell(obj, name) for name in columns])
                 if len(collected) >= limit:
                     break
             page += 1

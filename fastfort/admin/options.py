@@ -418,3 +418,24 @@ class ModelAdmin:
         if field.type.is_multi_valued:
             return [str(item) for item in value or ()]
         return None if value is None else str(value)
+
+    def export_cell(self, obj: Any, column: str) -> Any:
+        """The value for one cell of an exported file.
+
+        The same as `cell` for almost everything, and deliberately different for
+        a geometry. A list cell summarises one -- "Polygon · 14 points" -- which
+        is the right thing to read in a table and a thing no importer can turn
+        back into a polygon. A file is read by a program at least as often as by
+        a person, and the promise import makes is that a file this wrote is a
+        file it can take back; a column whose exported form cannot be parsed
+        breaks that for the whole row.
+
+        So a geometry exports as the same text its own form control shows: a
+        point as "lat, lng" and everything else as EWKT.
+        """
+        field = self.spec.get(column)
+        if field is not None and field.type is FieldType.GEOMETRY:
+            from .values import render_value
+
+            return render_value(getattr(obj, column, None), field)
+        return self.cell(obj, column)

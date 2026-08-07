@@ -52,6 +52,23 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   server. OpenStreetMap's policy says not to and answers by throttling, and a
   throttled tile is `opacity: 0` -- so the map came out with a rectangular hole
   in it. Maps are built when scrolled near, and a failed tile is retried once.
+- **An export could not be imported back**, which is the whole point of the
+  pair. Three separate reasons, all of them the same shape -- the writer emitting
+  something the reader cannot take:
+  - A date was written as text, so a spreadsheet converted whichever cells it
+    recognised and left the rest, and a column came back half real dates and
+    half strings. The `.xlsx` writer emits real date cells now, with a `styles.xml`
+    carrying an ISO number format, so the whole column is one thing.
+  - A JSON export writes a real array for a many-valued cell, because JSON has
+    one. Splitting `["new", "sale"]` on commas produces two fragments that match
+    nothing, so both spellings read back.
+  - A geometry exported as its list-cell summary -- "Polygon · 14 points" --
+    which no importer can turn back into a polygon. `ModelAdmin.export_cell`
+    writes the round-trippable form instead.
+- **The template could not be uploaded**, which is the first thing anybody does
+  with one: its hint row was read as data and produced one parse error per
+  column, from the file that exists to explain the format. The hint row is a
+  comment now, and so is any row whose first cell starts with `#`.
 - A date edited in a spreadsheet came back as a five-figure integer. A date in
   an `.xlsx` is not a date -- it is a *number* of days since 1899-12-30 with a
   number format applied, and the format lives in `styles.xml` under an index the
