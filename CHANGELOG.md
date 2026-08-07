@@ -10,6 +10,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-07
+
 ### Added
 
 - **Import.** The mirror of export, in the same three formats: a file the writer
@@ -739,6 +741,7 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Matnazar-Matnazarov/fastfort/releases/tag/v0.1.0
