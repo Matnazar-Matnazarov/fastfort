@@ -66,6 +66,10 @@ class Product(models.Model):
     is_active = fields.BooleanField(default=True)
     status = fields.CharEnumField(Status, max_length=20, default=Status.DRAFT)
 
+    # Every browser has a control for a time, and each of them draws a different
+    # one. This is the column that proves the admin draws its own.
+    opens_at = fields.TimeField(null=True)
+
     # Nullable so NULLS-last ordering can be exercised on every database.
     released_on = fields.DateField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)

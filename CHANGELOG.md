@@ -12,6 +12,26 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The calendar spells the month.** It took its month and weekday names from
+  the browser's `Intl`, which has none for Uzbek -- one of the eleven languages
+  the admin speaks -- and falls back to CLDR root: an otherwise Uzbek page
+  showed "2026 M09" over a row of English weekdays. The names now come from the
+  catalogue wherever `Intl` cannot supply them, and from `Intl` where it can, so
+  the other ten keep its own composition -- Japanese writes the year first and
+  Russian appends "г.", and no list of names knows that.
+- **A `time` column gets the admin's own clock** rather than the browser's
+  dropdown. A form where one control is the admin's picker and the field beside
+  it is Chrome's blue list of hours is two design systems in one row. The panel
+  is the clock without the calendar.
+- **"Now" sets the hour it says it does.** It wrote the 24-hour number into a
+  box holding 1-12, so in every twelve-hour locale an afternoon click selected
+  nothing; and it wrote "09" where the option's value was "9", so it selected
+  nothing before ten in the morning either.
+- **Arabic weekday headings are seven different letters.** They were cut to two
+  characters, and every abbreviated Arabic weekday begins with the article
+  "ال" -- so all seven columns read the same. The cut is kept only where it
+  leaves seven distinct headings.
+
 - **A Tortoise connection the lifespan opened is now reachable from the views,
   or else says why not.** Tortoise 1.1 keeps its connections in a `contextvars`
   variable, and an ASGI server runs the lifespan in a different task from the

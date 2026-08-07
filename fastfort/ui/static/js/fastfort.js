@@ -113,6 +113,10 @@
     Today: "Today",
     Now: "Now",
     Done: "Done",
+    // Only read where `Intl` has no date symbols for the page's language --
+    // see `MONTHLESS` below, which is what decides that.
+    Months: "January,February,March,April,May,June,July,August,September,October,November,December",
+    Weekdays: "Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday",
     Previous: "Previous",
     Next: "Next",
     ChooseFile: "Choose a file",
@@ -1147,11 +1151,26 @@
   const iso = (date) =>
     `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 
-  /* The time half of a `datetime-local` value, defaulting to midnight. */
+  /* The time half of a `datetime-local` value, or the whole of a `time` one,
+   * defaulting to midnight. */
   const clockOf = (text) => {
-    const match = /T(\d{1,2}):(\d{2})/.exec(text || "");
+    const match = /(?:^|T)(\d{1,2}):(\d{2})/.exec(text || "");
     return match ? { hour: Number(match[1]), minute: Number(match[2]) } : { hour: 0, minute: 0 };
   };
+
+  /* CLDR root's name for September is "M09", and root is what `Intl` falls back
+   * to for a locale the browser ships no date symbols for. Chromium has none
+   * for Uzbek -- one of the eleven languages this admin speaks -- so the
+   * calendar read "2026 M09" over a row of English weekdays while every other
+   * string on the page was Uzbek.
+   *
+   * So the names are asked for once and checked. Where the answer is root's,
+   * the calendar uses the ones the server sends from its own catalogue, which
+   * is where every other string this widget draws already comes from. Where it
+   * is not -- ten of the eleven languages -- `Intl` is left to do it, because it
+   * knows that Japanese writes the year before the month and Russian appends a
+   * "г." and no list of names would. */
+  const MONTHLESS = /^M\d{1,2}$/;
 
   /* Parsed as local time on purpose. `new Date("2026-03-01")` is parsed as UTC
    * and lands on the previous day for anyone west of Greenwich, which is the
@@ -1166,11 +1185,34 @@
   class DatePicker {
     constructor(input) {
       this.input = input;
-      this.withTime = input.type === "datetime-local";
+      // A `time` column has no calendar to draw -- only the clock. It is here
+      // rather than left to the browser for the reason the native `<select>` is:
+      // a form where one control is the admin's and the one beside it is
+      // Chrome's own blue dropdown is two design systems in one row.
+      this.timeOnly = input.type === "time";
+      this.withTime = this.timeOnly || input.type === "datetime-local";
       this.locale = root.lang || "en";
       this.id = uid("ff-cal");
       this.open = false;
+
+      this.spellsMonths = !MONTHLESS.test(this.monthFrom() || "M09");
+      if (!this.spellsMonths) {
+        this.months = t("Months").split(",");
+        // Indexed by `getDay()`, so this list starts on Sunday whatever day the
+        // locale's week does.
+        this.weekdays = t("Weekdays").split(",");
+      }
       this.build();
+    }
+
+    /* September, as this locale spells it -- or nothing, for a locale `Intl`
+     * refuses outright. Only ever used to find out whether it can spell it. */
+    monthFrom() {
+      try {
+        return new Intl.DateTimeFormat(this.locale, { month: "long" }).format(new Date(2020, 8, 1));
+      } catch {
+        return null;
+      }
     }
 
     /* Monday in most of the world, Sunday in the US and a few others. `weekInfo`
@@ -1198,14 +1240,17 @@
           "aria-expanded": "false",
           "aria-label": t("Choose"),
         },
-        [icon("calendar", 15)]
+        [icon(this.timeOnly ? "clock" : "calendar", 15)]
       );
       wrapper.append(this.trigger);
 
       this.panel = el("div", {
         // Wider when it carries a clock: three dropdowns and a colon do not fit
-        // in the width a calendar needs.
-        class: `ff-pop ff-datepicker${this.withTime ? " ff-datepicker--with-time" : ""}`,
+        // in the width a calendar needs. Narrower when it is only the clock,
+        // which needs none of the width seven columns of days do.
+        class: `ff-pop ff-datepicker${this.withTime ? " ff-datepicker--with-time" : ""}${
+          this.timeOnly ? " ff-datepicker--clock-only" : ""
+        }`,
         role: "dialog",
         hidden: true,
       });
@@ -1247,6 +1292,13 @@
       this.hourBox = null;
       this.minuteBox = null;
       this.meridiemBox = null;
+      if (this.timeOnly) {
+        this.panel.replaceChildren(this.time(), this.foot());
+        // Same reason as `renderDays`: the clock's units are `<select>`s, and
+        // every other one in the admin is upgraded to a combobox.
+        enhance(this.panel);
+        return;
+      }
       if (this.view === YEAR_VIEW) this.renderYears();
       else if (this.view === MONTH_VIEW) this.renderMonths();
       else this.renderDays();
@@ -1419,10 +1471,9 @@
 
     renderDays() {
       const shown = this.cursor;
-      const title = new Intl.DateTimeFormat(this.locale, {
-        month: "long",
-        year: "numeric",
-      }).format(shown);
+      const title = this.spellsMonths
+        ? new Intl.DateTimeFormat(this.locale, { month: "long", year: "numeric" }).format(shown)
+        : `${this.months[shown.getMonth()]} ${shown.getFullYear()}`;
 
       const parts = [this.head(title), this.grid(shown)];
       if (this.withTime) parts.push(this.time());
@@ -1436,7 +1487,12 @@
 
     renderMonths() {
       const year = this.cursor.getFullYear();
-      const names = new Intl.DateTimeFormat(this.locale, { month: "short" });
+      // Abbreviated where `Intl` can abbreviate; written out where the names
+      // come from the catalogue, because cutting them to three letters is what
+      // makes June and July the same word in half the languages here.
+      const names = this.spellsMonths
+        ? new Intl.DateTimeFormat(this.locale, { month: "short" })
+        : { format: (date) => this.months[date.getMonth()] };
       const selected = this.value;
       const grid = el("div", { class: "ff-datepicker__cells" });
 
@@ -1484,17 +1540,35 @@
       );
     }
 
+    /* Seven column headings, in the order the week is drawn.
+     *
+     * Two letters is what makes a heading out of "Monday" in most languages and
+     * nonsense out of it in Arabic, where every abbreviated weekday begins with
+     * the article "ال" and all seven came out identical. So the cut is kept only
+     * where it leaves seven headings that differ, and the locale's own narrow
+     * names -- distinct in Arabic, where they are single letters -- are what it
+     * falls back to. English keeps "Mo Tu We": its narrow names are not
+     * distinct, and neither fallback beats a cut that already works. */
+    weekdayHeadings(week) {
+      const spell = (options) =>
+        this.spellsMonths
+          ? week.map((day) => new Intl.DateTimeFormat(this.locale, options).format(day))
+          : week.map((day) => this.weekdays[day.getDay()]);
+
+      const cut = spell({ weekday: "short" }).map((name) => name.slice(0, 2));
+      if (new Set(cut).size === 7) return cut;
+      const narrow = spell({ weekday: "narrow" });
+      return new Set(narrow).size === 7 ? narrow : spell({ weekday: "short" });
+    }
+
     grid(shown) {
       const first = new Date(shown.getFullYear(), shown.getMonth(), 1);
       const offset = (first.getDay() - this.firstDay + 7) % 7;
       const start = new Date(first.getTime() - offset * DAY_MS);
 
-      const weekdays = new Intl.DateTimeFormat(this.locale, { weekday: "short" });
+      const week = Array.from({ length: 7 }, (_, index) => new Date(start.getTime() + index * DAY_MS));
       const header = el("div", { class: "ff-datepicker__week" });
-      for (let index = 0; index < 7; index += 1) {
-        const day = new Date(start.getTime() + index * DAY_MS);
-        header.append(el("span", { text: weekdays.format(day).slice(0, 2) }));
-      }
+      for (const text of this.weekdayHeadings(week)) header.append(el("span", { text }));
 
       const grid = el("div", { class: "ff-datepicker__days", role: "grid" });
       const selected = this.value;
@@ -1532,9 +1606,17 @@
      * there is nothing to redraw. */
     writeTime() {
       const { hour, minute } = this.clock();
-      const date = this.value ?? new Date();
-      this.input.value = `${iso(date)}T${pad(hour)}:${pad(minute)}`;
+      const time = `${pad(hour)}:${pad(minute)}`;
+      this.input.value = this.timeOnly ? time : `${iso(this.value ?? new Date())}T${time}`;
       this.input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    /* Focus whatever the panel opens on: the focused day, or the hour where
+     * there are no days. */
+    focusInside() {
+      const target =
+        this.panel.querySelector('[tabindex="0"]') ?? this.panel.querySelector(".ff-combo__button");
+      target?.focus();
     }
 
     pick(stamp) {
@@ -1560,7 +1642,7 @@
       // boxes above are here to answer.
       if (this.withTime) {
         this.render();
-        this.panel.querySelector('[tabindex="0"]')?.focus();
+        this.focusInside();
         return;
       }
       this.close();
@@ -1579,7 +1661,7 @@
       this.trigger.setAttribute("aria-expanded", "true");
       this.render();
       place(this.panel, this.trigger);
-      this.panel.querySelector('[tabindex="0"]')?.focus();
+      this.focusInside();
     }
 
     close() {
@@ -1647,9 +1729,20 @@
         const now = new Date();
         // "Now" means now, clock included. Setting today's date and leaving
         // midnight behind would be the one answer nobody pressing it wants.
-        if (this.withTime && this.hourBox) {
-          this.hourBox.value = pad(now.getHours());
-          this.minuteBox.value = pad(now.getMinutes());
+        if (this.withTime) {
+          // Written into the input and the panel redrawn from it, rather than
+          // into the boxes. Each box is a native `<select>` under a combobox
+          // that painted its own label, so assigning to the select left the old
+          // hour on screen beside the new date -- and `pad()` wrote "09" where
+          // the option's value is "9", which selected nothing at all.
+          const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+          this.input.value = this.timeOnly ? time : `${iso(now)}T${time}`;
+          this.input.dispatchEvent(new Event("change", { bubbles: true }));
+          this.cursor = new Date(now.getFullYear(), now.getMonth(), 1);
+          this.focused = now;
+          this.render();
+          this.focusInside();
+          return;
         }
         this.pick(iso(now));
         return;
@@ -1672,8 +1765,10 @@
       // Arrows belong to whatever the focus is in: a number box steps its own
       // value with up and down, and the month and year grids are plain buttons
       // that Tab already walks. Only the calendar wants them.
+      // A clock-only panel has no grid to walk, and Enter there would otherwise
+      // reach `pick` and write a date into a column that stores a time.
       const inClock = event.target === this.hourBox || event.target === this.minuteBox;
-      if (this.view !== DAY_VIEW || inClock) return;
+      if (this.timeOnly || this.view !== DAY_VIEW || inClock) return;
 
       const moves = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
       const move = moves[event.key];
@@ -1683,7 +1778,7 @@
         this.focused = new Date(this.focused.getTime() + move * DAY_MS);
         this.cursor = new Date(this.focused.getFullYear(), this.focused.getMonth(), 1);
         this.render();
-        this.panel.querySelector('[tabindex="0"]')?.focus();
+        this.focusInside();
         return;
       }
       if (event.key === "Enter" || event.key === " ") {

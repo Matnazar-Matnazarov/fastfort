@@ -84,6 +84,10 @@ class Product(Base):
     # proves the one FastFort draws is reachable from a real model.
     warranty: Mapped[dt.timedelta | None] = mapped_column(sa.Interval(), default=None)
 
+    # Every browser has a control for a time, and each of them draws a different
+    # one. This is the column that proves the admin draws its own.
+    opens_at: Mapped[dt.time | None] = mapped_column(sa.Time(), default=None)
+
     public_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid(), default=uuid.uuid4)
     attributes: Mapped[dict | None] = mapped_column(sa.JSON(), default=None)
 

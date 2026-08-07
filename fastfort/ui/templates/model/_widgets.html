@@ -442,7 +442,7 @@
         name="{{ field.name }}__lower"
         value="{{ field.range_lower }}"
         aria-label="{{ _("From") }}"
-        {% if bound_input in ("date", "datetime-local") %}data-ff-date{% endif %}
+        {% if bound_input in ("date", "datetime-local", "time") %}data-ff-date{% endif %}
         {% if field.errors %}aria-invalid="true"{% endif %}
       />
       <span class="ff-range-field__sep" aria-hidden="true">–</span>
@@ -452,7 +452,7 @@
         name="{{ field.name }}__upper"
         value="{{ field.range_upper }}"
         aria-label="{{ _("To") }}"
-        {% if bound_input in ("date", "datetime-local") %}data-ff-date{% endif %}
+        {% if bound_input in ("date", "datetime-local", "time") %}data-ff-date{% endif %}
         {% if field.errors %}aria-invalid="true"{% endif %}
       />
     </div>
@@ -479,8 +479,11 @@
     {# Upgraded in place to a calendar drawn in the page. The native input
        stays the element that holds and submits the value, so without script
        it is exactly the control it has always been -- only the picker is
-       replaced. #}
-    {% if field.widget in ("date", "datetime") %}data-ff-date{% endif %}
+       replaced. `time` is in the list for the same reason `datetime` is: left
+       out, the browser drew its own dropdown, and a form where one control is
+       the admin's and the one beside it is Chrome's blue list is two design
+       systems in one row. #}
+    {% if field.widget in ("date", "datetime", "time") %}data-ff-date{% endif %}
     {# Likewise: split into days/hours/minutes/seconds boxes, which is the
        format the text box was asking people to type out. #}
     {% if field.widget == "duration" %}data-ff-duration{% endif %}
