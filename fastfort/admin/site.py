@@ -1736,8 +1736,20 @@ def _ui_text(translate: Translator) -> dict[str, str]:
         "loading": translate("Loading…"),
         "choose": translate("Choose…"),
         "showing": translate("Showing the first {n}. Keep typing to narrow it down."),
-        # The calendar draws its own month and weekday names from `Intl`, but
-        # these are ours.
+        # The calendar draws its month and weekday names from `Intl` wherever
+        # the browser has them, and from these where it does not. Chromium ships
+        # no date symbols for Uzbek -- one of the eleven languages the admin
+        # speaks -- and falls back to CLDR root, where September is "M09" and
+        # the weekdays are English, under a page that is otherwise Uzbek. The
+        # script decides which source to use; the server cannot know what the
+        # browser has, so it always sends these.
+        "months": translate(
+            "January,February,March,April,May,June,July,August,September,October,November,December"
+        ),
+        # Indexed from Sunday, because that is what `Date.getDay()` returns.
+        # Which day the week is drawn from is a separate question, and `Intl`
+        # answers it.
+        "weekdays": translate("Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday"),
         "today": translate("Today"),
         # A datetime picker sets the clock too, and "Today" is the wrong word
         # for a button that does that.

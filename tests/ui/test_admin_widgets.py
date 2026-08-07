@@ -83,10 +83,16 @@ def input_for(body: str, name: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["released_on", "created_at"])
+@pytest.mark.parametrize("name", ["released_on", "created_at", "opens_at"])
 async def test_a_date_field_is_marked_for_the_calendar(
     client: httpx.AsyncClient, name: str
 ) -> None:
+    """`opens_at` is a `time` column, and it is in this list on purpose.
+
+    Left out, the browser drew its own dropdown for it -- Chrome's blue list of
+    hours beside the admin's own picker on the field above, which is two design
+    systems in one row. The panel it gets is the clock without the calendar.
+    """
     assert "data-ff-date" in input_for(await form_body(client), name)
 
 

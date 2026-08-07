@@ -155,6 +155,46 @@ def test_a_translation_keeps_its_placeholders(code: str) -> None:
         assert set(pattern.findall(translated)) == set(pattern.findall(source)), source
 
 
+#: The two catalogue entries that are lists rather than sentences, and how many
+#: names each has to hold. The calendar indexes straight into them.
+NAME_LISTS = (
+    ("January,February,March,April,May,June,July,August,September,October,November,December", 12),
+    ("Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday", 7),
+)
+
+
+@pytest.mark.parametrize("code", [c for c in LANGUAGES if c != DEFAULT_LANGUAGE])
+@pytest.mark.parametrize(("source", "count"), NAME_LISTS)
+def test_a_list_of_names_keeps_its_length_and_its_order(code: str, source: str, count: int) -> None:
+    """The calendar reads `t("Months").split(",")[date.getMonth()]`.
+
+    So a catalogue that translated eleven months, or reordered them to put the
+    week's first day first, would not fail here as a missing string -- it would
+    silently label September as August, or every Tuesday as Monday. Nothing else
+    in the admin indexes into a translation, which is why this check exists only
+    for these two.
+    """
+    catalog = json.loads((LOCALE_DIR / f"{code}.json").read_text(encoding="utf-8"))
+    names = catalog[source].split(",")
+
+    assert len(names) == count, f"{code}: {len(names)} names, expected {count}"
+    assert all(name.strip() for name in names), f"{code}: a name is blank"
+    assert len(set(names)) == count, f"{code}: two names are the same"
+
+
+def test_the_calendars_month_names_are_sent_to_the_browser() -> None:
+    """`Intl` names the months in ten of the eleven languages, and in the
+    eleventh -- Uzbek, which Chromium ships no date symbols for -- it answers
+    "M09". The script decides which source to use, so the server always sends
+    these; if it stopped, the calendar would show "M09" with nothing failing."""
+    from fastfort.admin.site import _ui_text
+
+    sent = _ui_text(Translator("uz"))
+
+    assert sent["months"].split(",")[8] == "Sentabr"
+    assert sent["weekdays"].split(",")[1] == "Dushanba"
+
+
 def test_an_untranslated_string_falls_back_to_english() -> None:
     """A half-finished catalogue must stay usable, and a typo in a key must be
     visible as English text rather than as nothing."""

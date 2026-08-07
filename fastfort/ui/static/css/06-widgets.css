@@ -1977,6 +1977,20 @@ button.ff-datepicker__title:hover {
   width: 20rem;
 }
 
+/* A `time` column has no calendar, so the panel is only the clock and the row
+ * of buttons under it. It takes the width those need rather than the width
+ * seven columns of days would, and the clock loses the rule that separated it
+ * from a grid that is not there. */
+.ff-datepicker--clock-only {
+  width: 15rem;
+}
+
+.ff-datepicker--clock-only .ff-datepicker__clock {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: 0;
+}
+
 .ff-datepicker__clock {
   display: flex;
   align-items: center;
