@@ -222,6 +222,7 @@ def _column_field(mapper: Mapper[Any], name: str, column: sa.Column[Any]) -> Fie
         has_db_default=has_default,
         item=classification.item,
         geometry=classification.geometry,
+        vector=classification.vector,
         bounds=classification.bounds,
         searchable=field_type in {FieldType.STRING, FieldType.TEXT, FieldType.EMAIL},
         filterable=field_type in _FILTERABLE_TYPES,

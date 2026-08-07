@@ -28,7 +28,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql as pg
 from sqlalchemy.dialects.postgresql.ranges import AbstractMultiRange, AbstractSingleRange
 
-from fastfort.spec import Choice, FieldSpec, FieldType, GeometrySpec, RangeSpec
+from fastfort.spec import Choice, FieldSpec, FieldType, GeometrySpec, RangeSpec, VectorSpec
 
 __all__ = ["Classification", "TypeRule", "classify", "register_type"]
 
@@ -41,6 +41,7 @@ class Classification:
     choices: tuple[Choice, ...] = ()
     item: FieldSpec | None = None
     geometry: GeometrySpec | None = None
+    vector: VectorSpec | None = None
     bounds: RangeSpec | None = None
     #: Overrides the widget the type would normally select. Used by the
     #: read-only types (a raster, a search vector) so the page names what the
@@ -87,6 +88,51 @@ def _check_spatial(type_: Any) -> Classification | None:
             dimension=getattr(type_, "dimension", 2),
             spatial_index=bool(getattr(type_, "spatial_index", True)),
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 1b. Vectors -- pgvector, detected the same way and for the same reason as
+#     GeoAlchemy2: a project that does not embed anything must not pay an
+#     import for a package it never installed.
+# ---------------------------------------------------------------------------
+
+#: What pgvector calls each of its column types, lowercased. They differ in
+#: storage and in which distance operators apply, not in what the admin draws.
+_VECTOR_TYPES = {"vector", "halfvec", "sparsevec", "bit"}
+
+
+def _check_vector(type_: Any) -> Classification | None:
+    """A pgvector column, by where its type class lives.
+
+    `bit` is pgvector's own binary vector and shares the name with
+    PostgreSQL's `BIT`, which is a different thing entirely -- so the module
+    check has to come first and the name only decides which of pgvector's four
+    it is.
+    """
+    if type(type_).__module__.split(".", 1)[0] != "pgvector":
+        return None
+    name = type(type_).__name__.lower()
+    if name not in _VECTOR_TYPES:
+        return None
+
+    dimensions = getattr(type_, "dim", None)
+    return Classification(
+        FieldType.VECTOR,
+        vector=VectorSpec(
+            dimensions=dimensions if isinstance(dimensions, int) else None,
+            kind=name,
+        ),
+        # Deliberately *not* `widget="readonly"`. That flag folds into
+        # `FieldSpec.editable`, which is the mass-assignment boundary and means
+        # "nothing may write this" -- true of a raster or a search vector, and
+        # false of an embedding. An application sets one from a model on every
+        # save, and a column the adapter silently drops is a column the seed
+        # cannot fill and nobody can debug.
+        #
+        # So it stays writable and gets a textarea, the same as a JSON document
+        # that is just as long. What makes the column useful in an admin is
+        # searching by it -- `?field__near=` -- not typing into it.
     )
 
 
@@ -317,6 +363,7 @@ def _classify_type(type_: Any) -> Classification:
     """
     for check in (
         _check_spatial,
+        _check_vector,
         _check_enum,
         _check_range,
         _check_citext,
@@ -350,6 +397,7 @@ def _column_rule(check: Callable[[Any], Classification | None]) -> TypeRule:
 #: above it -- built in or previously registered -- already claimed.
 _RULES: list[TypeRule] = [
     _column_rule(_check_spatial),
+    _column_rule(_check_vector),
     _column_rule(_check_enum),
     _column_rule(_check_range),
     _column_rule(_check_citext),

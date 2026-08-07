@@ -25,6 +25,8 @@ __all__ = [
     "SortSpec",
     "SpatialFilter",
     "SpatialOperator",
+    "VectorMetric",
+    "VectorQuery",
 ]
 
 T = TypeVar("T")
@@ -150,6 +152,58 @@ class SpatialFilter:
         }
 
 
+class VectorMetric(StrEnum):
+    """How near two vectors are, by whichever definition the embedding was made
+    for.
+
+    The wrong one is not an error, it is a silently worse ranking -- cosine and
+    L2 agree on normalised vectors and disagree on everything else -- so the
+    metric is part of the query rather than a setting somewhere.
+    """
+
+    #: The default, and what almost every text-embedding model is trained for.
+    COSINE = "cosine"
+    #: Straight-line distance. Right for embeddings that carry magnitude.
+    L2 = "l2"
+    #: Manhattan distance.
+    L1 = "l1"
+    #: Negated dot product, for models that rank by it directly.
+    INNER = "inner"
+
+
+@dataclass(frozen=True, slots=True)
+class VectorQuery:
+    """Order rows by how near their vector is to this one.
+
+    An ordering rather than a filter, because that is what a nearest-neighbour
+    search is: every row has a distance, and the question is which are smallest.
+    `limit` is how many to keep and is what makes it cheap -- pgvector's index
+    answers "the nearest 10" quickly and "every row, sorted" no faster than a
+    scan.
+
+    `within` narrows it to a maximum distance as well, for the case where "the
+    nearest 10" should return three because only three are actually similar.
+    """
+
+    field: str
+    #: The query vector, already parsed and re-rendered by this package -- never
+    #: the text the request carried, for the same reason a spatial filter's
+    #: geometry is not.
+    vector: str
+    metric: VectorMetric = VectorMetric.COSINE
+    limit: int | None = None
+    within: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "field": self.field,
+            "vector": self.vector,
+            "metric": self.metric.value,
+            "limit": self.limit,
+            "within": self.within,
+        }
+
+
 @dataclass(frozen=True, slots=True)
 class SortSpec:
     """One ordering term."""
@@ -185,6 +239,10 @@ class ListQuery:
     #: only PostGIS has. A backend without it ignores them; `from_params` never
     #: produces one for a field the caller did not declare spatial.
     spatial: tuple[SpatialFilter, ...] = ()
+    #: A nearest-neighbour search, which is an *ordering* and so cannot live in
+    #: `filters` either. At most one: two of them would be two orderings, and
+    #: "nearest to A, then nearest to B" is not a question with an answer.
+    vector: VectorQuery | None = None
     ordering: tuple[SortSpec, ...] = ()
     page: int = 1
     page_size: int = 25
@@ -207,6 +265,7 @@ class ListQuery:
             "search": self.search,
             "filters": [f.to_dict() for f in self.filters],
             "spatial": [f.to_dict() for f in self.spatial],
+            "vector": self.vector.to_dict() if self.vector else None,
             "ordering": [s.to_dict() for s in self.ordering],
             "page": self.page,
             "page_size": self.page_size,
@@ -220,6 +279,7 @@ class ListQuery:
         sortable_fields: Iterable[str] = (),
         filterable_fields: Iterable[str] = (),
         spatial_fields: Mapping[str, int] | None = None,
+        vector_fields: Mapping[str, int | None] | None = None,
         searchable: bool = True,
         default_ordering: Sequence[SortSpec] = (),
         page_size: int = 25,
@@ -244,12 +304,12 @@ class ListQuery:
             ordering = tuple(default_ordering)
 
         spatial = _parse_spatial(params, spatial_fields or {}, rejected)
+        vector = _parse_vector(params, vector_fields or {}, rejected, max_page_size)
         # Spatial keys are `field__within`, and `field` is a real field name, so
         # `_split_filter_key` would happily read them as an ordinary filter with
         # an unknown operator and reject them by name. Taken out first.
-        remaining = {
-            key: value for key, value in params.items() if key not in _spatial_keys(spatial)
-        }
+        reserved = _spatial_keys(spatial) | _vector_keys(vector)
+        remaining = {key: value for key, value in params.items() if key not in reserved}
         filters = _parse_filters(remaining, filterable, rejected)
 
         size = _clamp_int(params.get(PAGE_SIZE_PARAM), default=page_size, low=1, high=max_page_size)
@@ -259,6 +319,7 @@ class ListQuery:
             search=search,
             filters=filters,
             spatial=spatial,
+            vector=vector,
             ordering=ordering,
             page=page,
             page_size=size,
@@ -372,6 +433,118 @@ def _spatial_keys(filters: tuple[SpatialFilter, ...]) -> frozenset[str]:
         keys.add(f"{condition.field}__{condition.operator.value}")
         keys.add(f"{condition.field}{DISTANCE_SUFFIX}")
     return frozenset(keys)
+
+
+#: Suffixes a vector search reads, beside `field__near` which carries the vector.
+METRIC_SUFFIX = "__metric"
+NEAREST_SUFFIX = "__k"
+WITHIN_SUFFIX = "__within"
+
+#: Most neighbours one request may ask for. A nearest-neighbour index answers
+#: "the closest 100" in milliseconds and "the closest 100 000" no faster than a
+#: sequential scan, so past this the query is not the one anybody meant.
+MAX_NEIGHBOURS = 1_000
+
+#: Numbers in a query vector. Long enough for every embedding model in use --
+#: OpenAI's largest is 3 072 -- and short enough that a query string cannot be
+#: turned into a parser bomb.
+MAX_VECTOR_DIMENSIONS = 4_096
+
+
+def _vector_keys(query: VectorQuery | None) -> frozenset[str]:
+    if query is None:
+        return frozenset()
+    return frozenset(
+        {
+            f"{query.field}__near",
+            f"{query.field}{METRIC_SUFFIX}",
+            f"{query.field}{NEAREST_SUFFIX}",
+            f"{query.field}{WITHIN_SUFFIX}",
+        }
+    )
+
+
+def _parse_vector(
+    params: Mapping[str, str],
+    vector_fields: Mapping[str, int | None],
+    rejected: list[str],
+    max_page_size: int,
+) -> VectorQuery | None:
+    """Read `field__near=[0.1, 0.2, ...]` and the three suffixes beside it.
+
+    `vector_fields` maps a field name to the number of dimensions its column
+    declares, and it is both the allow-list and the length check: an embedding
+    of the wrong width is not a worse ranking, it is an error from the database,
+    and catching it here means the message names the parameter instead.
+
+    At most one search. Two would be two orderings, and "nearest to A, then
+    nearest to B" is not a question with an answer.
+    """
+    for key, raw in params.items():
+        name, separator, suffix = key.rpartition("__")
+        if not separator or suffix != "near" or name not in vector_fields:
+            continue
+
+        numbers = _parse_vector_text(raw)
+        if numbers is None:
+            rejected.append(key)
+            continue
+
+        declared = vector_fields[name]
+        if declared is not None and len(numbers) != declared:
+            rejected.append(key)
+            continue
+
+        try:
+            metric = VectorMetric(params.get(f"{name}{METRIC_SUFFIX}", "cosine"))
+        except ValueError:
+            rejected.append(f"{name}{METRIC_SUFFIX}")
+            continue
+
+        limit = _clamp_int(
+            params.get(f"{name}{NEAREST_SUFFIX}"),
+            default=max_page_size,
+            low=1,
+            high=MAX_NEIGHBOURS,
+        )
+
+        within: float | None = None
+        if f"{name}{WITHIN_SUFFIX}" in params:
+            try:
+                within = float(params[f"{name}{WITHIN_SUFFIX}"])
+            except ValueError:
+                rejected.append(f"{name}{WITHIN_SUFFIX}")
+                continue
+
+        # Re-rendered from what was parsed, never passed through: the value ends
+        # up as an operand of a SQL operator, and the one thing it must not be is
+        # the text a request chose.
+        return VectorQuery(
+            field=name,
+            vector="[" + ",".join(repr(number) for number in numbers) + "]",
+            metric=metric,
+            limit=limit,
+            within=within,
+        )
+    return None
+
+
+def _parse_vector_text(raw: str) -> list[float] | None:
+    """`[0.1, 0.2]` or `0.1, 0.2` into numbers, or `None` if it is neither.
+
+    Both spellings, because the first is what pgvector itself prints and what a
+    program pastes, and the second is what somebody types.
+    """
+    text = raw.strip()
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1]
+    parts = [part.strip() for part in text.split(",") if part.strip()]
+    if not parts or len(parts) > MAX_VECTOR_DIMENSIONS:
+        return None
+    try:
+        return [float(part) for part in parts]
+    except ValueError:
+        return None
 
 
 def _parse_spatial(

@@ -14,7 +14,9 @@
 
 services:
   postgis:
-    image: postgis/postgis:16-3.4
+    build:
+      context: .
+      dockerfile: docker/postgres.Dockerfile
     environment:
       POSTGRES_USER: fastfort
       POSTGRES_PASSWORD: fastfort

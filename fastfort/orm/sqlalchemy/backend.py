@@ -128,6 +128,7 @@ class SQLAlchemyBackend:
         self._specs: dict[type, ModelSpec] = {}
         # `None` until `check_connection` has asked. See `profile`.
         self._has_postgis: bool | None = None
+        self._has_pgvector: bool | None = None
 
     def __repr__(self) -> str:
         return f"<SQLAlchemyBackend {self.dialect}>"
@@ -173,29 +174,38 @@ class SQLAlchemyBackend:
         a broken page.
         """
         base = profile_for(self.dialect)
-        if self._has_postgis is None:
+        if self._has_postgis is None and self._has_pgvector is None:
             return base
-        return replace(base, has_postgis=self._has_postgis)
+        return replace(
+            base,
+            has_postgis=bool(self._has_postgis),
+            has_pgvector=bool(self._has_pgvector),
+        )
 
-    async def _probe_postgis(self, session: AsyncSession) -> None:
-        """Ask once whether PostGIS is installed, and remember the answer.
+    async def _probe_extensions(self, session: AsyncSession) -> None:
+        """Ask once which of the extensions FastFort can use are installed.
 
-        A failure is an answer too: `postgis_version()` does not exist without
-        the extension, so the error *is* the "no". The transaction has to be
-        rolled back after it, because PostgreSQL aborts one on any failed
-        statement and everything after it in the same transaction would fail
-        with "current transaction is aborted" rather than with its own problem.
+        Read from `pg_extension` rather than by calling a function from each:
+        one query answers for all of them, and a failed call would abort the
+        transaction and have to be rolled back before the next could run.
         """
         if self.dialect not in ("postgresql", "postgres"):
             self._has_postgis = False
+            self._has_pgvector = False
             return
         try:
-            await session.execute(sa.text("SELECT postgis_version()"))
+            rows = await session.execute(sa.text("SELECT extname FROM pg_extension"))
+            installed = {str(name) for (name,) in rows}
         except Exception:
+            # No answer is a "no" for both. A capability assumed present and
+            # absent is a broken page; assumed absent and present is a missing
+            # feature, which is the safe direction.
             self._has_postgis = False
+            self._has_pgvector = False
             await session.rollback()
-        else:
-            self._has_postgis = True
+            return
+        self._has_postgis = "postgis" in installed
+        self._has_pgvector = "vector" in installed
 
     def supports(self, model: type) -> bool:
         if not is_sqlalchemy_model(model):
@@ -259,7 +269,7 @@ class SQLAlchemyBackend:
                 # whether a filter panel offers a spatial control at all, and
                 # a probe that runs mid-request would have to do so inside
                 # whatever transaction that request had already opened.
-                await self._probe_postgis(session)
+                await self._probe_extensions(session)
         except Exception as exc:
             # The driver reports the address it dialled and nothing else, which
             # leaves "Connection refused, 127.0.0.1:55433" as the whole of what

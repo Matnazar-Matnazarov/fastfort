@@ -112,6 +112,9 @@ def parse_value(raw: str, spec: FieldSpec) -> Any:
     if spec.type is FieldType.GEOMETRY:
         return geo.parse(text, spec)
 
+    if spec.type is FieldType.VECTOR:
+        return _parse_vector(text, spec)
+
     if spec.type is FieldType.ARRAY:
         return _parse_array(text, spec)
 
@@ -232,6 +235,31 @@ def split_multi(text: str) -> list[str]:
         ):
             return [str(item).strip() for item in parsed if str(item).strip()]
     return [part.strip() for part in stripped.split(",") if part.strip()]
+
+
+def _parse_vector(text: str, spec: FieldSpec) -> list[float]:
+    """`[0.1, 0.2, 0.3]` or `0.1, 0.2, 0.3` into the numbers pgvector stores.
+
+    Both spellings, because the first is what pgvector itself prints -- so a
+    value read out of the database and saved back unchanged has to parse -- and
+    the second is what somebody types.
+
+    The width is checked here rather than left to the database: "expected 1536
+    dimensions, not 1535" is a sentence somebody can act on, and the driver's
+    own version of it arrives as a failed transaction.
+    """
+    entries = split_multi(text)
+    numbers: list[float] = []
+    for index, entry in enumerate(entries, start=1):
+        try:
+            numbers.append(float(entry))
+        except ValueError:
+            raise ValueError(f'Entry {index} ("{entry}") is not a number.') from None
+
+    declared = spec.vector.dimensions if spec.vector else None
+    if declared is not None and len(numbers) != declared:
+        raise ValueError(f"This column holds {declared} numbers, and this has {len(numbers)}.")
+    return numbers
 
 
 def _parse_array(text: str, spec: FieldSpec) -> list[Any]:
@@ -530,6 +558,11 @@ def render_value(value: Any, spec: FieldSpec) -> str:
         return duration_text(value)
     if spec.type is FieldType.ARRAY and isinstance(value, list | tuple):
         return ", ".join(str(item) for item in value)
+    if spec.type is FieldType.VECTOR and isinstance(value, list | tuple):
+        # The bracketed form pgvector itself prints, so what the box shows is
+        # what the box takes back.
+        return "[" + ", ".join(f"{float(number):g}" for number in value) + "]"
+
     if spec.type is FieldType.GEOMETRY:
         return geo.render(value, spec)
     if spec.type is FieldType.MONEY:

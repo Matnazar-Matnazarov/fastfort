@@ -10,6 +10,35 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Vector search.** A pgvector column is recognised by the type registry the
+  same way a PostGIS one is -- by where its type class lives, so a project that
+  embeds nothing never pays for an import of pgvector -- and carries its width
+  and kind on `FieldSpec.vector`.
+  - `?embedding__near=[0.1,0.2,...]` orders the list nearest first, with
+    `__metric` (cosine, l2, l1, inner), `__k` for how many neighbours and
+    `__within` for a maximum distance. Bracketed and bare-number spellings both
+    read, because the first is what pgvector prints and the second is what
+    people type.
+  - An *ordering*, not a filter, which is what a nearest-neighbour search is --
+    so it beats any sort the page was also asked for: "the nearest, and break
+    ties by name", never the alphabet.
+  - The query vector is re-rendered from numbers this package parsed and bound
+    as a parameter, never interpolated; a vector of the wrong width is refused
+    at the query boundary rather than by the database, and the page still
+    renders.
+  - `k` closes the page window as well as the ordering, so page three of a
+    two-neighbour search is empty rather than paging on into rows the search
+    already ruled out.
+  - Offered only where the backend reports the extension, which it now probes
+    for PostGIS and pgvector in one query at start-up.
+- `docker/postgres.Dockerfile` builds a PostgreSQL image carrying both PostGIS
+  and pgvector, because no published one carries both and a project using
+  geography columns and embeddings needs them together. The suite still runs
+  green without it: everything spatial and everything vector asks the server
+  first and skips.
+
 ## [0.2.1] - 2026-08-07
 
 ### Added
