@@ -5,12 +5,21 @@ forcing a second is how frameworks end up with two sources of truth about who a
 user is. Instead a project points at its own class and, where the names differ
 from the defaults, says which attribute means what.
 
-Field names are resolved with `hasattr` against the class, which works for both
+Field names are resolved against the set of attributes the model actually has,
+which the caller supplies. `hasattr` alone is not enough: SQLAlchemy's
+declarative puts a descriptor on the class for every column, and Tortoise does
+not -- its fields live only in `Model._meta`, so `hasattr(User, "email")` is
+False for a model that plainly has an email. Detecting from a set the ORM layer
+produced keeps this module free of both, which is the rule for everything under
+`fastfort/auth/`.
+
+Historically this used `hasattr` against the class, which worked for both
 SQLAlchemy declarative models and Tortoise models without importing either.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -42,8 +51,16 @@ class UserModelConfig:
     superuser_field: str = "is_superuser"
 
     @classmethod
-    def detect(cls, model: type, **overrides: str) -> UserModelConfig:
+    def detect(
+        cls, model: type, known: frozenset[str] | None = None, **overrides: str
+    ) -> UserModelConfig:
         """Build a configuration, guessing any field that was not supplied.
+
+        `known` is the model's own attribute names, as the ORM layer reports
+        them. Without it this falls back to `hasattr`, which is right for an
+        ORM that puts a descriptor on the class and wrong for one that does not
+        -- so `FastFort.set_user_model` passes the set it got from the backend
+        and only a direct caller ever takes the fallback.
 
         Detection only ever picks a name the model actually has, so a wrong guess
         is impossible; what can happen is no guess at all, which is reported as a
@@ -51,13 +68,14 @@ class UserModelConfig:
         """
         resolved: dict[str, str] = {}
         missing: list[str] = []
+        has = _presence(model, known)
 
         for field_name, candidates in _CANDIDATES.items():
             explicit = overrides.get(field_name)
             if explicit is not None:
                 resolved[field_name] = explicit
                 continue
-            found = next((name for name in candidates if hasattr(model, name)), None)
+            found = next((name for name in candidates if has(name)), None)
             if found is None:
                 missing.append(f"{field_name} (tried: {', '.join(candidates)})")
             else:
@@ -75,19 +93,20 @@ class UserModelConfig:
             )
 
         config = cls(model=model, **resolved)
-        config.validate()
+        config.validate(known)
         return config
 
-    def validate(self) -> None:
+    def validate(self, known: frozenset[str] | None = None) -> None:
         """Check that every configured attribute exists on the model.
 
         Runs at start-up rather than on first login, because a typo here means
         nobody can sign in and the failure should not wait for a user to find it.
         """
+        has = _presence(self.model, known)
         missing = [
             f"{label}={name!r}"
             for label, name in self._configured_fields().items()
-            if not hasattr(self.model, name)
+            if not has(name)
         ]
         if missing:
             available = ", ".join(sorted(self._public_attributes())) or "none"
@@ -135,3 +154,16 @@ class UserModelConfig:
 
     def is_superuser(self, user: Any) -> bool:
         return bool(getattr(user, self.superuser_field, False))
+
+
+def _presence(model: type, known: frozenset[str] | None) -> Callable[[str], bool]:
+    """Whether the model has an attribute by that name.
+
+    From the set the ORM layer reported when there is one, and from `hasattr`
+    when there is not. The two disagree for Tortoise, whose fields exist only in
+    `Model._meta` -- and knowing that here would put ORM-specific knowledge in a
+    layer the architecture test keeps free of it.
+    """
+    if known is None:
+        return lambda name: hasattr(model, name)
+    return lambda name: name in known or hasattr(model, name)

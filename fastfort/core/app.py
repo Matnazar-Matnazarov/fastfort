@@ -122,7 +122,30 @@ class FastFort:
 
             fort.set_user_model(User, identity_field="login", password_field="pwd")
         """
-        self._user_config = UserModelConfig.detect(model, **fields)
+        # The attribute names come from the backend rather than from the class.
+        # SQLAlchemy puts a descriptor on the class for every column and
+        # Tortoise does not -- its fields live only in `Model._meta` -- so
+        # `hasattr(User, "email")` is False for a Tortoise model that plainly
+        # has an email, and detection guessed nothing at all.
+        # A backend is optional until `mount`, so a project that sets its user
+        # model first still works -- it simply falls back to `hasattr`.
+        known: frozenset[str] | None = None
+        backend = self._backend
+        if backend is not None:
+            try:
+                spec = backend.introspect(model, key="fastfort.user")
+            except Exception:
+                # Any backend that cannot describe this class -- one that does
+                # not own it, or a stand-in that implements only part of the
+                # protocol -- leaves detection on its `hasattr` fallback. A
+                # user model is named at configuration time, and failing there
+                # over a lookup that is only an optimisation would turn a
+                # working setup into a start-up error.
+                known = None
+            else:
+                known = frozenset(field.name for field in spec)
+
+        self._user_config = UserModelConfig.detect(model, known, **fields)
         return self._user_config
 
     # -- registration -------------------------------------------------------

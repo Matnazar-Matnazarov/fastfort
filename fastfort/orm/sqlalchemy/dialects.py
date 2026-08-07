@@ -11,9 +11,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
-from sqlalchemy import ColumnElement, func
+from sqlalchemy import ColumnElement, Float, String, bindparam, func
+from sqlalchemy import cast as sa_cast
+from sqlalchemy.types import UserDefinedType
 
-__all__ = ["DialectProfile", "icontains", "order_term", "profile_for", "spatial_condition"]
+__all__ = [
+    "DialectProfile",
+    "icontains",
+    "order_term",
+    "profile_for",
+    "spatial_condition",
+    "vector_distance",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +58,12 @@ class DialectProfile:
     #: the safe direction -- a spatial filter that is never offered is a missing
     #: feature, one that is offered and then fails is a broken page.
     has_postgis: bool = False
+
+    #: Whether pgvector answered when the backend asked. An extension like
+    #: PostGIS, and probed the same way and for the same reason: two
+    #: PostgreSQL servers disagree about it, and a similarity search that
+    #: cannot run should never be offered rather than offered and then failing.
+    has_pgvector: bool = False
 
 
 _PROFILES = {
@@ -224,3 +239,74 @@ def spatial_condition(
             func.ST_Intersects(func.ST_Envelope(column), func.ST_Envelope(shape)),
         )
     return cast("ColumnElement[bool]", getattr(func, name)(column, shape))
+
+
+#: Which pgvector distance operator each metric compiles to.
+#:
+#: Operators rather than functions, because that is what a vector index answers.
+#: `ORDER BY embedding <=> '[...]'` uses an HNSW or IVFFlat index; the same
+#: ordering written with a function does not, and the difference between the two
+#: is milliseconds against a sequential scan of every row in the table.
+_VECTOR_OPERATORS = {
+    "cosine": "<=>",
+    "l2": "<->",
+    "l1": "<+>",
+    "inner": "<#>",
+}
+
+
+class _VectorLiteral(UserDefinedType[str]):
+    """Just enough of a type to write `CAST(:v AS vector)`.
+
+    Three lines instead of importing pgvector, which this package promises a
+    project that embeds nothing never pays for. Without the cast the parameter
+    binds as `varchar` and PostgreSQL answers "operator does not exist: vector
+    <=> character varying", which is true and unhelpful.
+
+    `cache_ok` because the type carries nothing per-query -- the name is the
+    whole of it -- so SQLAlchemy may reuse the compiled statement.
+    """
+
+    cache_ok = True
+
+    def __init__(self, name: str = "vector") -> None:
+        self.name = name
+
+    def get_col_spec(self, **_: Any) -> str:
+        return self.name
+
+
+def vector_distance(
+    column: Any,
+    vector: str,
+    metric: str,
+    profile: DialectProfile,
+    kind: str = "vector",
+) -> Any:
+    """The distance between a column and one query vector, or `None`.
+
+    `None` where pgvector is not installed, for the same reason
+    `spatial_condition` returns it without PostGIS: a saved link carrying a
+    similarity search is still a request for a list page, and taking the page
+    down over an ordering that cannot be computed helps nobody.
+
+    The vector is bound as a parameter and cast, never interpolated -- it
+    reaches here as a string this package rendered from numbers it parsed, and
+    binding it keeps that true all the way to the database.
+    """
+    if not profile.has_pgvector:
+        return None
+    operator = _VECTOR_OPERATORS.get(metric)
+    if operator is None:
+        return None
+    # A bound parameter, cast to the column's own vector type. The value
+    # reaches here as a string this package rendered from numbers it parsed,
+    # and binding it keeps that true all the way to the database -- there is no
+    # path by which a request's text becomes SQL.
+    literal = sa_cast(bindparam(None, vector, type_=String()), _VectorLiteral(kind))
+    # `return_type` matters: without it SQLAlchemy infers the operator's result
+    # from the left operand and calls the whole expression a vector -- so
+    # comparing it to a number, which is what `within` does, tried to bind 0.5
+    # through pgvector's own processor and failed with "expected list or
+    # ndarray". A distance is a float.
+    return column.op(operator, return_type=Float())(literal)

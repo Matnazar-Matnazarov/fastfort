@@ -118,6 +118,18 @@ class ModelSpec:
         return {f.name: f.geometry.srid for f in self.fields if f.geometry is not None}
 
     @property
+    def vector_fields(self) -> dict[str, int | None]:
+        """Vector fields, mapped to the number of dimensions each declares.
+
+        The allow-list `ListQuery.from_params` checks a similarity search
+        against, and a mapping rather than a set for the same reason
+        `spatial_fields` is: a query vector of the wrong width is not a worse
+        ranking, it is an error from the database, and knowing the width here
+        means the message names the parameter instead.
+        """
+        return {f.name: f.vector.dimensions for f in self.fields if f.vector is not None}
+
+    @property
     def sensitive_fields(self) -> frozenset[str]:
         """Fields whose values are masked in audit records and never re-rendered."""
         return frozenset(f.name for f in self.fields if f.sensitive)

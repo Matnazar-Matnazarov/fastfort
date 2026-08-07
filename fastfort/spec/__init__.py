@@ -14,7 +14,15 @@ from __future__ import annotations
 
 from .changes import Change, ChangeSet
 from .deletion import DeletionEffect, DeletionPlan, RelatedRows
-from .fields import Choice, FieldSpec, FieldType, GeometrySpec, RangeSpec, RelationSpec
+from .fields import (
+    Choice,
+    FieldSpec,
+    FieldType,
+    GeometrySpec,
+    RangeSpec,
+    RelationSpec,
+    VectorSpec,
+)
 from .model import ModelSpec
 from .query import (
     Filter,
@@ -24,6 +32,8 @@ from .query import (
     SortSpec,
     SpatialFilter,
     SpatialOperator,
+    VectorMetric,
+    VectorQuery,
 )
 
 __all__ = [
@@ -46,4 +56,7 @@ __all__ = [
     "SortSpec",
     "SpatialFilter",
     "SpatialOperator",
+    "VectorMetric",
+    "VectorQuery",
+    "VectorSpec",
 ]

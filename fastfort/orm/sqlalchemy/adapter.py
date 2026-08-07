@@ -218,14 +218,56 @@ class SQLAlchemyAdapter:
 
         Sensitive fields are omitted entirely rather than masked here, so their
         values cannot reach an audit record even by accident.
+
+        Issues no queries. A relation that was never loaded is read from the
+        foreign key column instead of through the relationship: touching the
+        relationship would emit a SELECT per relation, and outside the async
+        bridge it raises `MissingGreenlet` rather than being merely slow. An
+        audit record is written on the way out of a request and must not be a
+        reason for one to fail.
         """
         state: dict[str, Any] = {}
+        unloaded = sa.inspect(obj).unloaded
+
         for field in self._spec:
             if field.sensitive or field.type.is_multi_valued:
                 continue
-            value = getattr(obj, field.name, None)
-            state[field.name] = _identity(value) if field.is_relation else value
+            if field.is_relation:
+                state[field.name] = self._relation_identity(obj, field.name, unloaded)
+            else:
+                state[field.name] = getattr(obj, field.name, None)
         return state
+
+    def _relation_identity(self, obj: Any, name: str, unloaded: Any) -> Any:
+        """The key a to-one relation points at, without loading the target."""
+        if name not in unloaded:
+            return _identity(getattr(obj, name, None))
+
+        # The local column behind the relationship. Read from the mapper rather
+        # than guessed as `{name}_id`, because a project may name it itself.
+        try:
+            attribute = self._foreign_key_name(name)
+        except ValidationError:
+            return None
+        return getattr(obj, attribute, None) if attribute else None
+
+    def _foreign_key_name(self, name: str) -> str | None:
+        """The attribute holding the local column behind a to-one relation.
+
+        Read from the mapper rather than guessed as `{name}_id`: a project may
+        name the column itself, and guessing would read an attribute that is not
+        there and record `None` for a relation that is set.
+        """
+        relation = getattr(self.model, name, None)
+        relation_property = getattr(relation, "property", None)
+        if relation_property is None:
+            return None
+        mapper = cast("sa.orm.Mapper[Any]", sa.inspect(self.model))
+        for column in relation_property.local_columns:
+            prop = mapper.get_property_by_column(column)
+            if prop is not None:
+                return str(prop.key)
+        return None
 
     def label_for(self, obj: Any) -> str:
         return _display(obj) or f"{self._spec.verbose_name} {self.primary_key_of(obj)}"

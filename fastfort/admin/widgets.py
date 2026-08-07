@@ -50,6 +50,7 @@ _WIDGETS: dict[FieldType, str] = {
     FieldType.TIME: "time",
     FieldType.DURATION: "duration",
     FieldType.ARRAY: "tags",
+    FieldType.VECTOR: "textarea",
     FieldType.GEOMETRY: "geometry",
     FieldType.UUID: "text",
     FieldType.JSON: "json",

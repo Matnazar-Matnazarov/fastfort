@@ -8,19 +8,23 @@ and keep the SQL identical across the three supported databases.
 
 from __future__ import annotations
 
-import datetime as dt
-import uuid
 from collections.abc import Callable, Sequence
-from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
 import sqlalchemy as sa
 from sqlalchemy.orm import InstrumentedAttribute, joinedload, selectinload
 
 from fastfort.core.exceptions import ValidationError
-from fastfort.spec import FieldSpec, FieldType, Filter, FilterOperator, ListQuery, ModelSpec
+from fastfort.spec import FieldSpec, Filter, FilterOperator, ListQuery, ModelSpec
 
-from .dialects import DialectProfile, icontains, order_term, spatial_condition
+from ..coerce import as_bool, coerce_filter_value
+from .dialects import (
+    DialectProfile,
+    icontains,
+    order_term,
+    spatial_condition,
+    vector_distance,
+)
 
 __all__ = ["QueryBuilder"]
 
@@ -65,8 +69,23 @@ class QueryBuilder:
         """A statement returning one page of rows, with relations preloaded."""
         statement = self._filtered(sa.select(self.model), query)
         statement = self._ordered(statement, query)
-        statement = statement.limit(query.limit).offset(query.offset)
+        statement = statement.limit(self._page_limit(query)).offset(query.offset)
         return self._with_eager_loads(statement)
+
+    def _page_limit(self, query: ListQuery) -> int:
+        """How many rows this page may hold.
+
+        The page size, unless a similarity search asked for fewer. `k` is "the
+        nearest ten", and the tenth is the last row there is -- so page two of
+        a twenty-row list has nothing on it, and the window has to close rather
+        than paging on into rows the search already ruled out.
+
+        Never negative: an offset past `k` is a page beyond the end, and a
+        negative limit is a database error rather than an empty page.
+        """
+        if query.vector is None or query.vector.limit is None:
+            return query.limit
+        return max(0, min(query.limit, query.vector.limit - query.offset))
 
     def count(self, query: ListQuery) -> sa.Select[Any]:
         """A statement returning the number of matching rows.
@@ -74,8 +93,13 @@ class QueryBuilder:
         Built from a subquery so that any joins the filters needed cannot
         multiply the count.
         """
-        inner = self._filtered(sa.select(*self._primary_key_columns()), query).subquery()
-        return sa.select(sa.func.count()).select_from(inner)
+        inner = self._filtered(sa.select(*self._primary_key_columns()), query)
+        if query.vector is not None and query.vector.limit is not None:
+            # The paginator counts what the list can actually reach. Without
+            # this it promised twenty pages of a `k=10` search and nineteen of
+            # them were empty.
+            inner = self._ordered(inner, query).limit(query.vector.limit)
+        return sa.select(sa.func.count()).select_from(inner.subquery())
 
     def key_select(self, query: ListQuery) -> sa.Select[Any]:
         """A statement returning only the primary keys of matching rows.
@@ -128,6 +152,14 @@ class QueryBuilder:
             if predicate is not None:
                 statement = statement.where(predicate)
 
+        # A similarity search narrowed by a maximum distance. The *ordering*
+        # half is in `_ordered`, because that is what a nearest-neighbour search
+        # mostly is; this is only the "and no further than" part.
+        if query.vector is not None and query.vector.within is not None:
+            distance = self._vector_distance(query)
+            if distance is not None:
+                statement = statement.where(distance <= query.vector.within)
+
         if query.search and self.search_fields:
             clauses: list[sa.ColumnElement[bool]] = []
             for name in self.search_fields:
@@ -140,6 +172,15 @@ class QueryBuilder:
     def _ordered(self, statement: sa.Select[Any], query: ListQuery) -> sa.Select[Any]:
         terms: list[Any] = []
         joined: set[str] = set()
+
+        # Nearest first, and before every other term. A similarity search is an
+        # ordering, and one asked for alongside "sort by name" means "the
+        # nearest, and break ties by name" -- not "by name, and break ties by
+        # similarity", which would return the alphabet.
+        if query.vector is not None:
+            distance = self._vector_distance(query)
+            if distance is not None:
+                terms.append(distance.asc())
 
         for sort in query.ordering:
             statement = self._join_for(statement, sort.field, joined)
@@ -157,6 +198,27 @@ class QueryBuilder:
             terms.append(self._attribute(name).asc())
 
         return statement.order_by(*terms)
+
+    def _vector_distance(self, query: ListQuery) -> Any:
+        """The distance expression for this query's similarity search.
+
+        Built once and used by both halves -- the ordering and the optional
+        `within` bound -- because they have to agree. Two expressions built
+        separately could drift apart on the metric and rank by one measure
+        while filtering by another.
+        """
+        search = query.vector
+        if search is None:
+            return None
+        field = self.spec.get(search.field)
+        kind = field.vector.kind if field is not None and field.vector else "vector"
+        return vector_distance(
+            self._attribute(search.field),
+            search.vector,
+            search.metric.value,
+            self.profile,
+            kind,
+        )
 
     def _with_eager_loads(self, statement: sa.Select[Any]) -> sa.Select[Any]:
         """Preload the relations the caller declared.
@@ -264,22 +326,13 @@ class QueryBuilder:
         return self.spec.get(path)
 
     def _coerce(self, field: FieldSpec | None, raw: str, path: str) -> Any:
-        """Convert a query-string value to the column's Python type."""
-        field_type = field.type if field is not None else FieldType.STRING
+        """Convert a query-string value to the column's Python type.
 
-        # A relation is filtered by the identity of its target, which is the
-        # value the related-object dropdown submits.
-        if field_type.is_relation:
-            return _coerce_scalar(raw, path)
-
-        try:
-            coercer = _COERCERS.get(field_type)
-            return raw if coercer is None else coercer(raw)
-        except (ValueError, TypeError, InvalidOperation) as exc:
-            raise ValidationError(
-                f"{raw!r} is not a valid value for {path!r}.",
-                field_errors={path: [f"Expected {field_type.value}."]},
-            ) from exc
+        Shared with the Tortoise backend, because it is about the column rather
+        than about either ORM -- and two copies would drift into filters that
+        quietly match different rows on the two backends.
+        """
+        return coerce_filter_value(field, raw, path)
 
 
 # ---------------------------------------------------------------------------
@@ -288,12 +341,7 @@ class QueryBuilder:
 
 
 def _as_bool(value: str | tuple[str, ...]) -> bool:
-    text = (value[0] if isinstance(value, tuple) else value).strip().lower()
-    if text in _TRUTHY:
-        return True
-    if text in _FALSY:
-        return False
-    raise ValidationError(f"{text!r} is not a boolean value.")
+    return as_bool(value[0] if isinstance(value, tuple) else value)
 
 
 def _as_str(condition: Filter) -> str:
@@ -302,63 +350,3 @@ def _as_str(condition: Filter) -> str:
 
 def _as_tuple(condition: Filter) -> tuple[str, ...]:
     return condition.value if isinstance(condition.value, tuple) else (condition.value,)
-
-
-def _coerce_scalar(raw: str, path: str) -> Any:
-    """Best-effort identity coercion for a relation target's key."""
-    try:
-        return int(raw)
-    except ValueError:
-        pass
-    try:
-        return uuid.UUID(raw)
-    except ValueError:
-        return raw
-
-
-def _coerce_datetime(raw: str) -> dt.datetime:
-    """Parse an ISO 8601 datetime, tolerating a trailing ``Z``."""
-    return dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
-
-
-def _coerce_duration(raw: str) -> dt.timedelta:
-    """`HH:MM:SS`, `MM:SS` or `Nd HH:MM:SS` into a timedelta.
-
-    A near-twin of `parse_duration` in `fastfort/admin/values.py`, and
-    deliberately not shared with it: `fastfort/orm/` may import the spec layer
-    but not the admin layer, and inverting that to save fifteen lines would put
-    the ORM adapter downstream of the web layer it exists to be independent of.
-
-    It exists at all because `DURATION` is offered as a filter, and without a
-    coercer the bound reaches the database as the string it arrived as --
-    which PostgreSQL refuses against an `interval` column, so the filter that
-    looked available was a 500 waiting to be clicked.
-    """
-    text = raw.strip()
-    days = 0
-    if "d" in text:
-        head, _, text = text.partition("d")
-        days = int(head.strip())
-    parts = text.strip().split(":") if text.strip() else ["0"]
-    if len(parts) > 3:
-        raise ValueError(f"{raw!r} is not a duration")
-    numbers = [float(part) for part in parts]
-    # Right-aligned, so "90" is ninety seconds rather than ninety hours -- the
-    # same rule the form's box follows.
-    while len(numbers) < 3:
-        numbers.insert(0, 0.0)
-    return dt.timedelta(days=days, hours=numbers[0], minutes=numbers[1], seconds=numbers[2])
-
-
-_COERCERS: dict[FieldType, Callable[[str], Any]] = {
-    FieldType.DURATION: _coerce_duration,
-    FieldType.INTEGER: int,
-    FieldType.BIGINT: int,
-    FieldType.FLOAT: float,
-    FieldType.DECIMAL: Decimal,
-    FieldType.BOOLEAN: _as_bool,
-    FieldType.DATE: dt.date.fromisoformat,
-    FieldType.DATETIME: _coerce_datetime,
-    FieldType.TIME: dt.time.fromisoformat,
-    FieldType.UUID: uuid.UUID,
-}

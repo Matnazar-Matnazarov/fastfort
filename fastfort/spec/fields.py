@@ -14,7 +14,15 @@ from typing import Any
 
 from ._json import jsonify
 
-__all__ = ["Choice", "FieldSpec", "FieldType", "GeometrySpec", "RangeSpec", "RelationSpec"]
+__all__ = [
+    "Choice",
+    "FieldSpec",
+    "FieldType",
+    "GeometrySpec",
+    "RangeSpec",
+    "RelationSpec",
+    "VectorSpec",
+]
 
 
 class FieldType(StrEnum):
@@ -59,6 +67,7 @@ class FieldType(StrEnum):
     RANGE = "range"
     MULTIRANGE = "multirange"
     GEOMETRY = "geometry"
+    VECTOR = "vector"
     FOREIGN_KEY = "foreign_key"
     ONE_TO_ONE = "one_to_one"
     MANY_TO_MANY = "many_to_many"
@@ -107,6 +116,7 @@ _NON_TEXT_TYPES = frozenset(
         FieldType.SEARCH_VECTOR,
         FieldType.RANGE,
         FieldType.MULTIRANGE,
+        FieldType.VECTOR,
     }
 )
 
@@ -145,6 +155,25 @@ class RelationSpec:
             "related_name": self.related_name,
             "cascade_delete": self.cascade_delete,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class VectorSpec:
+    """How a `VECTOR` field is shaped: how many numbers, and of what.
+
+    Plain data, like every other attachment here -- pgvector is an ORM-layer
+    concern and this only carries what that concern reported.
+    """
+
+    #: How many numbers one value holds. `None` when the column did not say,
+    #: which pgvector allows and which means the admin cannot check a length.
+    dimensions: int | None = None
+    #: `vector`, `halfvec`, `sparsevec` or `bit`. They differ in storage and in
+    #: which distance operators apply, not in what the admin draws.
+    kind: str = "vector"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"dimensions": self.dimensions, "kind": self.kind}
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,6 +259,8 @@ class FieldSpec:
     #: list of strings rather than blocking the column.
     item: FieldSpec | None = None
     geometry: GeometrySpec | None = None
+    #: Set for a `VECTOR` column: how many numbers it holds.
+    vector: VectorSpec | None = None
     bounds: RangeSpec | None = None
 
     # --- relations ---------------------------------------------------------
@@ -263,6 +294,8 @@ class FieldSpec:
             raise ValueError(f"{self.name!r} has an item spec but type is {self.type.value!r}")
         if self.geometry is not None and self.type is not FieldType.GEOMETRY:
             raise ValueError(f"{self.name!r} has a GeometrySpec but type is {self.type.value!r}")
+        if self.vector is not None and self.type is not FieldType.VECTOR:
+            raise ValueError(f"{self.name!r} has a VectorSpec but type is {self.type.value!r}")
         if self.bounds is not None:
             if self.type not in (FieldType.RANGE, FieldType.MULTIRANGE):
                 raise ValueError(f"{self.name!r} has a RangeSpec but type is {self.type.value!r}")
@@ -331,6 +364,7 @@ class FieldSpec:
             "has_db_default": self.has_db_default,
             "item": self.item.to_dict() if self.item is not None else None,
             "geometry": self.geometry.to_dict() if self.geometry is not None else None,
+            "vector": self.vector.to_dict() if self.vector is not None else None,
             "bounds": self.bounds.to_dict() if self.bounds is not None else None,
             "relation": self.relation.to_dict() if self.relation else None,
             "widget": self.widget,
