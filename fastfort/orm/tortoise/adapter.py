@@ -34,6 +34,7 @@ from fastfort.orm.base import PrimaryKey, RelatedChoice
 from fastfort.spec import (
     DeletionEffect,
     DeletionPlan,
+    FieldSpec,
     Filter,
     FilterOperator,
     ListQuery,
@@ -166,9 +167,7 @@ class TortoiseAdapter:
         # A to-one relation is filtered by the identity of its target, which is
         # what the dropdown submits. Tortoise reads `category_id` for that.
         field = self._spec.get(condition.field)
-        name = condition.field
-        if field is not None and field.is_relation and not field.type.is_multi_valued:
-            name = f"{name}_id"
+        name = self._column_for(condition.field, field)
 
         # Coerced against the column's type, through the same table the
         # SQLAlchemy backend uses. Left as strings, `?active__in=0` compared
@@ -210,9 +209,30 @@ class TortoiseAdapter:
         other backend appends it: without one, two rows with equal sort keys can
         swap places between pages and one of them is never shown.
         """
-        terms = [f"-{sort.field}" if sort.descending else sort.field for sort in query.ordering]
+        terms: list[str] = []
+        for sort in query.ordering:
+            # A to-one relation sorts through its foreign key, the same column
+            # `_condition` filters through. Handed the relation's own name,
+            # Tortoise raises "Filtering by relation is not possible" -- and the
+            # list header renders every sortable field as a link, so that was a
+            # 500 one click away on any list showing a relation.
+            name = self._column_for(sort.field, self._spec.get(sort.field))
+            terms.append(f"-{name}" if sort.descending else name)
         terms.extend(self._spec.primary_key)
         return terms
+
+    def _column_for(self, name: str, field: FieldSpec | None) -> str:
+        """The column a query names for `field` -- itself, unless it is a relation.
+
+        A to-one relation is read through the key column beside it. That column
+        is asked for by `source_field` rather than assembled as `f"{name}_id"`,
+        because a project may name it, and a guess would filter and sort on a
+        column that is not there.
+        """
+        if field is None or not field.is_relation or field.type.is_multi_valued:
+            return name
+        source = getattr(self._orm._meta.fields_map.get(name), "source_field", None)
+        return str(source) if source else f"{name}_id"
 
     async def list(self, query: ListQuery) -> Page[Any]:
         queryset = self._related(self._queryset(query)).order_by(*self._ordering(query))

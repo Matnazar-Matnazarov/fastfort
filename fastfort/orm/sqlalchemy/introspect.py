@@ -329,6 +329,10 @@ def _relation_field(
         remote = rel.local_remote_pairs[0][1]
         to_field = getattr(remote, "key", None) or to_field
 
+    #: Whether the foreign key sits on this model. Only then is there a column
+    #: here that an `ORDER BY` or a `WHERE` can name.
+    local_key = rel.direction is MANYTOONE
+
     return FieldSpec(
         name=rel.key,
         type=field_type,
@@ -338,8 +342,12 @@ def _relation_field(
         editable=not rel.viewonly,
         # Sorting or filtering by a to-many relation multiplies rows, so the
         # spec refuses it rather than letting a list page silently duplicate.
-        sortable=not field_type.is_multi_valued,
-        filterable=field_type in _FILTERABLE_TYPES,
+        # A to-one is refused for a second reason unless the key is on *this*
+        # side: the backward half of a one-to-one has no local column, so it
+        # sorted the page by its own primary key and filtered the wrong column,
+        # both without complaining.
+        sortable=local_key,
+        filterable=local_key and field_type in _FILTERABLE_TYPES,
         relation=RelationSpec(
             target=resolve_key(target),
             to_field=to_field,

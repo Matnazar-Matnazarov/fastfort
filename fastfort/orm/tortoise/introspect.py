@@ -328,6 +328,11 @@ def _relation_field(
 ) -> FieldSpec:
     field_type = _relation_type(field)
     target = field.related_model
+    backward = isinstance(field, BackwardFKRelation | BackwardOneToOneRelation)
+
+    #: Whether the foreign key sits on this model. Only then is there a column
+    #: here that an `ORDER BY` or a `WHERE` can name.
+    local_key = not backward and not field_type.is_multi_valued
 
     return FieldSpec(
         name=name,
@@ -337,11 +342,14 @@ def _relation_field(
         nullable=True,
         # A backward relation is not writable from this side: it is the other
         # model's foreign key, and editing it belongs on that model's page.
-        editable=not isinstance(field, BackwardFKRelation | BackwardOneToOneRelation),
+        editable=not backward,
         # Sorting or filtering by a to-many relation multiplies rows, so the
         # spec refuses it rather than letting a list page silently duplicate.
-        sortable=not field_type.is_multi_valued,
-        filterable=field_type in _FILTERABLE_TYPES,
+        # A backward one-to-one is refused for a second reason: its key is on
+        # the other table, so Tortoise answers "Filtering by relation is not
+        # possible" -- a 500 from one click on the column header.
+        sortable=local_key,
+        filterable=local_key and field_type in _FILTERABLE_TYPES,
         relation=RelationSpec(
             target=resolve_key(target),
             to_field=str(getattr(target._meta, "pk_attr", "id")),

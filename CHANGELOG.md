@@ -21,6 +21,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fix. The backend now raises `ImproperlyConfigured` naming both ways out:
   `_enable_global_fallback=True`, or `RegisterTortoise` from
   `tortoise.contrib.fastapi`. The README's Tortoise snippet passes the flag.
+- **Sorting a list by a to-one relation** no longer returns a 500 on either
+  backend. The list header renders every sortable field as a link, so a list
+  showing a `category` column was one click from an error page: SQLAlchemy
+  raised `NotImplementedError` from `.asc()` on a relationship and Tortoise
+  answered "Filtering by relation is not possible". Both now order through the
+  key column beside the relation -- the same column filtering already used, and
+  what `order_by("category")` means to Django.
+- **A backward one-to-one is no longer offered as sortable or filterable.** Its
+  key lives on the other table, so there is no column on this side to name:
+  Tortoise raised, and SQLAlchemy quietly fell back to this model's own primary
+  key, which is the worse of the two because nothing failed.
+- The Tortoise adapter reads the column behind a relation from Tortoise's own
+  `source_field` rather than assembling `f"{name}_id"`, so a project that named
+  that column itself can be filtered and sorted like any other.
 
 ## [0.3.0] - 2026-08-07
 
