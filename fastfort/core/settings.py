@@ -231,6 +231,19 @@ class UISettings(BaseModel):
     #: project is the party bound by that, so it writes it.
     map_attribution: str = ""
 
+    #: The deepest zoom level the tile source has pictures for.
+    #:
+    #: A property of the source, not of the widget, which is why it sits beside
+    #: `map_tile_url` rather than being a constant in the script. 19 is where
+    #: OpenStreetMap's standard layer stops; some commercial raster layers reach
+    #: 22, and one of those configured at the default fetches three levels
+    #: shallower than it could and shows a blurrier map for no reason.
+    #:
+    #: This is a ceiling on *requests*. The view still zooms two levels past it,
+    #: scaling the last level it has -- which is what every map application does
+    #: past its own imagery, and better than a button that stops responding.
+    map_max_zoom: Annotated[int, Field(ge=1, le=24)] = 19
+
     #: Where a map with no coordinates yet opens, as ``latitude, longitude``.
     #: Defaults to a whole-world view rather than to somebody's capital city.
     map_center: str = "0, 0"

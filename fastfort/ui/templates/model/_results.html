@@ -70,6 +70,26 @@
                 <td {% if cell.numeric %}class="ff-numeric"{% endif %}>
                   {% if cell.boolean %}
                     {{ cell.value|ff_bool }}
+                  {% elif cell.image %}
+                    {# A picture answers "which of these is the right one" faster
+                       than the stored path ever could, and the path was what
+                       this cell used to print. `loading="lazy"`, because a
+                       hundred-row page would otherwise open a hundred requests
+                       before anyone scrolled to them. #}
+                    {% if cell.thumb %}
+                      <img
+                        class="ff-thumb"
+                        src="{{ cell.thumb }}"
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    {% else %}
+                      {# A placeholder rather than nothing: rows with a picture
+                         and rows without keep the same height, so the table
+                         does not comb. #}
+                      <span class="ff-thumb ff-thumb--empty" aria-hidden="true"></span>
+                    {% endif %}
                   {% elif cell.url %}
                     <a class="ff-link" href="{{ cell.url }}">{{ cell.value|ff_display }}</a>
                   {% else %}
@@ -138,7 +158,7 @@
             <a
               class="ff-item"
               href="{{ choice.url }}"
-              {% if choice.current %}aria-current="true"{% endif %}
+              {% if choice.current %}aria-current="true" {% endif %}
             >
               <span class="ff-item__label">{{ _("{n} per page", n=choice.size) }}</span>
               <span class="ff-item__mark">{{ ff_icon("check", size=14) }}</span>

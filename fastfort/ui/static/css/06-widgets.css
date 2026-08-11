@@ -1368,8 +1368,36 @@
 .ff-modal__footer {
   display: flex;
   justify-content: flex-end;
-  gap: var(--ff-space-2);
+  gap: var(--ff-space-3);
   padding: var(--ff-space-3) var(--ff-space-5) var(--ff-space-5);
+}
+
+/* Bigger than a button in a toolbar, on purpose. This is the last thing between
+ * somebody and a row that does not come back, and a 36px control tucked in a
+ * corner is one that gets clicked without being read. Both are widened so the
+ * destructive one is not simply the larger target. */
+.ff-modal__footer .ff-btn {
+  min-width: 7rem;
+  height: calc(2.625rem * var(--ff-density));
+  font-weight: var(--ff-weight-semibold);
+}
+
+/* The brightness filter this used to hover with washed the label towards the
+ * background on a display with a wide gamut, which is what made the button look
+ * empty. An explicit darker step keeps the 4.5:1 the token was chosen for. */
+.ff-modal__footer .ff-btn--danger {
+  background: var(--ff-danger);
+  border-color: var(--ff-danger);
+  color: oklch(0.99 0 0);
+  filter: none;
+}
+
+.ff-modal__footer .ff-btn--danger:hover,
+.ff-modal__footer .ff-btn--danger:focus-visible {
+  background: color-mix(in oklab, var(--ff-danger) 88%, black);
+  border-color: color-mix(in oklab, var(--ff-danger) 88%, black);
+  color: oklch(0.99 0 0);
+  filter: none;
 }
 
 /* ===========================================================================

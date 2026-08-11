@@ -27,13 +27,13 @@
     id="ff-{{ field.name }}"
     name="{{ field.name }}"
     rows="{{ 10 if field.widget == 'json' else 4 }}"
-    {% if field.widget == "json" %}data-ff-json{% endif %}
-    {% if field.required %}required{% endif %}
-    {% if field.errors %}aria-invalid="true"{% endif %}
+    {% if field.widget == "json" %}data-ff-json {% endif %}
+    {% if field.required %}required {% endif %}
+    {% if field.errors %}aria-invalid="true" {% endif %}
   >{{ field.raw }}</textarea>
 {% endmacro %}
 
-{% macro geometry_control(field, map_tile_url, map_center, map_attribution) %}
+{% macro geometry_control(field, map_tile_url, map_center, map_attribution, map_max_zoom) %}
   {#
     Every kind gets the map's `data-` hooks -- Phase 4 turns the control next
     to them into an editor -- but only when a tile host is configured. The
@@ -67,11 +67,12 @@
       value="{{ field.raw }}"
       spellcheck="false"
       placeholder="41.2995, 69.2401"
-      {% if field.required %}required{% endif %}
-      {% if field.errors %}aria-invalid="true"{% endif %}
+      {% if field.required %}required {% endif %}
+      {% if field.errors %}aria-invalid="true" {% endif %}
       {% if map_tile_url %}
         data-ff-map="{{ map_tile_url }}"
         data-ff-map-center="{{ map_center }}"
+        data-ff-map-max-zoom="{{ map_max_zoom }}"
         {# Drawn on the map itself, where every other map puts its credit and
            where it stays attached to the tiles it is crediting. Under the
            field it read as help text for the input rather than as a notice
@@ -89,11 +90,12 @@
       name="{{ field.name }}"
       rows="4"
       spellcheck="false"
-      {% if field.required %}required{% endif %}
-      {% if field.errors %}aria-invalid="true"{% endif %}
+      {% if field.required %}required {% endif %}
+      {% if field.errors %}aria-invalid="true" {% endif %}
       {% if map_tile_url %}
         data-ff-map="{{ map_tile_url }}"
         data-ff-map-center="{{ map_center }}"
+        data-ff-map-max-zoom="{{ map_max_zoom }}"
         data-ff-map-credit="{{ map_attribution }}"
         data-ff-geometry-kind="{{ kind }}"
         data-ff-srid="{{ field.spec.geometry.srid if field.spec.geometry else 4326 }}"
@@ -143,7 +145,7 @@
     {# The server enforces this either way; saying it up front is the
        difference between a rejected upload and one nobody started. #}
     data-ff-file-limit="{{ upload_limit }}"
-    {% if field.errors %}aria-invalid="true"{% endif %}
+    {% if field.errors %}aria-invalid="true" {% endif %}
   />
 {% endmacro %}
 
@@ -170,7 +172,7 @@
       value="{{ field.raw }}"
       placeholder="#000000"
       spellcheck="false"
-      {% if field.errors %}aria-invalid="true"{% endif %}
+      {% if field.errors %}aria-invalid="true" {% endif %}
     />
   </div>
 {% endmacro %}
@@ -189,8 +191,8 @@
     name="{{ field.name }}"
     rows="10"
     data-ff-richtext
-    {% if field.required %}required{% endif %}
-    {% if field.errors %}aria-invalid="true"{% endif %}
+    {% if field.required %}required {% endif %}
+    {% if field.errors %}aria-invalid="true" {% endif %}
   >{{ field.raw }}</textarea>
 {% endmacro %}
 
@@ -205,7 +207,7 @@
     name="{{ field.name }}"
     data-ff-combo
     data-ff-clearable="false"
-    {% if field.errors %}aria-invalid="true"{% endif %}
+    {% if field.errors %}aria-invalid="true" {% endif %}
   >
     <option value="" {% if field.raw == "" %}selected{% endif %}>{{ _("Unknown") }}</option>
     <option value="1" {% if field.raw == "1" %}selected{% endif %}>{{ _("Yes") }}</option>
@@ -220,7 +222,7 @@
       id="ff-{{ field.name }}"
       name="{{ field.name }}"
       value="1"
-      {% if field.value %}checked{% endif %}
+      {% if field.value %}checked {% endif %}
     />
     <span>{{ field.help_text or _("Enabled") }}</span>
   </label>
@@ -237,7 +239,7 @@
     name="{{ field.name }}"
     type="password"
     autocomplete="new-password"
-    {% if field.errors %}aria-invalid="true"{% endif %}
+    {% if field.errors %}aria-invalid="true" {% endif %}
   />
   <input
     class="ff-input ff-mt-2"
@@ -305,11 +307,11 @@
     {# Relations always get a search box, whatever the count. The target
        table is the one that grows, and a picker that offers search only past
        some threshold is one people learn is not searchable. #}
-    {% if field.spec.is_relation %}data-ff-search="always"{% endif %}
+    {% if field.spec.is_relation %}data-ff-search="always" {% endif %}
     data-ff-placeholder="{{ _("Choose…") }}"
     data-ff-clearable="{{ "false" if field.required else "true" }}"
-    {% if field.remote %}data-ff-url="{{ autocomplete_url }}?field={{ field.name }}"{% endif %}
-    {% if field.errors %}aria-invalid="true"{% endif %}
+    {% if field.remote %}data-ff-url="{{ autocomplete_url }}?field={{ field.name }}" {% endif %}
+    {% if field.errors %}aria-invalid="true" {% endif %}
   >
     {% if not field.required %}
       <option value="">{{ _("— none —") }}</option>
@@ -317,7 +319,7 @@
     {% for choice in field.choices %}
       <option
         value="{{ choice.value }}"
-        {% if field.raw == choice.value|string %}selected{% endif %}
+        {% if field.raw == choice.value|string %}selected {% endif %}
       >{{ choice.label }}</option>
     {% endfor %}
   </select>
@@ -341,12 +343,12 @@
     data-ff-combo
     data-ff-search="always"
     data-ff-placeholder="{{ _("Choose…") }}"
-    {% if field.remote %}data-ff-url="{{ autocomplete_url }}?field={{ field.name }}"{% endif %}
+    {% if field.remote %}data-ff-url="{{ autocomplete_url }}?field={{ field.name }}" {% endif %}
   >
     {% for choice in field.choices %}
       <option
         value="{{ choice.value }}"
-        {% if choice.value|string in field.selected %}selected{% endif %}
+        {% if choice.value|string in field.selected %}selected {% endif %}
       >{{ choice.label }}</option>
     {% endfor %}
   </select>
@@ -371,10 +373,10 @@
     type="text"
     value="{{ field.raw }}"
     data-ff-tags
-    {% if field.spec.item %}data-ff-item-type="{{ field.spec.item.type.value }}"{% endif %}
-    {% if field.spec.placeholder %}placeholder="{{ field.spec.placeholder }}"{% endif %}
-    {% if field.required %}required{% endif %}
-    {% if field.errors %}aria-invalid="true"{% endif %}
+    {% if field.spec.item %}data-ff-item-type="{{ field.spec.item.type.value }}" {% endif %}
+    {% if field.spec.placeholder %}placeholder="{{ field.spec.placeholder }}" {% endif %}
+    {% if field.required %}required {% endif %}
+    {% if field.errors %}aria-invalid="true" {% endif %}
   />
 {% endmacro %}
 
@@ -388,8 +390,8 @@
     name="{{ field.name }}"
     rows="4"
     data-ff-keyvalue
-    {% if field.required %}required{% endif %}
-    {% if field.errors %}aria-invalid="true"{% endif %}
+    {% if field.required %}required {% endif %}
+    {% if field.errors %}aria-invalid="true" {% endif %}
   >{{ field.raw }}</textarea>
 {% endmacro %}
 
@@ -404,8 +406,8 @@
       id="ff-{{ field.name }}"
       name="{{ field.name }}"
       rows="4"
-      {% if field.required %}required{% endif %}
-      {% if field.errors %}aria-invalid="true"{% endif %}
+      {% if field.required %}required {% endif %}
+      {% if field.errors %}aria-invalid="true" {% endif %}
     >{{ field.raw }}</textarea>
   {% else %}
     {#
@@ -428,7 +430,7 @@
         class="ff-select ff-select--sm ff-range-field__bounds"
         name="{{ field.name }}__bounds"
         aria-label="{{ _("Bounds") }}"
-        {% if field.errors %}aria-invalid="true"{% endif %}
+        {% if field.errors %}aria-invalid="true" {% endif %}
       >
         <option value="[)" {% if field.range_bounds == "[)" %}selected{% endif %}>[ … )</option>
         <option value="(]" {% if field.range_bounds == "(]" %}selected{% endif %}>( … ]</option>
@@ -442,8 +444,8 @@
         name="{{ field.name }}__lower"
         value="{{ field.range_lower }}"
         aria-label="{{ _("From") }}"
-        {% if bound_input in ("date", "datetime-local", "time") %}data-ff-date{% endif %}
-        {% if field.errors %}aria-invalid="true"{% endif %}
+        {% if bound_input in ("date", "datetime-local", "time") %}data-ff-date {% endif %}
+        {% if field.errors %}aria-invalid="true" {% endif %}
       />
       <span class="ff-range-field__sep" aria-hidden="true">–</span>
       <input
@@ -452,8 +454,8 @@
         name="{{ field.name }}__upper"
         value="{{ field.range_upper }}"
         aria-label="{{ _("To") }}"
-        {% if bound_input in ("date", "datetime-local", "time") %}data-ff-date{% endif %}
-        {% if field.errors %}aria-invalid="true"{% endif %}
+        {% if bound_input in ("date", "datetime-local", "time") %}data-ff-date {% endif %}
+        {% if field.errors %}aria-invalid="true" {% endif %}
       />
     </div>
   {% endif %}
@@ -483,17 +485,17 @@
        out, the browser drew its own dropdown, and a form where one control is
        the admin's and the one beside it is Chrome's blue list is two design
        systems in one row. #}
-    {% if field.widget in ("date", "datetime", "time") %}data-ff-date{% endif %}
+    {% if field.widget in ("date", "datetime", "time") %}data-ff-date {% endif %}
     {# Likewise: split into days/hours/minutes/seconds boxes, which is the
        format the text box was asking people to type out. #}
-    {% if field.widget == "duration" %}data-ff-duration{% endif %}
-    {% if field.widget == "decimal" %}step="{{ field.spec.decimal_places|step }}"{% endif %}
+    {% if field.widget == "duration" %}data-ff-duration {% endif %}
+    {% if field.widget == "decimal" %}step="{{ field.spec.decimal_places|step }}" {% endif %}
     {# `money` rarely carries a `decimal_places` of its own -- Postgres's
        `money` type is fixed at two, and nothing in the column tells the
        adapter that, so the box assumes cents rather than whole units when
        the spec is silent. #}
-    {% if field.widget == "money" %}step="{{ (field.spec.decimal_places or 2)|step }}"{% endif %}
-    {% if field.widget == "bits" %}pattern="[01]*" inputmode="numeric"{% endif %}
+    {% if field.widget == "money" %}step="{{ (field.spec.decimal_places or 2)|step }}" {% endif %}
+    {% if field.widget == "bits" %}pattern="[01]*" inputmode="numeric" {% endif %}
     {# A client-side hint only -- `ipaddress.ip_interface` in `_parse_inet` is
        what actually validates, so the pattern only has to be permissive
        enough to admit every shape that passes there. #}
@@ -511,9 +513,9 @@
       spellcheck="false"
       data-ff-mac
     {% endif %}
-    {% if field.spec.max_length %}maxlength="{{ field.spec.max_length }}"{% endif %}
-    {% if field.spec.placeholder %}placeholder="{{ field.spec.placeholder }}"{% endif %}
-    {% if field.required %}required{% endif %}
-    {% if field.errors %}aria-invalid="true"{% endif %}
+    {% if field.spec.max_length %}maxlength="{{ field.spec.max_length }}" {% endif %}
+    {% if field.spec.placeholder %}placeholder="{{ field.spec.placeholder }}" {% endif %}
+    {% if field.required %}required {% endif %}
+    {% if field.errors %}aria-invalid="true" {% endif %}
   />
 {% endmacro %}

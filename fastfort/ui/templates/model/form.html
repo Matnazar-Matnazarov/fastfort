@@ -76,7 +76,7 @@
     class="ff-mt-4"
     method="post"
     action="{{ action_url }}"
-    {% if form.needs_multipart %}enctype="multipart/form-data"{% endif %}
+    {% if form.needs_multipart %}enctype="multipart/form-data" {% endif %}
     novalidate
   >
     <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
@@ -105,7 +105,7 @@
                             and (settings.ui.map_tile_url or geometry_kind != "POINT")) %}
           <div
             class="ff-field{% if wide %} ff-field--wide{% endif %}"
-            {% if field.errors %}data-invalid="true"{% endif %}
+            {% if field.errors %}data-invalid="true" {% endif %}
           >
             <label class="ff-label" for="ff-{{ field.name }}">
               {{ _(field.label) }}
@@ -121,7 +121,7 @@
               {{ textarea_control(field) }}
             {% elif field.widget == "geometry" %}
               {{ geometry_control(field, settings.ui.map_tile_url, settings.ui.map_center,
-                                   settings.ui.map_attribution) }}
+                                   settings.ui.map_attribution, settings.ui.map_max_zoom) }}
             {% elif field.widget in ("file", "image") %}
               {{ file_control(field, media_url, settings.media.upload_limit, _) }}
             {% elif field.widget == "color" %}
@@ -173,7 +173,7 @@
            to. Script-only: without it, closing a window from a click needs
            `window.close()` regardless, so the link is the best available
            fallback and simply shows the list in the popup instead. #}
-        {% if popup %}data-ff-popup-cancel{% endif %}
+        {% if popup %}data-ff-popup-cancel {% endif %}
       >{{ _("Cancel") }}</a>
     </div>
   </form>

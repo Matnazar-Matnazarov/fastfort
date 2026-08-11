@@ -44,11 +44,20 @@
   //: The deepest level a tile server has pictures for. Standard OpenStreetMap
   //: tiles stop at 19; asking for 20 returns a 404, and a failed tile is a
   //: blank square, so this is a ceiling on *requests* rather than on the view.
-  const MAX_TILE_ZOOM = 19;
-  //: How far the view itself goes. Past `MAX_TILE_ZOOM` the last level is
-  //: scaled up rather than refetched -- blurrier, which is what every map does
-  //: past its own imagery, and far better than a + button that does nothing.
-  const MAX_ZOOM = 21;
+  //:
+  //: It was a constant, which made it wrong for every source that is not OSM.
+  //: A project naming a layer that serves 22 got a map that stopped fetching
+  //: three levels early and scaled instead -- blurry where it had no need to
+  //: be. `ui.map_max_zoom` sets it per map, because the tile URL is per map.
+  const DEFAULT_TILE_ZOOM = 19;
+  //: The deepest anything is worth asking for, whatever the setting says. A
+  //: mistyped 30 would otherwise be a grid of 404s.
+  const TILE_ZOOM_CEILING = 24;
+  //: How far the view itself goes past the last level with pictures. Two, and
+  //: no more: the last level is scaled up rather than refetched, and a fourfold
+  //: enlargement is the point at which "detailed" stops being a fair
+  //: description of what is on screen.
+  const VIEW_ZOOM_HEADROOM = 2;
   const MIN_ZOOM = 1;
   /* The projection is undefined at the poles and grows without bound towards
    * them; every slippy map clamps at the latitude that makes the world square. */
@@ -291,6 +300,14 @@
     constructor(input) {
       this.input = input;
       this.template = input.dataset.ffMap;
+      // Two ceilings, because they answer different questions: how deep the
+      // server has pictures, and how far the view may go past them.
+      this.maxTileZoom = clamp(
+        Number(input.dataset.ffMapMaxZoom) || DEFAULT_TILE_ZOOM,
+        MIN_ZOOM,
+        TILE_ZOOM_CEILING
+      );
+      this.maxZoom = this.maxTileZoom + VIEW_ZOOM_HEADROOM;
       this.kind = (input.dataset.ffGeometryKind || "POINT").toUpperCase();
       this.srid = Number(input.dataset.ffSrid) || 4326;
       this.editable = EDITABLE.has(this.kind);
@@ -489,7 +506,7 @@
           this.center = found;
           // Close enough to see a street, which is the scale somebody asking
           // "where am I" is asking at.
-          this.zoom = Math.max(this.zoom, 15);
+          this.zoom = Math.min(Math.max(this.zoom, 15), this.maxZoom);
           this.write();
           this.draw();
         },
@@ -582,7 +599,7 @@
     }
 
     zoomBy(step, event) {
-      const next = clamp(this.zoom + step, MIN_ZOOM, MAX_ZOOM);
+      const next = clamp(this.zoom + step, MIN_ZOOM, this.maxZoom);
       if (next === this.zoom) return;
       // Zoom towards the pointer, so the place under it stays under it.
       if (event) {
@@ -816,6 +833,23 @@
         tiles: new Map(),
         pending: 0,
         loaded: 0,
+        /* Tile positions are written relative to this, not to the world.
+         *
+         * At zoom 19 a tile's world coordinate is around 93 million pixels,
+         * which needs 27 bits. The compositor's transform pipeline is
+         * single-precision -- 24 bits of mantissa -- so anything past 2^24 is
+         * rounded. At scale 1 that was invisible, because the layer's translate
+         * and the tile's translate rounded the same way and the errors
+         * cancelled. The moment the layer was scaled they stopped cancelling,
+         * and the error came out multiplied: at 2x every tile landed exactly
+         * 2^25 pixels off screen, and the map went blank while every tile was
+         * loaded and "visible".
+         *
+         * Set on the first draw and kept, so tiles already placed stay where
+         * they were. Panning grows the offsets again, but by tile widths rather
+         * than by world coordinates -- thousands, not hundreds of millions. */
+        originX: null,
+        originY: null,
       };
       this.tiles.append(layer.element);
       this.layers.set(zoom, layer);
@@ -826,11 +860,22 @@
      * holds world pixels of that level, so scaling it by 2^(zoom - z) puts them
      * where this zoom's pixels are and the backdrop stays registered with the
      * level on top of it rather than sliding around under it. */
+    /* Where each layer sits, in screen pixels.
+     *
+     * The subtraction happens here, in JavaScript's doubles, and only the small
+     * result reaches CSS. Handing the compositor two nine-figure numbers and
+     * asking it to cancel them is what broke the map past the tile ceiling --
+     * see the note on `layer.originX`. */
     position(originX, originY) {
       for (const layer of this.layers.values()) {
         const scale = 2 ** (this.zoom - layer.zoom);
+        // A layer created but not yet drawn has no origin; it has no tiles
+        // either, so where it sits does not matter until it does.
+        const anchorX = layer.originX ?? 0;
+        const anchorY = layer.originY ?? 0;
         layer.element.style.transform =
-          `translate(${-originX}px, ${-originY}px) scale(${scale})`;
+          `translate(${anchorX * scale - originX}px, ${anchorY * scale - originY}px) ` +
+          `scale(${scale})`;
       }
     }
 
@@ -848,7 +893,7 @@
        * disabled button, nothing -- which reads as the map having broken rather
        * than as the map having run out of pictures. Every map application in
        * the world keeps zooming past its imagery and simply shows it larger, so
-       * this does the same: past `MAX_TILE_ZOOM` the last level is scaled up,
+       * this does the same: past `maxTileZoom` the last level is scaled up,
        * which the layer transform was already doing for the fraction of a
        * second after every other zoom.
        *
@@ -856,7 +901,7 @@
        * tile level's own pixels, because that is the grid the server serves;
        * the marker, the shape and the handles stay in the view's pixels, which
        * is why only this block is converted and nothing below it is. */
-      const tileZoom = Math.min(this.zoom, MAX_TILE_ZOOM);
+      const tileZoom = Math.min(this.zoom, this.maxTileZoom);
       const factor = 2 ** (this.zoom - tileZoom);
       const span = 2 ** tileZoom;
       const tileOriginX = originX / factor;
@@ -867,11 +912,16 @@
         y: Math.floor((tileOriginY + height / factor) / TILE),
       };
 
-      this.zoomIn.disabled = this.zoom >= MAX_ZOOM;
+      this.zoomIn.disabled = this.zoom >= this.maxZoom;
       this.zoomOut.disabled = this.zoom <= MIN_ZOOM;
 
       const layer = this.layerFor(tileZoom);
       this.current = tileZoom;
+      // Anchored on the top-left tile of the first view drawn at this level.
+      if (layer.originX === null) {
+        layer.originX = first.x * TILE;
+        layer.originY = first.y * TILE;
+      }
       // Zooming out and back lands on a level that already exists but sits
       // under the one that replaced it, where a stale half-screen of tiles
       // would cover the fresh ones. Appending a node already in the tree moves
@@ -903,7 +953,8 @@
           // Positioned in the layer's own coordinates. The layer's transform is
           // what turns these into screen pixels, which is why a zoom moves one
           // element instead of every tile.
-          image.style.transform = `translate(${x * TILE}px, ${y * TILE}px)`;
+          image.style.transform =
+            `translate(${x * TILE - layer.originX}px, ${y * TILE - layer.originY}px)`;
           layer.pending += 1;
 
           // Counted exactly once, however it ends: loaded, failed, or panned off
@@ -980,7 +1031,7 @@
       // `2 ** this.zoom`, not the tile level's span: the shape and the handles
       // are placed in the *view's* pixels, and `nearestCopy` needs the width of
       // the world at that zoom to find which copy of it the map is over. Past
-      // MAX_TILE_ZOOM the two differ, and using the tile span here put every
+      // the tile ceiling the two differ, and using the tile span here put every
       // vertex a whole world to one side.
       this.drawShape(originX, width, 2 ** this.zoom);
     }

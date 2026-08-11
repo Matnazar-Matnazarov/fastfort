@@ -962,7 +962,8 @@
       if (this.searchEl) this.searchEl.value = "";
       this.refreshList();
       place(this.panel, this.trigger);
-      this.searchEl?.focus();
+      // preventScroll: see the note on DatePicker.focusInside.
+      this.searchEl?.focus({ preventScroll: true });
     }
 
     close() {
@@ -1147,6 +1148,12 @@
   const YEARS_PER_PAGE = 12;
 
   const pad = (value) => String(value).padStart(2, "0");
+
+  /* Defined here as well as in fastfort-geo.js: the two files are separate
+   * bundles and therefore separate scopes, and a helper "obviously available"
+   * from the other one is a ReferenceError at runtime -- which is how the whole
+   * clock half of the date picker came to do nothing at all. */
+  const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
   const iso = (date) =>
     `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -1616,7 +1623,11 @@
     focusInside() {
       const target =
         this.panel.querySelector('[tabindex="0"]') ?? this.panel.querySelector(".ff-combo__button");
-      target?.focus();
+      // `preventScroll`, because the panel is positioned against a trigger that
+      // may be halfway down a long form: focusing a day inside a panel the
+      // browser has only just been shown scrolls it into view, and takes the
+      // page with it. The jump reads as the layout breaking on every click.
+      target?.focus({ preventScroll: true });
     }
 
     pick(stamp) {
@@ -2649,7 +2660,9 @@
         });
         document.body.append(scrim);
       }
-      panel.querySelector("input, select, button")?.focus();
+      // Same reason as the combobox: the filter panel is below the fold on a
+      // long list, and focusing into it must not scroll the table away.
+      panel.querySelector("input, select, button")?.focus({ preventScroll: true });
     } else {
       document.querySelector(".ff-scrim--filters")?.remove();
     }
