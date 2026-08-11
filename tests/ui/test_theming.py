@@ -187,6 +187,14 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
     this number by fifty bytes every time something lands is the failure mode the
     budget exists to catch, so a raise should be one considered step with room
     left in it -- and trimming the comments to squeeze under is never the fix.
+
+    Raised once, to 66 KB, for three things on the everyday path: thumbnails in
+    list columns, which put a picture where an image column used to print its
+    stored path; a confirm dialog whose actions are large enough to be read
+    before they are clicked; and the `clamp` helper the date picker's clock had
+    been calling without it being defined in that bundle at all -- a
+    ReferenceError on every keystroke, which is what made choosing an hour do
+    nothing.
     """
     js = CSS_DIR.parent / "js"
     scripts = [js / name for name in ALWAYS_LOADED]
@@ -194,7 +202,7 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
     assert not missing, f"the budget cannot pass by measuring nothing: {missing}"
 
     compressed = _gzipped(css.encode("utf-8"), *(path.read_bytes() for path in scripts))
-    assert compressed < 64_000, f"{compressed} bytes gzipped"
+    assert compressed < 66_000, f"{compressed} bytes gzipped"
 
 
 def test_the_whole_front_end_stays_within_budget(css: str) -> None:
@@ -206,19 +214,24 @@ def test_the_whole_front_end_stays_within_budget(css: str) -> None:
     package, so the split has to earn its place by being genuinely optional
     rather than by relabelling weight.
 
-    It has been raised three times before this round: from 40 KB when the
+    It has been raised four times before this round: from 40 KB when the
     related-object popup, the appearance panel, the filter drawer and the export
     menu landed together; again for the date picker, the duration boxes and the
-    map; and again for the upload card, the date picker's month and year views
-    and its clock, and the map's own controls. This round adds the geometry
-    editor for all seven shapes and the array, hstore, JSON and address editors.
-    Each was a feature rather than an accumulation.
+    map; again for the upload card, the date picker's month and year views and
+    its clock, and the map's own controls; and again for the geometry editor for
+    all seven shapes and the array, hstore, JSON and address editors. This round
+    adds thumbnails in list columns, a per-map zoom ceiling, and the note in
+    `fastfort-geo.js` explaining why tile coordinates are re-based -- a
+    single-precision overflow that blanked the map past zoom 19 while every
+    tile was loaded, which is exactly the kind of thing a future reader has to
+    be told rather than left to rediscover. Each was a feature rather than an
+    accumulation.
     """
     scripts = sorted((CSS_DIR.parent / "js").glob("*.js"))
     assert scripts, "the budget cannot pass by measuring nothing"
 
     compressed = _gzipped(css.encode("utf-8"), *(script.read_bytes() for script in scripts))
-    assert compressed < 84_000, f"{compressed} bytes gzipped"
+    assert compressed < 86_000, f"{compressed} bytes gzipped"
 
 
 # ---------------------------------------------------------------------------

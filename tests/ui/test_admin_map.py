@@ -359,15 +359,24 @@ async def test_the_view_zooms_further_than_the_tiles_go(client: httpx.AsyncClien
     asking past it returns a 404 and a failed tile is a blank square; the view
     keeps going and scales the last level up, which is what every map does past
     its own imagery.
+
+    Both were constants, and the request ceiling should never have been one: it
+    is a property of the tile source, which is configuration. A project naming a
+    layer that serves zoom 22 got a map that stopped fetching three levels early
+    and scaled instead -- blurry with no reason to be. It moved to
+    `ui.map_max_zoom`, and the view ceiling follows it.
     """
     script = (await client.get("/admin/static/js/fastfort-geo.js")).text
 
-    assert "const MAX_TILE_ZOOM = 19" in script
-    assert "const MAX_ZOOM = 21" in script
+    assert "const DEFAULT_TILE_ZOOM = 19" in script
+    assert "const VIEW_ZOOM_HEADROOM = 2" in script
+    # Per map, because the tile URL is per map.
+    assert "this.maxTileZoom = clamp(" in script
+    assert "this.maxZoom = this.maxTileZoom + VIEW_ZOOM_HEADROOM" in script
     # Tiles are requested at the tile level, never at the view's zoom.
     assert 'replace("{z}", String(tileZoom))' in script
     # And the button says so when there is nowhere further to go.
-    assert "this.zoomIn.disabled = this.zoom >= MAX_ZOOM" in script
+    assert "this.zoomIn.disabled = this.zoom >= this.maxZoom" in script
     assert "this.zoomOut.disabled = this.zoom <= MIN_ZOOM" in script
 
 

@@ -145,6 +145,10 @@ dev = [
 target-version = "py311"
 line-length = 100
 src = ["fastfort", "tests"]
+# A separate repository that happens to sit inside this checkout, with its own
+# ruff configuration. Linting it from here reports errors nobody working in this
+# repo can act on.
+extend-exclude = ["fastfort-web"]
 
 [tool.ruff.lint]
 select = [

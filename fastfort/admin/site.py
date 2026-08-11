@@ -618,7 +618,12 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 spec, columns, query, params, list_url(model_key), context_translator, model_admin
             ),
             "rows": _rows(
-                model_admin, spec, page_result.items, columns, f"{admin_url}/{model_key}"
+                model_admin,
+                spec,
+                page_result.items,
+                columns,
+                f"{admin_url}/{model_key}",
+                media_url=f"{admin_url}/media",
             ),
             "filters": filter_controls,
             # Named in the delete confirmation, so it says what else goes.
@@ -1890,8 +1895,19 @@ def _rows(
     items: tuple[Any, ...],
     columns: tuple[str, ...],
     base: str,
+    media_url: str = "",
 ) -> list[dict[str, Any]]:
     links = admin.link_columns()
+    # An image column in `list_display` used to print its stored path, which is
+    # a string nobody reads and the one thing a picture answers instantly --
+    # "which of these is the right product". The widget the *form* would draw is
+    # the authority here, so a plain `String` that `formfield_overrides` retyped
+    # as an image gets a thumbnail too; the column type alone could not know.
+    images = {
+        field.name
+        for field in spec
+        if field.type is FieldType.IMAGE or admin.widget_override(field) == "image"
+    }
     rows: list[dict[str, Any]] = []
 
     for obj in items:
@@ -1901,11 +1917,17 @@ def _rows(
         cells = []
         for name in columns:
             field = spec.get(name)
+            value = admin.cell(obj, name)
+            # Only when there is something to show: an empty path would be a
+            # broken-image icon in every row that has no picture yet.
+            thumb = f"{media_url}/{value}" if name in images and media_url and value else None
             cells.append(
                 {
-                    "value": admin.cell(obj, name),
+                    "value": value,
                     "boolean": field is not None and field.type is FieldType.BOOLEAN,
                     "numeric": field is not None and field.type in _NUMERIC_TYPES,
+                    "image": name in images,
+                    "thumb": thumb,
                     # The first column links to the row, which is how people
                     # expect to open a record from a table.
                     "url": change_url if name in links else None,

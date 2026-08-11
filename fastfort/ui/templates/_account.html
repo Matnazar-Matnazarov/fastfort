@@ -14,7 +14,7 @@
         <span class="ff-account__meta ff-truncate">{{ user_identity }}</span>
       {% else %}
         <span class="ff-account__meta">
-          {% if is_superuser %}{{ _("Superuser") }}{% else %}{{ _("Staff") }}{% endif %}
+          {% if is_superuser %}{{ _("Superuser") }}{% else %}{{ _("Staff") }} {% endif %}
         </span>
       {% endif %}
     </span>

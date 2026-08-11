@@ -95,7 +95,7 @@
           <a
             class="ff-nav-item"
             href="{{ admin_url }}/"
-            {% if current_key is none %}aria-current="page"{% endif %}
+            {% if current_key is none %}aria-current="page" {% endif %}
           >
             <span class="ff-nav-item__icon">{{ ff_icon("dashboard") }}</span>
             <span class="ff-collapsible">{{ _("Dashboard") }}</span>
@@ -110,7 +110,7 @@
                 <a
                   class="ff-nav-item"
                   href="{{ item.url }}"
-                  {% if item.key == current_key %}aria-current="page"{% endif %}
+                  {% if item.key == current_key %}aria-current="page" {% endif %}
                   title="{{ _(item.title) }}"
                 >
                   {# `list` when a model declared nothing, so every row lines up

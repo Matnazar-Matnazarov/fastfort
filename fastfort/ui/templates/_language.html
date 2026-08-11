@@ -45,7 +45,7 @@
            reading "Русский" with an English voice. #}
         lang="{{ choice.code }}"
         data-ff-lang="{{ choice.name|lower }} {{ choice.english|lower }} {{ choice.code }}"
-        {% if choice.code == language %}aria-current="true"{% endif %}
+        {% if choice.code == language %}aria-current="true" {% endif %}
       >
         <span class="ff-menu-item__lead" aria-hidden="true">{{ choice.flag }}</span>
         <span class="ff-menu-item__label ff-truncate">

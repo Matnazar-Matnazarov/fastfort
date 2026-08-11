@@ -198,3 +198,39 @@
 :root[data-ff-theme="dark"] .ff-switch__track::after {
   background: oklch(0.97 0.004 var(--ff-h));
 }
+
+/* ===========================================================================
+ * Thumbnails in a list column
+ *
+ * An image column used to render its stored path. A fixed box rather than an
+ * intrinsic size: rows have to stay the same height whatever the picture's
+ * aspect ratio, or a table of products combs into a ragged column that is
+ * harder to scan than the paths were.
+ * ======================================================================== */
+
+.ff-thumb {
+  display: block;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--ff-radius-sm);
+  border: 1px solid var(--ff-border);
+  background: var(--ff-surface-sunken);
+  /* `cover`, so a portrait and a landscape photo occupy the same box without
+   * either being squashed. */
+  object-fit: cover;
+}
+
+/* The row that has no picture yet. Drawn rather than left blank so the column
+ * keeps its width and the rows keep their height. */
+.ff-thumb--empty {
+  position: relative;
+  border-style: dashed;
+}
+
+.ff-thumb--empty::after {
+  content: "";
+  position: absolute;
+  inset: 30%;
+  border-radius: 2px;
+  background: var(--ff-border);
+}
