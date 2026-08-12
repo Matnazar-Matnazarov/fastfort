@@ -10,53 +10,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
-
-- **The calendar spells the month.** It took its month and weekday names from
-  the browser's `Intl`, which has none for Uzbek -- one of the eleven languages
-  the admin speaks -- and falls back to CLDR root: an otherwise Uzbek page
-  showed "2026 M09" over a row of English weekdays. The names now come from the
-  catalogue wherever `Intl` cannot supply them, and from `Intl` where it can, so
-  the other ten keep its own composition -- Japanese writes the year first and
-  Russian appends "г.", and no list of names knows that.
-- **A `time` column gets the admin's own clock** rather than the browser's
-  dropdown. A form where one control is the admin's picker and the field beside
-  it is Chrome's blue list of hours is two design systems in one row. The panel
-  is the clock without the calendar.
-- **"Now" sets the hour it says it does.** It wrote the 24-hour number into a
-  box holding 1-12, so in every twelve-hour locale an afternoon click selected
-  nothing; and it wrote "09" where the option's value was "9", so it selected
-  nothing before ten in the morning either.
-- **Arabic weekday headings are seven different letters.** They were cut to two
-  characters, and every abbreviated Arabic weekday begins with the article
-  "ال" -- so all seven columns read the same. The cut is kept only where it
-  leaves seven distinct headings.
-
-- **A Tortoise connection the lifespan opened is now reachable from the views,
-  or else says why not.** Tortoise 1.1 keeps its connections in a `contextvars`
-  variable, and an ASGI server runs the lifespan in a different task from the
-  requests -- so `await Tortoise.init(...)` in a lifespan is invisible to every
-  view. Start-up looked healthy and the first page that touched the database was
-  a 500 carrying a bare "No TortoiseContext is currently active", which names no
-  fix. The backend now raises `ImproperlyConfigured` naming both ways out:
-  `_enable_global_fallback=True`, or `RegisterTortoise` from
-  `tortoise.contrib.fastapi`. The README's Tortoise snippet passes the flag.
-- **Sorting a list by a to-one relation** no longer returns a 500 on either
-  backend. The list header renders every sortable field as a link, so a list
-  showing a `category` column was one click from an error page: SQLAlchemy
-  raised `NotImplementedError` from `.asc()` on a relationship and Tortoise
-  answered "Filtering by relation is not possible". Both now order through the
-  key column beside the relation -- the same column filtering already used, and
-  what `order_by("category")` means to Django.
-- **A backward one-to-one is no longer offered as sortable or filterable.** Its
-  key lives on the other table, so there is no column on this side to name:
-  Tortoise raised, and SQLAlchemy quietly fell back to this model's own primary
-  key, which is the worse of the two because nothing failed.
-- The Tortoise adapter reads the column behind a relation from Tortoise's own
-  `source_field` rather than assembling `f"{name}_id"`, so a project that named
-  that column itself can be filtered and sorted like any other.
-
-## [0.3.0] - 2026-08-07
+## [0.3.0] - 2026-08-12
 
 ### Added
 
@@ -118,6 +72,96 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   green without it: everything spatial and everything vector asks the server
   first and skips.
 
+- **Thumbnails in list columns.** An image column printed its stored path, which
+  is the one thing a picture answers instantly. The control the *form* would
+  draw is the authority, so a plain `String` that `formfield_overrides` retyped
+  as an image gets one too; rows without a picture get a placeholder, so the
+  table does not comb.
+- **`ui.map_max_zoom`** -- the deepest level to request from the tile source.
+  It was a constant of 19, which is right for OpenStreetMap and wrong for every
+  layer that serves deeper: a project naming one that reaches 22 got a map three
+  levels blurrier than it needed to be. The view still zooms two levels past the
+  last one with pictures and scales it, which is what every map application does
+  and better than a button that stops responding.
+
+### Fixed
+
+- **The date picker's clock had never worked.** `DatePicker.clock()` called
+  `clamp`, which is defined only in `fastfort-geo.js` -- a different bundle and
+  therefore a different scope. Every call threw a `ReferenceError`, and a
+  listener that throws takes only itself down: choosing an hour did nothing,
+  "Done" closed the panel without applying anything, and clicking a day on a
+  `datetime-local` field left the value untouched. Nothing failed visibly, which
+  is why it shipped.
+- **A required date column got the browser's picker instead of the admin's.**
+  The renderer runs with `trim_blocks`, which drops the newline after
+  `{% endif %}`, so two conditional attributes on consecutive lines were emitted
+  with nothing between them: `data-ff-date` and `required` came out as the
+  single attribute `data-ff-daterequired`, and the selector matched nothing.
+  Forty-two attributes across six templates were affected -- `required` and
+  `aria-invalid` collided the same way, so a field carrying an error announced
+  neither.
+- **The map went blank past zoom 19 with every tile loaded.** A tile's world
+  coordinate at that level is around 93 million pixels, which needs 27 bits; the
+  compositor's transform pipeline is single-precision, with 24. At scale 1 the
+  rounding cancelled between the layer's translate and the tile's; the moment
+  the layer was scaled it stopped cancelling and came out multiplied, putting
+  every tile exactly 2^25 pixels off screen. Tiles are now placed against a
+  per-layer origin, so the subtraction happens in doubles and only the small
+  result reaches CSS.
+- **Opening a dropdown scrolled the page.** Focusing into a panel that has only
+  just been unhidden makes the browser scroll it into view, and the panel is
+  positioned against a trigger that may be halfway down a long form -- so the
+  whole page moved, about 120 pixels, on every click.
+- **The confirm dialog's actions are large enough to read.** They were the size
+  of a toolbar button, and this is the last thing between somebody and a row
+  that does not come back. The destructive one darkens on hover rather than
+  brightening: the filter washed its label towards the background on a
+  wide-gamut display.
+
+- **The calendar spells the month.** It took its month and weekday names from
+  the browser's `Intl`, which has none for Uzbek -- one of the eleven languages
+  the admin speaks -- and falls back to CLDR root: an otherwise Uzbek page
+  showed "2026 M09" over a row of English weekdays. The names now come from the
+  catalogue wherever `Intl` cannot supply them, and from `Intl` where it can, so
+  the other ten keep its own composition -- Japanese writes the year first and
+  Russian appends "г.", and no list of names knows that.
+- **A `time` column gets the admin's own clock** rather than the browser's
+  dropdown. A form where one control is the admin's picker and the field beside
+  it is Chrome's blue list of hours is two design systems in one row. The panel
+  is the clock without the calendar.
+- **"Now" sets the hour it says it does.** It wrote the 24-hour number into a
+  box holding 1-12, so in every twelve-hour locale an afternoon click selected
+  nothing; and it wrote "09" where the option's value was "9", so it selected
+  nothing before ten in the morning either.
+- **Arabic weekday headings are seven different letters.** They were cut to two
+  characters, and every abbreviated Arabic weekday begins with the article
+  "ال" -- so all seven columns read the same. The cut is kept only where it
+  leaves seven distinct headings.
+
+- **A Tortoise connection the lifespan opened is now reachable from the views,
+  or else says why not.** Tortoise 1.1 keeps its connections in a `contextvars`
+  variable, and an ASGI server runs the lifespan in a different task from the
+  requests -- so `await Tortoise.init(...)` in a lifespan is invisible to every
+  view. Start-up looked healthy and the first page that touched the database was
+  a 500 carrying a bare "No TortoiseContext is currently active", which names no
+  fix. The backend now raises `ImproperlyConfigured` naming both ways out:
+  `_enable_global_fallback=True`, or `RegisterTortoise` from
+  `tortoise.contrib.fastapi`. The README's Tortoise snippet passes the flag.
+- **Sorting a list by a to-one relation** no longer returns a 500 on either
+  backend. The list header renders every sortable field as a link, so a list
+  showing a `category` column was one click from an error page: SQLAlchemy
+  raised `NotImplementedError` from `.asc()` on a relationship and Tortoise
+  answered "Filtering by relation is not possible". Both now order through the
+  key column beside the relation -- the same column filtering already used, and
+  what `order_by("category")` means to Django.
+- **A backward one-to-one is no longer offered as sortable or filterable.** Its
+  key lives on the other table, so there is no column on this side to name:
+  Tortoise raised, and SQLAlchemy quietly fell back to this model's own primary
+  key, which is the worse of the two because nothing failed.
+- The Tortoise adapter reads the column behind a relation from Tortoise's own
+  `source_field` rather than assembling `f"{name}_id"`, so a project that named
+  that column itself can be filtered and sorted like any other.
 ## [0.2.1] - 2026-08-07
 
 ### Added
