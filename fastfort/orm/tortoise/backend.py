@@ -24,6 +24,7 @@ from tortoise.transactions import in_transaction
 
 from fastfort.core.exceptions import AdapterError, ImproperlyConfigured
 from fastfort.core.registry import default_model_key
+from fastfort.orm.base import UnitOfWork
 from fastfort.spec import ModelSpec
 
 from ..sqlalchemy.dialects import DialectProfile, profile_for
@@ -241,13 +242,21 @@ class TortoiseBackend:
     def adapter(
         self,
         model: type,
-        uow: TortoiseUnitOfWork,
+        uow: UnitOfWork,
         *,
         key: str | None = None,
         search_fields: tuple[str, ...] = (),
         select_related: tuple[str, ...] = (),
         prefetch_related: tuple[str, ...] = (),
     ) -> TortoiseAdapter:
+        # See the note in the SQLAlchemy backend: narrowing the parameter broke
+        # structural compatibility with `Backend` for every typed project.
+        if not isinstance(uow, TortoiseUnitOfWork):
+            raise TypeError(
+                f"TortoiseBackend.adapter() needs a unit of work from this backend, "
+                f"got {type(uow).__name__}. Use `backend.unit_of_work()`."
+            )
+
         spec = self.introspect(model, key=key or self._resolve_key(model))
         return TortoiseAdapter(
             model,

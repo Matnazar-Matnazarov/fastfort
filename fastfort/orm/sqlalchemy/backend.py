@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from fastfort.core.exceptions import AdapterError, ImproperlyConfigured
 from fastfort.core.registry import default_model_key
+from fastfort.orm.base import UnitOfWork
 from fastfort.spec import ModelSpec
 
 from .adapter import SQLAlchemyAdapter, constraint_message
@@ -233,13 +234,30 @@ class SQLAlchemyBackend:
     def adapter(
         self,
         model: type,
-        uow: SQLAlchemyUnitOfWork,
+        uow: UnitOfWork,
         *,
         key: str | None = None,
         search_fields: tuple[str, ...] = (),
         select_related: tuple[str, ...] = (),
         prefetch_related: tuple[str, ...] = (),
     ) -> SQLAlchemyAdapter:
+        # Typed as the protocol's `UnitOfWork`, not as this backend's own, and
+        # that is not cosmetic: parameter types are contravariant, so narrowing
+        # here made `SQLAlchemyBackend` structurally *incompatible* with
+        # `Backend`. Every project following the README and running mypy got
+        #
+        #   Argument "backend" to "FastFort" has incompatible type
+        #   "SQLAlchemyBackend"; expected "Backend | None"
+        #
+        # on the one line the documentation tells them to write. The narrowing
+        # happens below instead, where it is a runtime fact rather than a
+        # promise to callers.
+        if not isinstance(uow, SQLAlchemyUnitOfWork):
+            raise TypeError(
+                f"SQLAlchemyBackend.adapter() needs a unit of work from this backend, "
+                f"got {type(uow).__name__}. Use `backend.unit_of_work()`."
+            )
+
         spec = self.introspect(model, key=key or self._resolve_key(model))
         return SQLAlchemyAdapter(
             model,

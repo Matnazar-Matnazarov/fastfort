@@ -10,6 +10,30 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-12
+
+### Fixed
+
+- **Neither backend satisfied the protocol it implements.** `SQLAlchemyBackend`
+  and `TortoiseBackend` narrowed `adapter(uow=...)` to their own unit of work,
+  and parameter types are contravariant -- so narrowing one made the class
+  structurally incompatible with `Backend`. Every project that follows the
+  README and runs mypy got
+
+  ```
+  Argument "backend" to "FastFort" has incompatible type
+  "SQLAlchemyBackend"; expected "Backend | None"
+  ```
+
+  on the one line the documentation tells them to write, with nothing to do
+  about it short of an ignore comment. `mypy --strict` over `fastfort/` passed
+  throughout, because nothing inside the package ever assigns a concrete backend
+  to a `Backend` -- the only place that happens is a project's own `main.py`, so
+  the error landed on users and never on CI.
+
+  Both now take the protocol's type and narrow inside, where a mismatch is a
+  `TypeError` naming the fix rather than an `AttributeError` three frames down.
+
 ## [0.3.0] - 2026-08-12
 
 ### Added
@@ -893,7 +917,8 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.1.0...v0.2.0
