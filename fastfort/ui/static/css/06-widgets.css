@@ -2627,22 +2627,33 @@ a.ff-upload__name {
  * string the parser accepts; see `_bind_range` in `admin/forms.py`.
  * ======================================================================== */
 
+/* Wraps, because the third control names its endpoints in words now and four
+ * words do not fit beside two date pickers in a form column. Given room it sits
+ * on the same line; given a narrow form it drops onto its own, which is a whole
+ * line better than three controls squeezed to the point where none of them can
+ * show what they hold. */
 .ff-range-field {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--ff-space-2);
 }
 
-/* Fixed rather than flexed: the options are four short bracket pairs, and
- * letting the select grow with its siblings would stretch a control with
- * nothing to fill the extra width with. */
+/* A wrapper rather than the select itself: the combobox hides the native element
+ * and draws its own beside it, so a width set on the select sizes the copy that
+ * is no longer on screen. Both the enhanced control and the bare `<select>` a
+ * reader without JavaScript gets are children of this. */
 .ff-range-field__bounds {
-  flex: 0 0 auto;
-  width: 5rem;
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.ff-range-field__bounds > .ff-select {
+  width: 100%;
 }
 
 .ff-range-field__bound {
-  flex: 1 1 auto;
+  flex: 1 1 7rem;
   min-width: 0;
 }
 

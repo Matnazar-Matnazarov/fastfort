@@ -426,17 +426,6 @@
       data-ff-range
       data-ff-bound-type="{{ field.spec.bounds.bound.value if field.spec.bounds else "string" }}"
     >
-      <select
-        class="ff-select ff-select--sm ff-range-field__bounds"
-        name="{{ field.name }}__bounds"
-        aria-label="{{ _("Bounds") }}"
-        {% if field.errors %}aria-invalid="true" {% endif %}
-      >
-        <option value="[)" {% if field.range_bounds == "[)" %}selected{% endif %}>[ … )</option>
-        <option value="(]" {% if field.range_bounds == "(]" %}selected{% endif %}>( … ]</option>
-        <option value="[]" {% if field.range_bounds == "[]" %}selected{% endif %}>[ … ]</option>
-        <option value="()" {% if field.range_bounds == "()" %}selected{% endif %}>( … )</option>
-      </select>
       <input
         class="ff-input ff-range-field__bound"
         id="ff-{{ field.name }}"
@@ -457,6 +446,36 @@
         {% if bound_input in ("date", "datetime-local", "time") %}data-ff-date {% endif %}
         {% if field.errors %}aria-invalid="true" {% endif %}
       />
+      {#
+        Last, and in its own box.
+
+        Last because it qualifies the two dates rather than introducing them:
+        put first, the control a reader met before being asked for the period
+        itself was the one asking about its endpoints.
+
+        In its own box because the combobox inserts its replacement *beside* the
+        native select and then adopts it, so a width set on the select styles the
+        element that is now visually hidden -- the sizing has to live on a
+        wrapper that survives the swap.
+
+        Words rather than `[ … )`: interval notation is exact and unreadable, and
+        what it rendered as on the page was four rows of brackets and an ellipsis
+        that looked like a control which had failed to load its options.
+      #}
+      <span class="ff-range-field__bounds">
+        <select
+          class="ff-select ff-select--sm"
+          name="{{ field.name }}__bounds"
+          aria-label="{{ _("Bounds") }}"
+          data-ff-search="never"
+          {% if field.errors %}aria-invalid="true" {% endif %}
+        >
+          <option value="[)" {% if field.range_bounds == "[)" %}selected{% endif %}>{{ _("Start included") }}</option>
+          <option value="(]" {% if field.range_bounds == "(]" %}selected{% endif %}>{{ _("End included") }}</option>
+          <option value="[]" {% if field.range_bounds == "[]" %}selected{% endif %}>{{ _("Both ends included") }}</option>
+          <option value="()" {% if field.range_bounds == "()" %}selected{% endif %}>{{ _("Neither end included") }}</option>
+        </select>
+      </span>
     </div>
   {% endif %}
 {% endmacro %}
