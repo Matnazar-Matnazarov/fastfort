@@ -398,6 +398,11 @@
       this.current = null;
       this.backdrop = null;
 
+      //: The canvas's measured size, and the pending redraw. Both exist to keep
+      //: a drag off the layout path -- see `size()` and `requestDraw()`.
+      this.box = null;
+      this.frame = 0;
+
       const button = (name, label, run) => {
         const control = el(
           "button",
@@ -454,7 +459,11 @@
       this.draw();
       // A form field can be inside a panel that is hidden at build time, where
       // every tile would be laid out against a width of zero.
-      new ResizeObserver(() => this.draw()).observe(this.canvas);
+      new ResizeObserver(() => {
+        // The cached size is exactly what just stopped being true.
+        this.box = null;
+        this.draw();
+      }).observe(this.canvas);
 
       this.input.addEventListener("change", () => {
         /* `write()` puts the edited shape into this input and dispatches this
@@ -565,9 +574,49 @@
       );
     }
 
+    /* The canvas's size, measured once and kept until it changes.
+     *
+     * `getBoundingClientRect` cannot answer without laying the page out first,
+     * and this was called twice for every `pointermove` of a drag -- once by
+     * `panBy` for the vertical clamp and once by `draw` -- each time
+     * immediately after the previous move had written a transform. A read that
+     * follows a write is a *synchronous* layout, and a drag is hundreds of
+     * those a second: the map felt heavy to move and the click that ends a drag
+     * took a visible moment to place its point, because the main thread was
+     * still laying out the previous frame.
+     *
+     * Only width and height are cached. `atEvent` needs `top` and `left` as
+     * well, and those move when the page scrolls -- so it keeps its own read,
+     * which is fine because it runs once per gesture rather than once per
+     * frame.
+     */
     size() {
-      const box = this.canvas.getBoundingClientRect();
-      return { width: box.width, height: box.height };
+      if (this.box === null) {
+        const box = this.canvas.getBoundingClientRect();
+        this.box = { width: box.width, height: box.height };
+      }
+      return this.box;
+    }
+
+    /* One redraw per frame, however many events ask for one.
+     *
+     * A pointer reports at its own sample rate, which on current hardware is
+     * several times the display's -- so a drag handled event by event redraws
+     * the map three or four times for every frame the screen actually shows,
+     * and three of those four are thrown away before anybody sees them. The
+     * browser coalesces the *events* it delivers; what a listener does with one
+     * is the listener's own problem, and this is that.
+     *
+     * `draw()` stays public and synchronous for the paths that want the map
+     * correct before the next line runs: the first render, and the resize that
+     * follows a panel being unhidden.
+     */
+    requestDraw() {
+      if (this.frame) return;
+      this.frame = requestAnimationFrame(() => {
+        this.frame = 0;
+        this.draw();
+      });
     }
 
     /* Drag the map.
@@ -595,7 +644,7 @@
         lat: yToLat(vertical, this.zoom),
         lng: wrapLng(xToLng(x, this.zoom)),
       };
-      this.draw();
+      this.requestDraw();
     }
 
     zoomBy(step, event) {
@@ -613,7 +662,7 @@
       } else {
         this.zoom = next;
       }
-      this.draw();
+      this.requestDraw();
     }
 
     atEvent(event) {
@@ -713,7 +762,7 @@
         const { lat, lng } = this.atEvent(moved);
         const points = this.vertices().map((point, at) => (at === index ? [lng, lat] : point));
         this.setVertices(points);
-        this.draw();
+        this.requestDraw();
       };
       const drop = () => {
         handle.removeEventListener("pointermove", move);
@@ -880,6 +929,12 @@
     }
 
     draw() {
+      // A queued redraw is now redundant: this *is* that redraw, earlier.
+      if (this.frame) {
+        cancelAnimationFrame(this.frame);
+        this.frame = 0;
+      }
+
       const { width, height } = this.size();
       if (!width || !height) return;
 
