@@ -305,6 +305,33 @@ async def test_the_boot_script_is_served(client: httpx.AsyncClient) -> None:
     assert "ff:theme" in response.text
 
 
+async def test_the_current_model_can_be_found_in_the_nav_by_the_boot_script(
+    client: httpx.AsyncClient,
+) -> None:
+    """`.ff-nav` scrolls by itself, so a browser starts it at zero on every
+    navigation and the current model was highlighted below the visible band.
+    `boot.js` scrolls it back into view before the first paint.
+
+    It finds its way there through four selectors that live in the template, not
+    in the script: `.ff-sidebar`, `.ff-nav`, `[aria-current="page"]`, and
+    `.ff-sidebar__footer` -- the last of which is how it knows the parser is past
+    `</nav>` and the items have real heights. Rename any of them and the sidebar
+    quietly goes back to marking "you are here" off screen, with every other test
+    still green. This is the check that makes that a failure.
+    """
+    boot = (await client.get("/admin/static/js/boot.js")).text
+    body = await page(client, "/admin/shop.product/")
+
+    for selector in (".ff-sidebar .ff-nav", ".ff-sidebar__footer", 'aria-current="page"'):
+        assert selector in boot, f"boot.js no longer looks for {selector}"
+
+    nav = re.search(r'<nav class="ff-nav[^"]*"[\s\S]*?</nav>', body)
+    assert nav, "the sidebar should render a .ff-nav"
+    assert 'aria-current="page"' in nav.group(0), "the current model should be marked in the nav"
+    assert '<div class="ff-sidebar__footer">' in body
+    assert body.index("</nav>") < body.index('<div class="ff-sidebar__footer">')
+
+
 async def test_the_script_route_serves_only_what_it_ships(
     client: httpx.AsyncClient,
 ) -> None:
