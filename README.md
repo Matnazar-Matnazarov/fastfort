@@ -197,6 +197,10 @@ the spec layer carries the `ChangeSet` an audit log would store and the
 field-masking it would need, but nothing writes one. Earlier versions of this
 README listed them as features. They were a plan.
 
+**Inline editing of related rows** is the other gap worth naming — Django's
+`InlineModelAdmin`, editing an invoice's lines on the invoice's own page. A
+related model is reachable, and editable, on its own page.
+
 ---
 
 ## Installation

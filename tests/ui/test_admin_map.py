@@ -419,3 +419,52 @@ async def test_a_failed_tile_is_asked_for_once_more(client: httpx.AsyncClient) -
     assert "let retried = false" in script
     # A different URL, so the browser's negative cache is not what answers.
     assert "retry=1" in script
+
+
+async def test_a_drag_does_not_redraw_faster_than_the_screen(
+    client: httpx.AsyncClient,
+) -> None:
+    """The map was slow to drag, and slow to accept the click that ends a drag.
+
+    Both had the same cause. `pointermove` fires at the pointer's sample rate,
+    which on current hardware is several times the display's, and every one of
+    them ran a full redraw -- so three of every four were painted over before
+    anybody saw them. The browser coalesces the events it delivers; what a
+    listener does with one is the listener's own problem.
+
+    So the pan, the zoom and a vertex being dragged all ask for a frame instead
+    of drawing directly, and `draw()` cancels a frame it is pre-empting so a
+    direct call and a queued one never both run.
+    """
+    script = (await client.get("/admin/static/js/fastfort-geo.js")).text
+
+    assert "requestAnimationFrame" in script
+    assert "cancelAnimationFrame" in script
+
+    # The three hot paths. Named individually because a regression here is one
+    # of them quietly going back to `this.draw()` while the others stay right,
+    # which is a map that is smooth to pan and slow to edit.
+    for method in ("panBy(dx, dy) {", "zoomBy(step, event) {", "grabHandle(event, index) {"):
+        body = script[script.index(method) :].split("\n    }", 1)[0]
+        assert "this.requestDraw()" in body, f"{method} should coalesce its redraw"
+
+
+async def test_the_size_of_the_canvas_is_not_measured_every_frame(
+    client: httpx.AsyncClient,
+) -> None:
+    """The other half of the same slowness, and the worse half.
+
+    `getBoundingClientRect` cannot answer without laying the page out, and it
+    was called twice per `pointermove` -- immediately after the previous move
+    had written a transform. A read that follows a write forces the layout to
+    happen synchronously, so a drag was hundreds of forced layouts a second.
+
+    Cached, and invalidated by the observer that already watches the canvas.
+    """
+    script = (await client.get("/admin/static/js/fastfort-geo.js")).text
+    size = script[script.index("    size() {") :].split("\n    }", 1)[0]
+
+    assert "if (this.box === null)" in size, "size() should answer from the cache"
+
+    observer = script[script.index("new ResizeObserver(") :].split("observe(", 1)[0]
+    assert "this.box = null" in observer, "a resize has to invalidate what it invalidated"

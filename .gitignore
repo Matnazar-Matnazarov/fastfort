@@ -231,3 +231,9 @@ test_api.db
 # MediaSettings.root defaults to a relative "media", written wherever the
 # process's cwd happens to be -- the sandbox's own uploads, not a deliverable.
 media/
+
+# The documentation site and demo live in their own repository, cloned here for
+# convenience. `git add -A` from the root would otherwise commit it as a stray
+# gitlink -- a submodule entry pointing at a commit, with no .gitmodules to
+# resolve it, which clones as an empty directory.
+/fastfort-web/
