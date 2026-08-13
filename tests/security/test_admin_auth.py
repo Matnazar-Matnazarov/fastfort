@@ -183,7 +183,7 @@ async def test_every_rejection_looks_identical(
     response = await sign_in(client, identity, password)
 
     assert response.status_code == 200
-    assert "do not match an account that can use the admin" in response.text
+    assert "do not match an account that can sign in here" in response.text
     # And no session was issued.
     assert (await client.get("/admin/")).status_code == 303
 

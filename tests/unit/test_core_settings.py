@@ -14,6 +14,7 @@ from fastfort.core.exceptions import ImproperlyConfigured
 from fastfort.core.settings import (
     AdminSettings,
     FastFortSettings,
+    RateLimitSettings,
     SecuritySettings,
 )
 
@@ -21,6 +22,15 @@ GOOD_SECRET = "n7Qw2xLp9vRt4KjM8sYzB3cF6hVdA1gE"  # 32 chars
 
 
 def settings(**kwargs: object) -> FastFortSettings:
+    """Settings as a project would get them, not as this suite is configured.
+
+    `conftest.py` turns the rate limiter off through the environment, because a
+    thousand tests arriving from one address would otherwise spend a budget
+    written for a room full of people. That is a fact about the harness, and it
+    must not leak into the tests that ask what the *shipped* defaults are -- an
+    explicit argument outranks the environment, so this pins it back.
+    """
+    kwargs.setdefault("rate_limit", RateLimitSettings())
     return FastFortSettings(secret_key=GOOD_SECRET, **kwargs)  # type: ignore[arg-type]
 
 
@@ -148,6 +158,7 @@ def test_default_settings_are_production_ready() -> None:
         ({"security": SecuritySettings(cookie_httponly=False)}, "cookie_httponly"),
         ({"security": SecuritySettings(csrf_enabled=False)}, "csrf_enabled"),
         ({"security": SecuritySettings(security_headers=False)}, "security_headers"),
+        ({"rate_limit": RateLimitSettings(enabled=False)}, "rate_limit.enabled"),
     ],
 )
 def test_unsafe_configuration_is_reported(kwargs: dict[str, object], expected: str) -> None:

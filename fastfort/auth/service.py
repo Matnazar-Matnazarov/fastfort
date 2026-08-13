@@ -20,6 +20,7 @@ from fastfort.core.exceptions import SecurityError
 from fastfort.core.hooks import Hook
 from fastfort.spec import Filter, FilterOperator, ListQuery
 
+from .addresses import client_address
 from .csrf import CsrfProtection
 from .lockout import Lockout, LockoutStore
 from .passwords import hash_password, needs_rehash, verify_password
@@ -33,7 +34,11 @@ if TYPE_CHECKING:
 __all__ = ["AdminAuth", "AuthResult"]
 
 #: One message for every failure mode. Anything more specific is an oracle.
-GENERIC_FAILURE = "Those credentials do not match an account that can use the admin."
+#:
+#: Worded without naming the admin, because the same call now answers the token
+#: endpoint as well, where `require_staff` is off and "an account that can use
+#: the admin" would be describing a check that was not performed.
+GENERIC_FAILURE = "Those credentials do not match an account that can sign in here."
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,9 +61,23 @@ class AdminAuth:
     # -- signing in ---------------------------------------------------------
 
     async def authenticate(
-        self, *, identity: str, password: str, address: str, request: Request | None = None
+        self,
+        *,
+        identity: str,
+        password: str,
+        address: str,
+        request: Request | None = None,
+        require_staff: bool = True,
     ) -> AuthResult:
-        """Verify credentials, or raise `SecurityError` with a generic message."""
+        """Verify credentials, or raise `SecurityError` with a generic message.
+
+        `require_staff` is what the admin means by a sign-in and is not what an
+        API means by one. The admin is a staff tool, so the default stays as it
+        was; the token endpoint in `api.py` passes `False` unless a project asks
+        otherwise, because an ordinary customer authenticating against an API is
+        not asking to be let into the admin and should not have to be staff to
+        be told their password was right.
+        """
         state = await self.lockout.check(address=address, identity=identity)
         if state.locked:
             raise SecurityError(
@@ -74,7 +93,12 @@ class AdminAuth:
         stored_hash = config.password_hash_of(user) if user is not None else ""
         correct = verify_password(password, stored_hash)
 
-        allowed = user is not None and correct and config.is_active(user) and config.is_staff(user)
+        allowed = (
+            user is not None
+            and correct
+            and config.is_active(user)
+            and (config.is_staff(user) or not require_staff)
+        )
         if not allowed:
             await self.lockout.record_failure(address=address, identity=identity)
             await self._fort.hooks.emit(
@@ -132,18 +156,22 @@ class AdminAuth:
     # -- request helpers ----------------------------------------------------
 
     def client_address(self, request: Request) -> str:
-        """The address to rate-limit against.
+        """The address to lock out against.
 
-        `X-Forwarded-For` is only trusted when the deployment says a proxy sets
-        it. Trusting it unconditionally would let any client send a fresh address
-        per attempt and never be locked out.
+        `X-Forwarded-For` is only read when the deployment says a proxy sets it,
+        and then it is counted from the *right*. This used to take the leftmost
+        entry, which is the conventional reading and the wrong one: the header
+        arrives with the request, so the left is what the sender wrote and each
+        proxy appends to the right of it. `X-Forwarded-For: 1.2.3.4` on every
+        attempt therefore bought a fresh lockout counter every time, which is the
+        whole of the defence this address is used for.
+
+        Shared with the rate limiter deliberately -- two answers to "who is this"
+        is one of them being wrong.
         """
-        if self._fort.settings.security.trust_forwarded_for:
-            forwarded = request.headers.get("x-forwarded-for", "")
-            if forwarded:
-                return forwarded.split(",")[0].strip()
-        client = request.client
-        return client.host if client else "unknown"
+        return client_address(
+            request.scope, forwarded_depth=self._fort.settings.security.effective_forwarded_depth
+        )
 
     # -- storage ------------------------------------------------------------
 

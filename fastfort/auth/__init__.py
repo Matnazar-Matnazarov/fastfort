@@ -11,11 +11,20 @@ refused for a growing delay.
 
 from __future__ import annotations
 
+from .addresses import client_address
+from .api import bearer_user, build_auth_router
 from .csrf import CsrfProtection
 from .lockout import InMemoryLockoutStore, Lockout, LockoutState, LockoutStore
 from .passwords import hash_password, validate_password, verify_password
 from .service import AdminAuth, AuthResult
 from .sessions import AdminSession, SessionCodec
+from .tokens import (
+    InMemoryRefreshTokenStore,
+    RefreshRecord,
+    RefreshTokenStore,
+    TokenPair,
+    TokenService,
+)
 from .user_config import UserModelConfig
 
 __all__ = [
@@ -24,11 +33,19 @@ __all__ = [
     "AuthResult",
     "CsrfProtection",
     "InMemoryLockoutStore",
+    "InMemoryRefreshTokenStore",
     "Lockout",
     "LockoutState",
     "LockoutStore",
+    "RefreshRecord",
+    "RefreshTokenStore",
     "SessionCodec",
+    "TokenPair",
+    "TokenService",
     "UserModelConfig",
+    "bearer_user",
+    "build_auth_router",
+    "client_address",
     "hash_password",
     "validate_password",
     "verify_password",

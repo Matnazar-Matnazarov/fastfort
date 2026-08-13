@@ -45,6 +45,17 @@ DEFAULT_URLS = {
 }
 
 
+# Every test in the suite reaches the admin from the same client address, so a
+# per-address budget that is generous for a room full of people is spent in a few
+# minutes by a thousand tests -- and `pytest-randomly` would make which test paid
+# for it different on every run. Turned off here rather than in each of the
+# twenty modules that build their own settings, and turned back on by the tests
+# that are actually about it: an explicit `rate_limit=` argument outranks the
+# environment in pydantic-settings, which is what `tests/security/test_rate_limit.py`
+# relies on.
+os.environ.setdefault("FASTFORT_RATE_LIMIT__ENABLED", "false")
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption(
         "--db",
