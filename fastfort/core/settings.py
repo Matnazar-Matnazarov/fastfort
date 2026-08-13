@@ -178,6 +178,74 @@ class MediaSettings(BaseModel):
     #: gigabytes it actually was sitting fully in memory first.
     upload_limit: Annotated[int, Field(ge=1, le=1_000_000_000)] = 10_000_000
 
+    #: What a plain file field accepts, without the leading dot. Deliberately a
+    #: short list of things worth storing rather than "everything that is not
+    #: obviously a program": an allow-list is wrong in the direction of a refused
+    #: upload somebody can ask about, and a deny-list is wrong in the direction
+    #: of a stored file nobody notices until it is served back.
+    #:
+    #: `fastfort.admin.files.DANGEROUS_EXTENSIONS` is checked *as well*, and
+    #: wins. Adding `html` here does not make an HTML upload possible, and that
+    #: is intentional -- uploads are served from the admin's own origin, so a
+    #: document the browser executes there runs with the session cookie.
+    allowed_extensions: frozenset[str] = frozenset(
+        {
+            "png", "jpg", "jpeg", "gif", "webp", "avif", "ico",
+            "pdf", "txt", "csv", "md", "rtf",
+            "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+            "odt", "ods", "odp",
+            "zip", "gz", "tgz", "bz2", "7z", "rar",
+            "mp3", "mp4", "m4a", "mov", "webm", "ogg", "wav", "avi", "flac",
+        }
+    )  # fmt: skip
+
+    #: What an image field accepts. Narrower than the above on purpose, and
+    #: without `svg`: an SVG is a document that can carry a `<script>` element,
+    #: not a picture, and the admin serves uploads from the origin that holds
+    #: the session cookie.
+    allowed_image_extensions: frozenset[str] = frozenset(
+        {"png", "jpg", "jpeg", "gif", "webp", "avif"}
+    )
+
+    @field_validator("allowed_extensions", "allowed_image_extensions", mode="before")
+    @classmethod
+    def _normalise_extensions(cls, value: object) -> object:
+        """Accept `.PNG`, `PNG` and `png` as the same thing.
+
+        A leading dot is how everybody writes an extension down, and a caller who
+        copies one out of a filename gets the case that filename happened to
+        have. Neither should be the difference between a working allow-list and
+        one that silently matches nothing.
+        """
+        if isinstance(value, str) or not isinstance(value, (list, tuple, set, frozenset)):
+            return value
+        return frozenset(
+            str(entry).strip().lstrip(".").lower() for entry in value if str(entry).strip()
+        )
+
+    @model_validator(mode="after")
+    def _no_dangerous_extension_is_allowed(self) -> MediaSettings:
+        """A project cannot allow-list its way into serving executable uploads.
+
+        Caught at start-up rather than at upload time, because the failure this
+        prevents is a stored cross-site scripting hole and the moment to learn
+        about it is while writing the settings, not while reading the logs.
+        """
+        from fastfort.admin.files import DANGEROUS_EXTENSIONS
+
+        for name in ("allowed_extensions", "allowed_image_extensions"):
+            overlap = sorted(getattr(self, name) & DANGEROUS_EXTENSIONS)
+            if overlap:
+                listed = ", ".join("." + entry for entry in overlap)
+                raise ImproperlyConfigured(
+                    f"media.{name} includes {listed}, which the admin will never store. "
+                    "Uploads are served back from the admin's own origin, so a file a "
+                    "browser or a server can execute is script running with the session "
+                    "cookie. Remove those entries, or serve those files from a separate "
+                    "origin that FastFort does not gate."
+                )
+        return self
+
 
 class UISettings(BaseModel):
     """Appearance. Everything here maps onto a CSS custom property at runtime.

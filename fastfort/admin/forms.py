@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 from fastfort.auth.passwords import hash_password, validate_password
 from fastfort.spec import Choice, FieldSpec, FieldType
 
-from .files import UploadedFile, delete_upload, save_upload, stored_path
+from .files import UploadedFile, check_upload, delete_upload, save_upload, stored_path
 from .values import _identity, check_bounds, parse_value, range_parts, render_value
 from .widgets import (
     CLEAR_SUFFIX,
@@ -475,6 +475,27 @@ class Form:
                     f"That file is too large. The limit is {self._media.upload_limit:,} bytes."
                 )
                 return
+
+            # Before anything is staged, so a refused upload is a message beside
+            # the field rather than bytes that `commit_files` later writes.
+            # An image field gets the narrower list: `photo` meaning "a picture"
+            # and meaning "a zip archive" are different promises to the reader
+            # looking at the thumbnail column.
+            image = spec.type is FieldType.IMAGE
+            problem = check_upload(
+                upload.filename,
+                upload.content,
+                allowed=(
+                    self._media.allowed_image_extensions
+                    if image
+                    else self._media.allowed_extensions
+                ),
+                kind="image" if image else "file",
+            )
+            if problem is not None:
+                form_field.errors.append(problem)
+                return
+
             relative = stored_path(self.spec.key, spec.name, upload.filename)
             self._pending_writes.append((relative, upload.content))
             if current:
