@@ -164,10 +164,40 @@ class QueryBuilder:
             clauses: list[sa.ColumnElement[bool]] = []
             for name in self.search_fields:
                 statement = self._join_for(statement, name, joined)
-                clauses.append(icontains(self._attribute(name), query.search, self.profile))
-            statement = statement.where(sa.or_(*clauses))
+                clause = self._search_clause(name, query.search)
+                if clause is not None:
+                    clauses.append(clause)
+            # Every clause may have been dropped -- "abc" against a search over
+            # `id` alone matches no id and is not a substring of anything. That
+            # is a query with no results, not a query with no restriction, so it
+            # must not fall through to returning the whole table.
+            statement = statement.where(sa.or_(*clauses) if clauses else sa.false())
 
         return statement
+
+    def _search_clause(self, name: str, term: str) -> sa.ColumnElement[bool] | None:
+        """How this field matches a search term, or `None` if it cannot.
+
+        Text is matched by substring, and an id or a UUID exactly. Exactly
+        because there is no substring of an id worth finding -- searching `42`
+        should return row 42, not rows 142, 420 and 3428 -- and because equality
+        uses the primary key index, where casting a bigint to text to run
+        `LIKE '%42%'` over it is a full scan of the table.
+
+        `None` when the term cannot be that column's type at all: `abc` is not an
+        integer, so `search_fields = ("id", "name")` has to quietly drop the id
+        half rather than raise. Dropping is the whole reason this returns an
+        option instead of a clause -- the alternative is a 500 on a search box
+        the moment somebody types a word into an admin that also searches ids.
+        """
+        field = self._field_spec(name)
+        if field is not None and field.is_identifier_like:
+            try:
+                value = self._coerce(field, term, name)
+            except ValidationError:
+                return None
+            return cast("sa.ColumnElement[bool]", self._attribute(name) == value)
+        return icontains(self._attribute(name), term, self.profile)
 
     def _ordered(self, statement: sa.Select[Any], query: ListQuery) -> sa.Select[Any]:
         terms: list[Any] = []

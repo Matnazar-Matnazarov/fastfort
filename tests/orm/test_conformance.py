@@ -291,6 +291,55 @@ async def test_search_is_case_insensitive_on_every_backend(orm: Harness) -> None
     assert sorted(found) == ["Pixel Phone", "pixel case"]
 
 
+async def test_a_row_can_be_found_by_its_id(orm: Harness) -> None:
+    """The thing everybody actually types into an admin's search box.
+
+    An id arrives off a support ticket, an invoice or a log line, and until now
+    `search_fields = ("id", "name")` was a configuration error rather than the
+    obvious line it looks like.
+    """
+    async with orm.backend.unit_of_work() as uow:
+        adapter = orm.adapter(uow, "Product", search_fields=("id", "name"))
+        page = await adapter.list(ListQuery(search="1"))
+
+    assert [row.id for row in page.items] == [1]
+
+
+async def test_an_id_is_matched_exactly_and_not_by_substring(orm: Harness) -> None:
+    """Searching `1` must not also return 12, 21 and 100. There is no substring
+    of an id worth matching, and casting the column to text to look for one
+    throws away the index that makes it the fastest lookup on the table."""
+    async with orm.backend.unit_of_work() as uow:
+        adapter = orm.adapter(uow, "Product", search_fields=("id",))
+        page = await adapter.list(ListQuery(search="1"))
+
+    assert [row.id for row in page.items] == [1]
+
+
+async def test_a_word_searched_over_an_id_finds_nothing_rather_than_everything(
+    orm: Harness,
+) -> None:
+    """The dangerous case. `abc` is not an integer, so the id clause has to be
+    dropped -- and an OR with every clause dropped is an empty OR, which in both
+    query builders means "no restriction" and would hand back the whole table
+    for a search that matched nothing."""
+    async with orm.backend.unit_of_work() as uow:
+        adapter = orm.adapter(uow, "Product", search_fields=("id",))
+        page = await adapter.list(ListQuery(search="abc"))
+
+    assert page.items == ()
+
+
+async def test_a_word_still_searches_the_text_half(orm: Harness) -> None:
+    """And dropping the id clause must not drop the name clause with it."""
+    async with orm.backend.unit_of_work() as uow:
+        found = await names(
+            orm.adapter(uow, "Product", search_fields=("id", "name")), ListQuery(search="pixel")
+        )
+
+    assert sorted(found) == ["Pixel Phone", "pixel case"]
+
+
 @pytest.mark.parametrize(
     ("operator", "value", "expected"),
     [

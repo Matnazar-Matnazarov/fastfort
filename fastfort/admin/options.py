@@ -228,8 +228,16 @@ class ModelAdmin:
                 problems.append(f"ordering names {bare!r}, which is not sortable")
 
         for name in self.search_fields:
-            if name in known and not self.spec.field(name).is_text_like:
-                problems.append(f"search_fields names {name!r}, which is not a text field")
+            if name not in known:
+                continue
+            field = self.spec.field(name)
+            if not (field.is_text_like or field.is_identifier_like):
+                problems.append(
+                    f"search_fields names {name!r}, which is a {field.type.value} column. "
+                    "Search matches text fields by substring and integer and UUID fields "
+                    "exactly; there is no useful reading of a search term for this one. "
+                    "Offer it through list_filter instead."
+                )
 
         for name in self.list_filter:
             if name in known and not self.spec.field(name).filterable:
