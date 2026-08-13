@@ -10,7 +10,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-08-13
+## [0.3.2] - 2026-08-13
+
+Numbered as a patch on purpose, so that a project pinned `>=0.3.1,<0.4`
+picks it up without changing its pin. Read the **Breaking** heading before
+upgrading anyway: rate limiting arrives switched on, and an existing
+deployment that was not expecting it will start seeing `429`s at 600 reads
+or 120 writes a minute per client address.
 
 The release that makes `AuthSettings` true. Most of the settings in it have
 described a JWT implementation since the first version and nothing read any of
