@@ -4,29 +4,39 @@
 
 **Batteries-included authentication and admin framework for FastAPI.**
 
-Django-style model registration · Professional admin UI · JWT + session auth ·
-Roles & permissions · Audit logging · SQLAlchemy & Tortoise · **No Node.js required**
+Django-style model registration · Professional admin UI · Session + JWT auth ·
+PostGIS & pgvector · SQLAlchemy & Tortoise · **No Node.js required**
 
 [![CI](https://github.com/Matnazar-Matnazarov/fastfort/actions/workflows/ci.yml/badge.svg)](https://github.com/Matnazar-Matnazarov/fastfort/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/fastfort)](https://pypi.org/project/fastfort/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+
+[Documentation](https://docs.fastfort.inventrix.uz) ·
+[Live demo](https://fastfort.inventrix.uz) ·
+[Changelog](CHANGELOG.md)
 
 </div>
 
 > [!WARNING]
-> **Early stage.** `0.1.0` is the first release and the public API is not stable
-> yet — before 1.0, a minor release may contain breaking changes, each one listed
-> under a **Breaking** heading in [the changelog](CHANGELOG.md). Pin a version.
+> **Pre-1.0.** The public API is not stable yet: before 1.0 a minor release may
+> contain breaking changes, each one listed under a **Breaking** heading in
+> [the changelog](CHANGELOG.md). Pin a version.
+>
+> The badge above is the released one. This README describes `main`, which may
+> be ahead of it.
 
 ---
 
 ## Why FastFort?
 
-Every FastAPI project rebuilds the same things from scratch: an admin panel, login,
-refresh tokens, roles, an audit trail. Django ships all of that out of the box.
-FastAPI does not.
+Every FastAPI project rebuilds the same things from scratch: an admin panel, a
+sign-in form, password hashing, a token endpoint, refresh rotation, CSRF, an
+upload field that cannot be tricked. Django ships that. FastAPI does not.
 
-FastFort fills that gap.
+FastFort does — for an async stack, with no build step and no Node.js. What it
+does *not* ship yet is listed below, plainly, rather than left for you to find
+out after installing.
 
 ```bash
 uv add "fastfort[sqlalchemy]"
@@ -101,6 +111,39 @@ Field names are checked against the model when the admin is built, so a typo in
 `list_display` is a start-up error naming every problem at once -- not a 500 the
 first time someone opens that page.
 
+### And a token API for the rest of your application
+
+One setting, and the same user model and password hashes the admin uses are
+behind four routes in OAuth 2's shapes:
+
+```python
+FastFortSettings(project_name="Shop", auth={"api_enabled": True})
+```
+
+```
+POST /auth/token     identity + password  ->  access + refresh
+POST /auth/refresh   refresh              ->  a new pair, retiring the old
+POST /auth/logout    refresh              ->  204
+GET  /auth/me        Bearer access        ->  who that is
+```
+
+The dependency is worth having even without the routes:
+
+```python
+from fastfort.auth import bearer_user
+
+current_user = bearer_user(fort)
+
+
+@app.get("/orders")
+async def orders(user: Annotated[User, Depends(current_user)]) -> list[Order]:
+    return await orders_for(user)
+```
+
+It hands your route the user **row**, and rejects an account deactivated since
+the token was issued -- which a signature check alone would keep admitting until
+the token expired.
+
 ---
 
 ## Features
@@ -110,9 +153,10 @@ first time someone opens that page.
 | 🎛 **Django-style admin** | `@admin.register`, `list_display`, `list_filter`, `search_fields`, `fieldsets`, `actions` |
 | 🗑 **Deletes you can trust** | The confirmation counts what actually goes: rows that cascade, rows kept with the link cleared, and rows that block the delete outright — refused with a sentence instead of a constraint violation |
 | 🎨 **A UI you will not want to replace** | Light and dark themes, brand colour from a single setting, ⌘K command palette, full keyboard navigation, real mobile layout |
-| 🔐 **Production-grade auth** | Argon2id hashing, JWT access/refresh, token rotation with reuse detection, login lockout, CSRF protection |
-| 👥 **Roles and permissions** | Object-level, row-level and field-level access control |
-| 📝 **Audit log** | Who changed what and when, with an old → new diff |
+| 🔐 **Production-grade auth** | Argon2id hashing, session cookies invalidated by a password change, login lockout with a growing delay, CSRF on every form, and a CSP that starts at `default-src 'none'` |
+| 🎫 **A token API in one setting** | `auth={"api_enabled": True}` mounts `/auth/token`, `/refresh`, `/logout` and `/me` in OAuth 2's shapes. Refresh rotation with reuse detection: a token presented twice revokes the whole family. `bearer_user(fort)` is a `Depends` for your own routes, and it hands them the user *row* |
+| 🚦 **Rate limiting, on by default** | Three budgets — reads, writes, and sign-in. Argon2 is slow by design, which makes the sign-in form the cheapest thing on any site to attack, so it is charged in middleware *before* the handler and a refused request never reaches the hash |
+| 📎 **Uploads that are what they say** | Extension allow-list per field kind, a deny-list checked alongside it, magic numbers checked against the name, and a `Content-Type` at serve time decided from the bytes rather than the filename. `hack.exe.png` is stored as `hack_exe.png` |
 | 🗄 **Three databases** | SQLite · PostgreSQL · MySQL, with identical behaviour |
 | 🔌 **Two ORMs, one admin** | SQLAlchemy 2.0 and Tortoise ORM behind one adapter contract — and a conformance suite that asks both the same questions, so "the second one behaves the same" is a test rather than a claim |
 | 🧩 **Every column type** | Text, numbers, money, dates, durations, UUIDs, JSON, hstore, arrays, enums, ranges and multiranges, inet/cidr/macaddr, bit strings — each with a real control, real validation and a filter where one makes sense. `register_type` adds your own |
@@ -121,23 +165,37 @@ first time someone opens that page.
 | 🌍 **Eleven languages** | English, Uzbek, Russian, Turkish, German, French, Spanish, Chinese, Japanese, Korean and Arabic — the last of them right-to-left, which turns the whole layout around from one attribute. The catalogues ship in the package, so the admin is already translated the moment you install it — there is nothing to configure |
 | ⌨️ **A CLI that matters** | `createsuperuser` so a fresh install has a way in, and `check --deploy` that exits non-zero |
 | 📤 **Export and import** | The current view out as CSV, Excel or JSON — filters, search and ordering included. And back in again: the same parsers the form uses, foreign keys resolved by name or id, every bad cell reported at once with its line number, and nothing written unless the whole file parses. No openpyxl, no pandas |
-| 📦 **No Node.js** | CSS and JavaScript ship pre-built inside the package, served Brotli-compressed with a gzip fallback — 24 KB of CSS and 29 KB of JavaScript on the wire |
+| 📦 **No Node.js** | CSS and JavaScript are hand-written files inside the package, served Brotli-compressed with a gzip fallback. An ordinary page costs about 32 KB of CSS and 33 KB of script on the wire; the map and the data editors are separate files, fetched only by a page that needs them. A test weighs the lot and fails when it grows |
 
 ---
 
 ## How it is put together
 
 ```
-UI (Jinja2 · CSS · HTMX)   ─┐
-Admin (ModelAdmin, forms)  ─┤
-Auth (tokens, permissions) ─┼──►  Spec layer (immutable, JSON-serialisable)  ◄── ORM adapters
-Core (settings, registry)  ─┘
+UI (Jinja2 · CSS · vanilla JS)  ─┐
+Admin (ModelAdmin, forms)       ─┤
+Auth (sessions, tokens, CSRF)   ─┼──►  Spec layer (immutable, JSON-serialisable)  ◄── ORM adapters
+Core (settings, registry)       ─┘
 ```
 
 Everything above the spec layer is ORM-agnostic, and that boundary is enforced by
-tests rather than by convention. Adding a new ORM therefore never touches the admin
-or the UI, and a JSON API for a future SPA front end comes for free from the same
-specs the templates render.
+tests rather than by convention. Adding a second ORM never touched the admin or
+the UI — `fastfort/orm/tortoise/` was written without a change anywhere above
+`fastfort/orm/`, and a conformance suite asks both backends the same questions so
+that "the second one behaves the same" is a test rather than a claim.
+
+There is no front-end framework. `ui/static/js/` is one IIFE, no modules, no
+build step, and every control works with JavaScript switched off — sorting and
+filtering are links, everything else is a form. The script upgrades them in
+place; it never owns them.
+
+### Not in the box yet
+
+`fastfort/contrib/` is a placeholder. **Roles and permissions beyond
+`is_staff`/`is_superuser`, an audit log, and soft delete are not implemented** —
+the spec layer carries the `ChangeSet` an audit log would store and the
+field-masking it would need, but nothing writes one. Earlier versions of this
+README listed them as features. They were a plan.
 
 ---
 
