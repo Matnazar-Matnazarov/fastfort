@@ -142,15 +142,43 @@ class TortoiseAdapter:
 
         conditions = [self._condition(condition) for condition in query.filters]
         if query.search and self._search_fields:
-            # `icontains` on every searchable field, or-ed. Tortoise lowers both
-            # sides where the database has no ILIKE, which is the same rule
-            # `dialects.icontains` follows on the other backend.
-            clauses = [Q(**{f"{name}__icontains": query.search}) for name in self._search_fields]
-            conditions.append(Q(*clauses, join_type="OR"))
+            clauses = [
+                clause
+                for clause in (
+                    self._search_clause(name, query.search) for name in self._search_fields
+                )
+                if clause is not None
+            ]
+            # Every clause may have been dropped: "abc" searched over `id` alone
+            # is not any id and is not a substring of anything. That is a query
+            # with no results rather than a query with no restriction, and
+            # `Q(join_type="OR")` with nothing in it matches everything -- which
+            # would hand back the whole table for a search that found nothing.
+            conditions.append(Q(*clauses, join_type="OR") if clauses else Q(pk__isnull=True))
 
         for condition in conditions:
             queryset = queryset.filter(condition)
         return queryset
+
+    def _search_clause(self, name: str, term: str) -> Q | None:
+        """How this field matches a search term, or `None` if it cannot.
+
+        The same rule as `QueryBuilder._search_clause` on the other backend, and
+        it has to stay the same rule: `tests/orm/test_conformance.py` asks both
+        the same questions, and a search box that finds a row on SQLAlchemy and
+        not on Tortoise is the exact class of difference that suite exists for.
+
+        Text by substring -- Tortoise lowers both sides where the database has no
+        `ILIKE`, matching `dialects.icontains` -- and ids exactly.
+        """
+        field = self._spec.get(name)
+        if field is not None and field.is_identifier_like:
+            try:
+                value = coerce_filter_value(field, term, name)
+            except ValidationError:
+                return None
+            return Q(**{name: value})
+        return Q(**{f"{name}__icontains": term})
 
     def _condition(self, condition: Filter) -> Q:
         """One validated `field op value` as a Tortoise `Q`.

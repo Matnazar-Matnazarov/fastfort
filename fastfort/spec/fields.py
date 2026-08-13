@@ -328,6 +328,27 @@ class FieldSpec:
         }
 
     @property
+    def is_identifier_like(self) -> bool:
+        """Whether searching this field by an exact value makes sense.
+
+        The other half of what a search box is for. `search_fields` used to accept
+        text columns only, which meant the one thing everybody actually types into
+        an admin's search box -- a row's id, off a support ticket or an invoice --
+        was the one thing it could not find, and `search_fields = ("id", "name")`
+        was a configuration error rather than the obvious line it looks like.
+
+        Exact rather than `icontains`, because these have no substrings worth
+        matching: an id of `42` should find row 42, not rows 142, 420 and 3428.
+        That also keeps it index-friendly, where `LIKE '%42%'` on a cast column
+        is a full scan of a table whose id column is the best index on it.
+        """
+        return self.type in {
+            FieldType.INTEGER,
+            FieldType.BIGINT,
+            FieldType.UUID,
+        }
+
+    @property
     def displayable(self) -> bool:
         """Whether the raw value can be rendered directly in a list column."""
         return self.type not in _NON_TEXT_TYPES

@@ -29,6 +29,7 @@ __all__ = [
     "AuthSettings",
     "FastFortSettings",
     "MediaSettings",
+    "RateLimitSettings",
     "SecuritySettings",
     "UISettings",
 ]
@@ -80,6 +81,25 @@ class AuthSettings(BaseModel):
     algorithm: Literal["HS256", "HS384", "HS512", "RS256", "EdDSA"] = "HS256"
     issuer: str | None = None
     audience: str | None = None
+
+    #: Mount the token API at `auth_url`: `/token`, `/refresh`, `/logout`, `/me`.
+    #:
+    #: Off by default. Every other route FastFort adds is behind the admin's gate;
+    #: these four are public by necessity, and adding public endpoints to somebody
+    #: else's application without being asked is not a library's decision to make.
+    #: `fastfort.auth.bearer_user` works whether or not this is on -- a project
+    #: that wants the dependency but not the routes needs nothing from here.
+    api_enabled: bool = False
+
+    #: Whether `POST {auth_url}/token` requires a staff account.
+    #:
+    #: False, because the admin's notion of a sign-in is not an API's. The admin
+    #: is a staff tool and checks `is_staff` because being let into it is the
+    #: thing being decided; an API's users are customers, and refusing to
+    #: authenticate one for not being an administrator is refusing the ordinary
+    #: case. Set it True for an API that only serves the same people the admin
+    #: does. Either way `is_active` is always required.
+    api_requires_staff: bool = False
 
     password_min_length: Annotated[int, Field(ge=8, le=128)] = 10
     password_reject_common: bool = True
@@ -177,6 +197,74 @@ class MediaSettings(BaseModel):
     #: file is a validation error on the field rather than however many
     #: gigabytes it actually was sitting fully in memory first.
     upload_limit: Annotated[int, Field(ge=1, le=1_000_000_000)] = 10_000_000
+
+    #: What a plain file field accepts, without the leading dot. Deliberately a
+    #: short list of things worth storing rather than "everything that is not
+    #: obviously a program": an allow-list is wrong in the direction of a refused
+    #: upload somebody can ask about, and a deny-list is wrong in the direction
+    #: of a stored file nobody notices until it is served back.
+    #:
+    #: `fastfort.admin.files.DANGEROUS_EXTENSIONS` is checked *as well*, and
+    #: wins. Adding `html` here does not make an HTML upload possible, and that
+    #: is intentional -- uploads are served from the admin's own origin, so a
+    #: document the browser executes there runs with the session cookie.
+    allowed_extensions: frozenset[str] = frozenset(
+        {
+            "png", "jpg", "jpeg", "gif", "webp", "avif", "ico",
+            "pdf", "txt", "csv", "md", "rtf",
+            "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+            "odt", "ods", "odp",
+            "zip", "gz", "tgz", "bz2", "7z", "rar",
+            "mp3", "mp4", "m4a", "mov", "webm", "ogg", "wav", "avi", "flac",
+        }
+    )  # fmt: skip
+
+    #: What an image field accepts. Narrower than the above on purpose, and
+    #: without `svg`: an SVG is a document that can carry a `<script>` element,
+    #: not a picture, and the admin serves uploads from the origin that holds
+    #: the session cookie.
+    allowed_image_extensions: frozenset[str] = frozenset(
+        {"png", "jpg", "jpeg", "gif", "webp", "avif"}
+    )
+
+    @field_validator("allowed_extensions", "allowed_image_extensions", mode="before")
+    @classmethod
+    def _normalise_extensions(cls, value: object) -> object:
+        """Accept `.PNG`, `PNG` and `png` as the same thing.
+
+        A leading dot is how everybody writes an extension down, and a caller who
+        copies one out of a filename gets the case that filename happened to
+        have. Neither should be the difference between a working allow-list and
+        one that silently matches nothing.
+        """
+        if isinstance(value, str) or not isinstance(value, (list, tuple, set, frozenset)):
+            return value
+        return frozenset(
+            str(entry).strip().lstrip(".").lower() for entry in value if str(entry).strip()
+        )
+
+    @model_validator(mode="after")
+    def _no_dangerous_extension_is_allowed(self) -> MediaSettings:
+        """A project cannot allow-list its way into serving executable uploads.
+
+        Caught at start-up rather than at upload time, because the failure this
+        prevents is a stored cross-site scripting hole and the moment to learn
+        about it is while writing the settings, not while reading the logs.
+        """
+        from fastfort.admin.files import DANGEROUS_EXTENSIONS
+
+        for name in ("allowed_extensions", "allowed_image_extensions"):
+            overlap = sorted(getattr(self, name) & DANGEROUS_EXTENSIONS)
+            if overlap:
+                listed = ", ".join("." + entry for entry in overlap)
+                raise ImproperlyConfigured(
+                    f"media.{name} includes {listed}, which the admin will never store. "
+                    "Uploads are served back from the admin's own origin, so a file a "
+                    "browser or a server can execute is script running with the session "
+                    "cookie. Remove those entries, or serve those files from a separate "
+                    "origin that FastFort does not gate."
+                )
+        return self
 
 
 class UISettings(BaseModel):
@@ -297,11 +385,88 @@ class SecuritySettings(BaseModel):
     #: records can be forged by the client.
     trust_forwarded_for: bool = False
 
+    #: How many proxies in front of this process append to `X-Forwarded-For`.
+    #:
+    #: The header is written by whoever sent the request, so the entries an
+    #: attacker controls are the ones on the *left*: they arrive with the request
+    #: and each proxy appends to the right of them. Counting from the right is
+    #: therefore the only reading that cannot be lengthened by the client, and
+    #: this number says how far in to count.
+    #:
+    #: One Caddy or nginx in front is `1`. A CDN in front of that is `2`. Getting
+    #: it too high reads an address the client wrote; too low charges everything
+    #: to the proxy, which throttles every visitor as one. Zero means the header
+    #: is ignored entirely and the socket's own address is used, which is always
+    #: honest and is wrong only in that it is the proxy's.
+    forwarded_depth: Annotated[int, Field(ge=0, le=8)] = 0
+
     @model_validator(mode="after")
     def _samesite_none_requires_secure(self) -> SecuritySettings:
         if self.cookie_samesite == "none" and not self.cookie_secure:
             raise ValueError("cookie_samesite='none' requires cookie_secure=True")
         return self
+
+    @property
+    def effective_forwarded_depth(self) -> int:
+        """`forwarded_depth`, or 1 for a project that only set the older flag.
+
+        `trust_forwarded_for` predates this and says "yes, there is a proxy"
+        without saying how many. One is what that meant, and reading it that way
+        keeps an existing deployment behaving as it did rather than silently
+        charging its whole traffic to a single address.
+        """
+        if self.forwarded_depth:
+            return self.forwarded_depth
+        return 1 if self.trust_forwarded_for else 0
+
+
+class RateLimitSettings(BaseModel):
+    """How many requests one client address may make, per budget.
+
+    Three budgets rather than one, because the three things an admin serves cost
+    wildly different amounts. A page of a list is a query; a save is a
+    transaction; a sign-in is an Argon2 hash, which is slow *by design* and is
+    therefore the cheapest thing on the site to attack -- eleven requests a
+    second saturate a core, and the sender spends nothing.
+
+    The defaults are deliberately loose, because the budget is per *address* and
+    an address is not a person: a whole office behind one NAT is one address, and
+    a limit tuned to what one human does would throttle the fifth colleague to
+    open a list. Ten reads a second, sustained, forever, is far more than a room
+    full of people clicking; it is far less than a scraper, which does not wait
+    for its own responses and passes it in the first second.
+
+    Set `enabled` to `False` to turn the whole thing off -- for a load test, or
+    for a deployment that does this at the edge and would rather have one place
+    where the numbers live.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    enabled: bool = True
+
+    #: `GET`, `HEAD` and `OPTIONS`: lists, forms, the dashboard.
+    read_per_minute: Annotated[int, Field(ge=0, le=100_000)] = 600
+
+    #: Everything that writes. A transaction and a flush per request.
+    write_per_minute: Annotated[int, Field(ge=0, le=100_000)] = 120
+
+    #: `POST` to the sign-in form, whether or not the password is right. This is
+    #: the CPU budget, and it is charged before the handler runs so that a
+    #: refused attempt never reaches the password hash at all. `AuthSettings`'
+    #: lockout is the separate, per-identity defence against guessing.
+    login_per_minute: Annotated[int, Field(ge=0, le=10_000)] = 10
+
+    #: How much of a budget may be spent at once, as a multiple of the per-minute
+    #: allowance. Opening a page is several requests inside one second, so a
+    #: limiter with no burst at all refuses the second half of every page load.
+    burst: Annotated[float, Field(ge=1.0, le=10.0)] = 1.5
+
+    #: Ceiling on how many client addresses are tracked in memory at a time.
+    #: A limiter that keeps an entry per address it has ever seen is a way to
+    #: spend the server's memory instead of its CPU, which would make the defence
+    #: into the attack. Idle entries expire; this is the backstop.
+    max_tracked_clients: Annotated[int, Field(ge=1_000, le=10_000_000)] = 100_000
 
 
 class FastFortSettings(BaseSettings):
@@ -327,6 +492,7 @@ class FastFortSettings(BaseSettings):
     ui: UISettings = Field(default_factory=UISettings)
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     media: MediaSettings = Field(default_factory=MediaSettings)
+    rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
 
     @field_validator("secret_key")
     @classmethod
@@ -411,6 +577,19 @@ class FastFortSettings(BaseSettings):
                 "auth.rotate_refresh_tokens=False means a stolen refresh token can be "
                 "used indefinitely without detection."
             )
+        if not self.rate_limit.enabled:
+            issues.append(
+                "rate_limit.enabled=False leaves the sign-in form unmetered. Argon2 is "
+                "slow by design, so unauthenticated POSTs to it are the cheapest way to "
+                "spend this server's CPU. Set FASTFORT_RATE_LIMIT__ENABLED=true, or "
+                "confirm the layer in front is doing it."
+            )
+        # `security.forwarded_depth == 0` is deliberately *not* an issue. Zero is
+        # the honest reading of the socket, and it is exactly right for a process
+        # holding its own port. It is only the wrong number behind a proxy, and
+        # this object cannot tell whether there is one -- so it would be a warning
+        # that fires on every correct deployment as well as every incorrect one,
+        # which is a warning people learn to scroll past.
         return issues
 
     def require_production_ready(self) -> None:

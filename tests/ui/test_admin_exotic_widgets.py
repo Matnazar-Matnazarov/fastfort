@@ -206,6 +206,40 @@ async def test_each_bound_gets_the_control_its_own_type_would_get(
     assert 'type="number"' in control_for(body, "page_numbers__upper")
 
 
+async def test_the_bounds_selector_names_its_endpoints_in_words(
+    client: httpx.AsyncClient,
+) -> None:
+    """It used to offer `[ … )`, `( … ]`, `[ … ]` and `( … )`.
+
+    Interval notation is exact and unreadable. On the page it rendered as four
+    rows of brackets around an ellipsis, which does not look like a choice
+    between four things -- it looks like a control whose options failed to load.
+    """
+    body = await add_form(client, "lab.exotic")
+    control_for(body, "booking__bounds")  # the select itself still submits the field
+
+    options = re.search(r'<select\b[^>]*\bname="booking__bounds"[\s\S]*?</select>', body)
+    assert options is not None
+    markup = options.group(0)
+
+    for label in ("Start included", "End included", "Both ends included", "Neither end included"):
+        assert f">{label}</option>" in markup, label
+
+    # The values are still the notation, because that is what the parser reads.
+    for value in ("[)", "(]", "[]", "()"):
+        assert f'value="{value}"' in markup, value
+    assert "…" not in markup
+
+
+async def test_the_bounds_selector_comes_after_the_dates_it_qualifies(
+    client: httpx.AsyncClient,
+) -> None:
+    """It asks about the endpoints of a period, so meeting it before being asked
+    for the period was a question out of order."""
+    body = await add_form(client, "lab.exotic")
+    assert body.index('name="booking__lower"') < body.index('name="booking__bounds"')
+
+
 async def test_a_multirange_stays_one_textarea(client: httpx.AsyncClient) -> None:
     """Repeatable pairs of boxes need script to add and remove rows, and a
     control that only half exists without it is worse than a textarea holding

@@ -339,8 +339,23 @@ async def test_every_problem_is_reported_at_once(backend: SQLAlchemyBackend) -> 
 
     message = str(caught.value)
     assert "nope" in message
-    assert "not a text field" in message
+    # `price` is a decimal: no substring of it is worth matching, and an exact
+    # match on a money column is a filter rather than a search.
+    assert "decimal column" in message
     assert "cannot be offered as a filter" in message
+
+
+async def test_an_id_may_be_searched(backend: SQLAlchemyBackend) -> None:
+    """The one thing everybody types into an admin's search box, and until now a
+    configuration error: `search_fields = ("id", "name")` looks like the obvious
+    line and used to raise "id is not a text field"."""
+
+    class ByIdOrName(ModelAdmin):
+        list_display = ("id", "name")
+        search_fields = ("id", "name")
+
+    spec = backend.introspect(Product, key="shop.product")
+    assert ByIdOrName(spec).search_fields == ("id", "name")
 
 
 async def test_a_bare_registration_still_gets_useful_columns(

@@ -206,7 +206,7 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
 
 
 def test_the_whole_front_end_stays_within_budget(css: str) -> None:
-    """Everything that ships, on-demand bundles included, is budgeted at 88 KB.
+    """Everything that ships, on-demand bundles included, is budgeted at 88,000 bytes.
 
     The per-page budget above is the one that protects the common case, but on
     its own it would be a budget with a hole in it: anything could be moved into
@@ -214,24 +214,30 @@ def test_the_whole_front_end_stays_within_budget(css: str) -> None:
     package, so the split has to earn its place by being genuinely optional
     rather than by relabelling weight.
 
-    It has been raised four times before this round: from 40 KB when the
+    It has been raised five times before this round: from 40 KB when the
     related-object popup, the appearance panel, the filter drawer and the export
     menu landed together; again for the date picker, the duration boxes and the
     map; again for the upload card, the date picker's month and year views and
-    its clock, and the map's own controls; and again for the geometry editor for
-    all seven shapes and the array, hstore, JSON and address editors. This round
-    adds thumbnails in list columns, a per-map zoom ceiling, and the note in
+    its clock, and the map's own controls; again for the geometry editor for
+    all seven shapes and the array, hstore, JSON and address editors; and again
+    for thumbnails in list columns, a per-map zoom ceiling, and the note in
     `fastfort-geo.js` explaining why tile coordinates are re-based -- a
     single-precision overflow that blanked the map past zoom 19 while every
-    tile was loaded, which is exactly the kind of thing a future reader has to
-    be told rather than left to rediscover. Each was a feature rather than an
-    accumulation.
+    tile was loaded.
+
+    This round: `boot.js` scrolls the current model back into a nav that scrolls
+    by itself. It has to be pre-paint, so it has to be in the one file that is
+    render-blocking, which is the most expensive place in the package for a byte
+    to live -- and it is still the right trade, because the alternative was a
+    sidebar that marked "you are here" below the fold on every navigation.
+
+    Each raise was a feature rather than an accumulation.
     """
     scripts = sorted((CSS_DIR.parent / "js").glob("*.js"))
     assert scripts, "the budget cannot pass by measuring nothing"
 
     compressed = _gzipped(css.encode("utf-8"), *(script.read_bytes() for script in scripts))
-    assert compressed < 86_000, f"{compressed} bytes gzipped"
+    assert compressed < 88_000, f"{compressed} bytes gzipped"
 
 
 # ---------------------------------------------------------------------------

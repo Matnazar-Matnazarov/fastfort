@@ -492,14 +492,21 @@ async def test_a_hostile_filename_does_not_become_a_path(
     client: httpx.AsyncClient, media_root: Path
 ) -> None:
     """A multipart filename is exactly as trustworthy as any other request
-    header: a client can claim a file is called anything at all."""
+    header: a client can claim a file is called anything at all.
+
+    The name carries an accepted extension deliberately. Traversal and the
+    extension allow-list are two separate defences, and testing them through one
+    upload would let either one alone keep this passing -- an upload refused for
+    having no extension proves nothing about what would have happened to the
+    slashes if it had one.
+    """
     path = "/admin/shop.product/1/"
     fields = other_fields(await form_body(client, path))
 
     response = await client.post(
         path,
         data={**fields, "_csrf": await token(client, path)},
-        files={"attachment": ("../../../etc/passwd", b"not actually passwd", "text/plain")},
+        files={"attachment": ("../../../etc/passwd.txt", b"not actually passwd", "text/plain")},
     )
     assert response.status_code == 303, response.text
 

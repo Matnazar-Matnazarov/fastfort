@@ -10,6 +10,126 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-13
+
+The release that makes `AuthSettings` true. Most of the settings in it have
+described a JWT implementation since the first version and nothing read any of
+them; this is that implementation, plus the two defences an admin serving
+uploaded files and an Argon2 sign-in form needs and did not have.
+
+### Added
+
+- **The token API.** `auth={"api_enabled": True}` mounts `POST /auth/token`,
+  `POST /auth/refresh`, `POST /auth/logout` and `GET /auth/me` at `auth_url`,
+  in OAuth 2's request and response shapes. Off by default: adding public
+  endpoints to somebody else's application without being asked is not a
+  library's decision to make.
+  - `fastfort.auth.bearer_user(fort)` is a FastAPI dependency for a project's
+    own routes. It hands the route the user **row**, not a claims dict, and
+    rejects an account deactivated since the token was issued -- which a
+    signature check alone would keep admitting for the rest of that token's
+    life.
+  - `TokenService` implements the rotation `rotate_refresh_tokens` and
+    `revoke_family_on_reuse` have always promised. Each refresh retires the
+    token presented; a token presented twice cannot be told apart from a stolen
+    one being used alongside the real client, so it is treated as one and the
+    whole family is revoked.
+  - `RefreshTokenStore` is a protocol, defaulting to per-process. Two workers
+    each holding half the families means a token spent on one is still fresh on
+    the other and the replay detection quietly stops working, so
+    `fort.configure_tokens(store=...)` takes a shared one and
+    `fastfort check --deploy` says so.
+  - `typ` is checked on every token. Without it, handing a refresh token to an
+    authenticated route would work -- a fortnight-long credential accepted where
+    a fifteen-minute one was meant.
+  - The decoder is pinned to the one configured algorithm, so `alg: none` and
+    an RSA public key presented as an HMAC secret are both refused.
+
+- **Rate limiting**, on by default, scoped to the admin's own paths and to the
+  token API when it is mounted. Three token-bucket budgets, because the three
+  things an admin serves cost wildly different amounts:
+  `read_per_minute` (600), `write_per_minute` (120), `login_per_minute` (10).
+  - The sign-in budget is the tight one and is charged in middleware *before*
+    the handler runs, so a refused attempt never reaches the password hash.
+    Argon2 is slow by design; a hash tuned to 100 ms means eleven
+    unauthenticated requests a second saturate a core and the sender spends
+    nothing.
+  - Static assets are never counted -- one page pulls several, and counting
+    them would turn a page view into six requests against a budget written to
+    describe page views.
+  - The in-memory store is bounded and sweeps idle entries. A limiter that
+    keeps one entry per address it has ever seen spends the server's memory
+    instead of its CPU, which would make the defence into the attack.
+  - `fort.set_rate_limit_store(...)` for more than one worker.
+
+- **`security.forwarded_depth`**: how many proxies append to `X-Forwarded-For`
+  in front of this process. Both the limiter and lockout read the header from
+  the *right* through it -- see Fixed, below.
+
+- **Upload type checking.** `media.allowed_extensions` and
+  `media.allowed_image_extensions`, an allow-list per field kind, checked
+  alongside a deny-list of everything a server or browser might execute; and
+  the leading bytes checked against the name, so a `.png` whose content is an
+  ELF binary, a shell script or an HTML document is refused with the mismatch
+  named. Configuration that would allow-list an executable extension raises at
+  start-up rather than at upload time.
+
+- **`search_fields` accepts ids.** `INTEGER`, `BIGINT` and `UUID` columns are
+  matched exactly, alongside the substring match on text columns, so
+  `search_fields = ("id", "name")` is the obvious line it looks like rather
+  than a configuration error. A term that cannot be the column's type drops
+  that half of the query; a word searched over `id` alone returns nothing,
+  which is not the same thing as returning everything.
+
+### Fixed
+
+- **The sidebar marked "you are here" below the fold.** `.ff-nav` is its own
+  scroll container, so a browser starts it at zero on every navigation -- open a
+  model near the bottom of the sidebar, or reload while already there, and the
+  highlighted row was outside the visible band every time. `boot.js` now scrolls
+  it into view before the first paint.
+
+- **`X-Forwarded-For` was read from the left, which is the half an attacker
+  writes.** The header arrives with the request and each proxy appends after it,
+  so the leftmost entry is whatever the sender chose. With
+  `security.trust_forwarded_for` on, `X-Forwarded-For: 1.2.3.4` on every attempt
+  bought a fresh lockout counter each time -- the whole of the defence that
+  address is used for. Now counted from the right, `forwarded_depth` entries in,
+  and shared with the rate limiter so there are not two answers to "who is
+  this".
+
+- **Uploads were served with a `Content-Type` guessed from their name.** The
+  name is the half an attacker chose, and `/admin/media/…` is the admin's own
+  origin -- the origin holding the session cookie. The type is now decided from
+  the stored bytes, anything not positively identified as a raster image is
+  `text/plain` and an attachment, and a file written before this release is
+  covered too.
+
+- **`hack.exe.png` is stored as `hack_exe.png`.** A dangerous extension buried
+  in a name is what a misconfigured server reads left to right and hands to an
+  interpreter. Neutralised rather than refused, because refusing every name with
+  an extension in the middle also refuses `example.com.pdf`.
+
+- **The range bounds selector offered `[ … )`, `( … ]`, `[ … ]` and `( … )`.**
+  Interval notation is exact and unreadable, and on the page it rendered as four
+  rows of brackets around an ellipsis -- which does not look like a choice
+  between four things, it looks like a control whose options failed to load. It
+  now names its endpoints in words, in all eleven languages, and sits after the
+  two dates it qualifies rather than before them.
+
+### Breaking
+
+- `AdminAuth.authenticate` takes a new keyword-only `require_staff`, defaulting
+  to `True`. Existing calls are unaffected.
+- The generic sign-in failure message changed from "…an account that can use the
+  admin" to "…an account that can sign in here", because the same call now
+  answers the token endpoint, where the staff check is not performed. Tests
+  asserting the old wording will need updating.
+- Rate limiting is on by default. A load test or a benchmark against the admin
+  will start seeing `429`s at 600 reads or 120 writes a minute per address; set
+  `rate_limit={"enabled": False}` for those, and `fastfort check --deploy` will
+  say so if it is left off.
+
 ## [0.3.1] - 2026-08-12
 
 ### Fixed

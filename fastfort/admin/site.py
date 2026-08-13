@@ -43,7 +43,7 @@ from fastfort.ui.theming import Theme
 
 from .auth_views import build_auth_router
 from .export import EXPORT_FORMATS, stream_csv, stream_json, stream_xlsx
-from .files import UploadedFile
+from .files import SNIFF_LENGTH, UploadedFile, content_type_for, safe_filename
 from .forms import Form
 from .importing import (
     ImportFileError,
@@ -466,12 +466,43 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         resolved and checked against `media.root` rather than trusted outright.
         Without that, "../../etc/passwd" would be a perfectly ordinary thing for
         it to contain.
+
+        The `Content-Type` comes from the file's leading bytes and never from its
+        name. This is the same origin the session cookie is scoped to, so a
+        response that says `text/html` about a stored file is script running as
+        the admin -- and the name is the half of the file an attacker chose.
+        `check_upload` already refuses those at the door; this refuses them again
+        for anything written before that check existed, or placed in the media
+        root by something other than FastFort.
+
+        Everything that is not positively identified as a raster image is served
+        as a download. The `nosniff` that makes `text/plain` binding rather than
+        advisory is already on every response from `SecurityHeadersMiddleware`,
+        so it is not repeated here -- a second copy arrives as the header value
+        `nosniff, nosniff`, which is not what any browser is looking for.
         """
         root = settings.media.root.resolve()
         target = (root / path).resolve()
         if not target.is_relative_to(root) or not target.is_file():
             raise HTTPException(status_code=404, detail="No such file.")
-        return FileResponse(target)
+
+        with target.open("rb") as handle:
+            head = handle.read(SNIFF_LENGTH)
+        content_type, inline = content_type_for(head)
+
+        return FileResponse(
+            target,
+            media_type=content_type,
+            headers={
+                # `filename` run back through `safe_filename`: the stored name
+                # reached disk through it, but a file the admin did not write is
+                # under no such promise, and a quote or a newline in a header
+                # value is how one header becomes two.
+                "Content-Disposition": (
+                    "inline" if inline else f'attachment; filename="{safe_filename(target.name)}"'
+                ),
+            },
+        )
 
     # -- dashboard ----------------------------------------------------------
 

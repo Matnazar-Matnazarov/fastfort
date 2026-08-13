@@ -45,6 +45,13 @@ class FastFort:
         self._teach_backend_the_registry()
         self._user_config: UserModelConfig | None = None
         self._mounted_on: FastAPI | None = None
+        #: `None` means the per-process default; see `set_rate_limit_store`.
+        self._rate_limit_store: Any = None
+        #: The JWT service and what it is built from; see `configure_tokens`.
+        self._tokens: Any = None
+        self._refresh_token_store: Any = None
+        self._token_signing_key: str | None = None
+        self._token_verifying_key: str | None = None
         #: Set by the admin router when it is built. Exposed so a project can
         #: reach `fort.auth.set_password(user, ...)` from a CLI or a seed script.
         self.auth: Any = None
@@ -66,6 +73,56 @@ class FastFort:
                 ),
             )
         return self._backend
+
+    @property
+    def tokens(self) -> Any:
+        """The JWT service, built on first use.
+
+        Lazily, because most projects never touch it and building it validates
+        the algorithm against the keys it was given -- a check that should fire
+        for someone using tokens and not for someone who only wanted an admin.
+        """
+        if self._tokens is None:
+            from fastfort.auth.tokens import TokenService
+
+            self._tokens = TokenService(
+                self.settings,
+                store=self._refresh_token_store,
+                signing_key=self._token_signing_key,
+                verifying_key=self._token_verifying_key,
+            )
+        return self._tokens
+
+    def configure_tokens(
+        self,
+        *,
+        store: Any | None = None,
+        signing_key: str | None = None,
+        verifying_key: str | None = None,
+    ) -> None:
+        """Point the JWT service at a shared store, or at an asymmetric key pair.
+
+        The default refresh store is per-process, which is right for one worker
+        and wrong for several: two workers each holding half the families means a
+        token spent on one is still live on the other, and the replay detection
+        that rotation exists for quietly stops working.
+
+        `signing_key` and `verifying_key` are for `RS256` and `EdDSA`, where the
+        point is that another service can verify a token this one minted without
+        being able to mint one. With `HS256` neither is needed -- the secret key
+        does both jobs.
+
+        Call before the first use of `fort.tokens`; afterwards the service is
+        already built and would silently keep what it had.
+        """
+        if self._tokens is not None:
+            raise ConfigurationError(
+                "The token service has already been built.",
+                hint="Call configure_tokens() before the first use of fort.tokens.",
+            )
+        self._refresh_token_store = store
+        self._token_signing_key = signing_key
+        self._token_verifying_key = verifying_key
 
     def set_backend(self, backend: Backend) -> None:
         if self._mounted_on is not None:
@@ -289,8 +346,18 @@ class FastFort:
             raise ImproperlyConfigured(f"FastFort cannot be mounted:\n{listed}")
 
         from fastfort.admin.security import LoginRequired, SecurityHeadersMiddleware
+        from fastfort.admin.throttle import RateLimitMiddleware
 
         app.include_router(self._build_router(), prefix=self.settings.admin.url)
+
+        # The token API, when a project asked for it. Included before the
+        # middleware below so that its `/token` route is inside the prefix the
+        # limiter covers -- an unmetered password endpoint would undo the point
+        # of metering the admin's own.
+        if self.settings.auth.api_enabled:
+            from fastfort.auth.api import build_auth_router
+
+            app.include_router(build_auth_router(self), prefix=self.settings.auth_url)
 
         # The gate raises; this turns it into the redirect. Registered on the app
         # because exception handlers are not a router-level concern in Starlette.
@@ -301,7 +368,35 @@ class FastFort:
         app.add_exception_handler(LoginRequired, _login_required)
         app.add_middleware(SecurityHeadersMiddleware, settings=self.settings)
 
+        # Added last, so it runs first: Starlette applies middleware in reverse.
+        # A refused request has to be refused before anything reads a session,
+        # touches the database or hashes a password -- work done in front of the
+        # limiter is work an attacker still gets for free.
+        app.add_middleware(
+            RateLimitMiddleware, settings=self.settings, store=self._rate_limit_store
+        )
+
         self._mounted_on = app
+
+    def set_rate_limit_store(self, store: Any) -> None:
+        """Use `store` instead of the per-process default.
+
+        The default keeps its buckets in memory, which is exactly right for one
+        worker and wrong for four: four processes each holding a quarter of the
+        counters means four times the allowance in practice. A project running
+        more than one worker should back this with something they share -- Redis,
+        typically -- and `fastfort check --deploy` says so rather than leaving it
+        to be discovered under load.
+
+        Call before `mount()`; afterwards the middleware already holds the one it
+        was given.
+        """
+        if self._mounted_on is not None:
+            raise ConfigurationError(
+                "The rate limit store cannot be replaced after mount().",
+                hint="Call set_rate_limit_store() before mount().",
+            )
+        self._rate_limit_store = store
 
     def _build_router(self) -> Any:
         """Build the admin router.

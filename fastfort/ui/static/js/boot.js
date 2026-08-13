@@ -67,4 +67,60 @@
   else if (read("ff:density") === "comfortable") root.dataset.ffDensity = "comfortable";
 
   if (read("ff:primary") === "accent") root.dataset.ffPrimary = "accent";
+
+  /* The current model, kept on screen in a nav that scrolls by itself.
+   *
+   * `.ff-nav` is its own scroll container, and a scroll container starts every
+   * navigation at zero. In an admin whose models run past the fold that meant
+   * the page marked "you are here" on a row nobody could see: open something
+   * near the bottom of the sidebar, or reload while you are already there, and
+   * the highlight was below the visible band every time.
+   *
+   * Nothing is remembered between pages on purpose. Where the reader last left
+   * the *scrollbar* is a worse answer than where the reader actually is, and it
+   * would need a listener and a storage key to be wrong with.
+   *
+   * In this file rather than the deferred bundle for this file's whole reason to
+   * exist: run after the first paint, this is a sidebar that visibly jumps once
+   * the page is already on screen. The nav does not exist while <head> is being
+   * parsed, so the work waits on a MutationObserver and runs the moment the
+   * element *after* it appears -- the sidebar's footer, whose presence is proof
+   * the parser is past `</nav>` and the items have their real heights. */
+  const centreCurrentNavItem = () => {
+    const nav = document.querySelector(".ff-sidebar .ff-nav");
+    const current = nav && nav.querySelector('[aria-current="page"]');
+    if (!current) return;
+
+    /* Rects rather than `offsetTop`: offsetTop is measured from the nearest
+     * *positioned* ancestor, which is the sidebar and not the nav, so it folds
+     * the brand header's height into the answer and centres on the wrong row. */
+    const navBox = nav.getBoundingClientRect();
+    const itemBox = current.getBoundingClientRect();
+    // One row of slack at each edge, so an item that is technically visible but
+    // flush against the boundary still reads as part of the list.
+    if (itemBox.top >= navBox.top + itemBox.height && itemBox.bottom <= navBox.bottom - itemBox.height) {
+      return;
+    }
+    const offset = itemBox.top - navBox.top + nav.scrollTop;
+    nav.scrollTop = offset - (nav.clientHeight - itemBox.height) / 2;
+  };
+
+  // The footer, not the nav itself: a nav is in the document as soon as its
+  // opening tag is parsed, when it is still empty and every measurement is zero.
+  const navReady = () => Boolean(document.querySelector(".ff-sidebar__footer"));
+
+  if (navReady()) {
+    centreCurrentNavItem();
+  } else {
+    const observer = new MutationObserver(() => {
+      if (!navReady()) return;
+      observer.disconnect();
+      centreCurrentNavItem();
+    });
+    observer.observe(root, { childList: true, subtree: true });
+
+    // A popup renders no sidebar at all, so without this the observer would watch
+    // the whole document forever for a footer that is never coming.
+    document.addEventListener("DOMContentLoaded", () => observer.disconnect(), { once: true });
+  }
 })();
