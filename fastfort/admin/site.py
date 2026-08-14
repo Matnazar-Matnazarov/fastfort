@@ -34,7 +34,6 @@ from fastfort.core.exceptions import (
     SecurityError,
     ValidationError,
 )
-from fastfort.core.registry import default_model_key
 from fastfort.i18n import Translator, is_rtl, negotiate_language
 from fastfort.spec import Choice, DeletionPlan, FieldType, ListQuery, SortSpec
 from fastfort.ui.compression import compress_asset
@@ -57,9 +56,9 @@ from .importing import (
     sniff_format,
     template_rows,
 )
-from .insights import Series, build_series
 from .messages import Message, MessageLevel, Messages
 from .options import ModelAdmin
+from .protection import AccountGuard
 from .security import LANGUAGE_COOKIE, make_guard, safe_next_url, set_csrf_cookie
 from .values import split_multi
 
@@ -217,6 +216,11 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             spec = fort.backend.introspect(entry.model, key=key)
             resolved[key] = _instantiate(entry.admin, spec)
         return resolved[key]
+
+    # What this deployment allows to be done to an account. Built once, below
+    # `admin_for` because it needs it: it holds no state, and every view that
+    # touches the user model asks it the same two questions.
+    guard = AccountGuard(fort, admin_for)
 
     def list_url(key: str) -> str:
         return f"{admin_url}/{key}/"
@@ -1170,6 +1174,9 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 remote_relations=remote,
                 auth_settings=settings.auth,
                 media=settings.media,
+                locked=guard.locked_fields(
+                    model_key, instance, actor=await fort.auth.current_user(request)
+                ),
             )
             label = adapter.label_for(instance)
 
@@ -1209,6 +1216,12 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 remote_relations=remote,
                 auth_settings=settings.auth,
                 media=settings.media,
+                # The same names the form rendered read-only. Without it here a
+                # protected password could still be set by posting the field,
+                # which is the half of a read-only control that matters.
+                locked=guard.locked_fields(
+                    model_key, instance, actor=await fort.auth.current_user(request)
+                ),
             )
             cleaned = form.bind(submitted)
             # Read while the row is live. A rollback expires every attribute on
@@ -1287,6 +1300,13 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             instance = await _require_object(adapter, parse_key(model_admin.spec, object_key))
             label = adapter.label_for(instance)
             key = adapter.primary_key_of(instance)
+            # An account this deployment protects never reaches the confirmation
+            # page: offering the button and refusing the press is worse than
+            # saying so on the way in.
+            refusal = guard.delete_refusal(model_key, instance)
+            if refusal:
+                message = translator_for(request)(refusal)
+                return redirect(object_url(model_key, key), notices.danger(message))
             # What else this takes with it, counted before anything is written.
             # "This cannot be undone" is not a confirmation on its own; the
             # question people have is what happens to the rows underneath.
@@ -1345,6 +1365,10 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             # have been open for an hour, and the row that protects this one may
             # have arrived since. Without it the delete fails inside the flush and
             # the person gets a constraint violation instead of a sentence.
+            refusal = guard.delete_refusal(model_key, instance)
+            if refusal:
+                return redirect(back, notices.danger(translate(refusal)))
+
             plan = await adapter.deletion_plan([instance])
             if plan.blocked:
                 return redirect(back, notices.danger(_protected_message(fort, plan, translate)))
@@ -1415,6 +1439,13 @@ def build_admin_router(fort: FastFort) -> APIRouter:
 
             try:
                 if name == "delete":
+                    # Protected accounts are dropped from the selection rather
+                    # than failing it: someone who ticked forty rows and one
+                    # protected account meant to delete the forty.
+                    objects, refused = guard.deletable(model_key, objects)
+                    if not objects:
+                        return redirect(target, notices.danger(translator_for(request)(refused)))
+
                     # The same check the single-row delete makes. A bulk delete
                     # is where it matters most: half the rows going and the rest
                     # failing on a foreign key is the worst possible outcome, and
@@ -1427,10 +1458,17 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                         )
                     for obj in objects:
                         await adapter.delete(obj)
-                    message = notices.success(
+                    deleted = (
                         f"{len(objects)} {model_admin.title.lower()} were deleted."
                         if len(objects) != 1
                         else f"One {model_admin.singular.lower()} was deleted."
+                    )
+                    # The refusal rides along with the count, so the number in
+                    # the notice is never a surprise.
+                    message = (
+                        notices.warning(f"{deleted} {translator_for(request)(refused)}")
+                        if refused
+                        else notices.success(deleted)
                     )
                 else:
                     handler = model_admin.action_handler(name)

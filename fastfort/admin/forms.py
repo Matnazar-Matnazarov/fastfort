@@ -143,6 +143,7 @@ class Form:
         remote_relations: frozenset[str] | None = None,
         auth_settings: Any = None,
         media: MediaSettings | None = None,
+        locked: frozenset[str] = frozenset(),
     ) -> None:
         self.spec = spec
         self.admin = admin
@@ -156,6 +157,12 @@ class Form:
         self._pending_writes: list[tuple[str, bytes]] = []
         self._pending_deletes: list[str] = []
         self._passwords = admin.password_field_names()
+        # Names this one request may not write, on top of everything the spec
+        # and the ModelAdmin already withheld. Narrowing only -- it can take a
+        # name out of the writable set and can never put one in, which is what
+        # keeps `FieldSpec.editable` the single source of truth for
+        # mass assignment. See `admin/protection.py`.
+        self._locked = locked
         self.non_field_errors: list[str] = []
         self.fields: list[FormField] = [
             self._build(field_spec) for field_spec in self._visible_specs()
@@ -182,8 +189,12 @@ class Form:
                 shown.append(field_spec)
         return shown
 
+    def writable_field_names(self) -> frozenset[str]:
+        """What this form may write: the admin's allow-list, minus the locked."""
+        return self.admin.editable_field_names() - self._locked
+
     def _build(self, spec: FieldSpec) -> FormField:
-        writable = spec.name in self.admin.editable_field_names()
+        writable = spec.name in self.writable_field_names()
         if spec.name in self._passwords and writable:
             # A password column is never rendered as text. The control takes a new
             # password plus a confirmation and hashes it; the stored hash is never
@@ -262,7 +273,7 @@ class Form:
         Errors are collected per field so the form can be re-rendered with every
         problem visible at once, rather than one per round trip.
         """
-        writable = self.admin.editable_field_names()
+        writable = self.writable_field_names()
         cleaned: dict[str, Any] = {}
 
         for form_field in self.fields:

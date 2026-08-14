@@ -110,6 +110,37 @@ class AuthSettings(BaseModel):
     lockout_seconds: Annotated[int, Field(ge=1, le=86_400)] = 60
     lockout_window_seconds: Annotated[int, Field(ge=60, le=86_400)] = 900
 
+    # -- what the admin may do to accounts ---------------------------------
+    #
+    # All four default to True, which is what the admin has always done: an
+    # administrator can delete an account and set anyone's password. They exist
+    # for the deployment where that is the wrong default -- a public demo, a
+    # shared sandbox, a staging copy of production data -- where the whole point
+    # is that visitors can see everything and take nothing apart.
+    #
+    # None of them is a permission system. They are a property of the
+    # deployment, not of the person: they apply to every administrator equally,
+    # including the one who set them. Per-person rules belong in a project's own
+    # authorisation, which the admin gate already calls.
+
+    #: Whether any account's password may be changed through the admin. With
+    #: this off the control is rendered but read-only, and a value posted to it
+    #: anyway is dropped rather than obeyed.
+    allow_password_change: bool = True
+
+    #: Whether a *superuser's* password may be changed by somebody else. Their
+    #: own always may, subject to the setting above: locking people out of their
+    #: own password is a different feature and not one anybody asked for.
+    allow_superuser_password_change: bool = True
+
+    #: Whether accounts may be deleted through the admin at all.
+    allow_user_delete: bool = True
+
+    #: Whether superusers may be deleted. Narrower than the setting above and
+    #: the one a demo usually wants: visitors may tidy up the accounts they
+    #: made, and the administrator the demo signs in as stays where it is.
+    allow_superuser_delete: bool = True
+
 
 class AdminSettings(BaseModel):
     """Where the admin lives and how much data it will hand out at once."""

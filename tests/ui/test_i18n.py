@@ -89,6 +89,12 @@ _INDIRECT = frozenset(
         # FastFort does not translate those, the same as a model's name.
         "New accounts",
         "Browse",
+        # `admin/protection.py` names its refusals as constants and translates
+        # the one that applied, so the literal never appears at a call site.
+        "Accounts cannot be deleted in this deployment.",
+        "Superusers cannot be deleted in this deployment.",
+        "Passwords cannot be changed in this deployment.",
+        "Only a superuser can change their own password here.",
     }
 )
 
