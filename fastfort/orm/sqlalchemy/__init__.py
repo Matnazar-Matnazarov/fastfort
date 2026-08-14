@@ -6,6 +6,7 @@ from .adapter import SQLAlchemyAdapter
 from .backend import SQLAlchemyBackend, SQLAlchemyUnitOfWork
 from .dialects import DialectProfile, profile_for
 from .introspect import introspect_model, is_sqlalchemy_model
+from .models import SignInRecordMixin
 from .query import QueryBuilder
 from .types import Classification, TypeRule, classify, register_type
 
@@ -16,6 +17,7 @@ __all__ = [
     "SQLAlchemyAdapter",
     "SQLAlchemyBackend",
     "SQLAlchemyUnitOfWork",
+    "SignInRecordMixin",
     "TypeRule",
     "classify",
     "introspect_model",

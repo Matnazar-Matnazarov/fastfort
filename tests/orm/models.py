@@ -16,6 +16,8 @@ from decimal import Decimal
 import sqlalchemy as sa
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from fastfort.orm.sqlalchemy import SignInRecordMixin
+
 
 class Base(DeclarativeBase):
     pass
@@ -166,3 +168,14 @@ class StaffUser(Base):
 
     def __str__(self) -> str:
         return self.email
+
+
+class SignInRecord(SignInRecordMixin, Base):
+    """Where `fort.record_sign_ins(...)` writes.
+
+    Declared from the shipped mixin rather than by hand, so the test proves the
+    columns a project would actually inherit are the ones FastFort fills. A
+    hand-written copy here would pass while the mixin was broken.
+    """
+
+    __tablename__ = "sign_in_record"

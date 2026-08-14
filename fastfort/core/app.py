@@ -57,6 +57,9 @@ class FastFort:
         self.auth: Any = None
         #: `None` means the default layout; see the `dashboard` property.
         self._dashboard: Any = None
+        #: Set by `record_sign_ins`. Kept so a project can reach the recorder
+        #: again -- an API that signs people in writes its own rows through it.
+        self._sign_in_recorder: Any = None
 
     def __repr__(self) -> str:
         state = "mounted" if self._mounted_on is not None else "not mounted"
@@ -206,6 +209,50 @@ class FastFort:
 
         self._user_config = UserModelConfig.detect(model, known, **fields)
         return self._user_config
+
+    # -- sign-in records ----------------------------------------------------
+
+    def record_sign_ins(
+        self,
+        model: type,
+        *,
+        failures: bool = True,
+        locate: Any = None,
+    ) -> Any:
+        """Write a row for every sign-in -- who, from which address, on what::
+
+            from fastfort.orm.sqlalchemy import SignInRecordMixin
+
+            class SignInRecord(SignInRecordMixin, Base):
+                __tablename__ = "admin_sign_in"
+
+            fort.record_sign_ins(SignInRecord)
+
+        The table is the project's, because FastFort ships no migrations. The
+        mixin above declares every column it knows how to fill; a project that
+        wants fewer declares fewer, and only `at`, `successful` and `address`
+        are required.
+
+        `failures=False` records only the successes. The default is to record
+        both, because a log of successes says nothing about the night somebody
+        tried four hundred passwords.
+
+        `locate` turns an address into a place, for a project that has a GeoIP
+        database. FastFort bundles none and calls no service: one would be a
+        hundred megabytes going stale inside a wheel, and the other would hand
+        every administrator's address to a third party from inside the login
+        handler.
+
+        Returns the recorder, so a project can write its own rows -- a sign-in
+        through an API, say -- with `await recorder.write(record)`.
+        """
+        from fastfort.auth.signins import SignInRecorder
+
+        recorder = SignInRecorder(self, model, failures=failures, locate=locate)
+        recorder.check()
+        recorder.attach()
+        self._sign_in_recorder = recorder
+        return recorder
 
     # -- dashboard ----------------------------------------------------------
 

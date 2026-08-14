@@ -14,10 +14,12 @@ from __future__ import annotations
 from .addresses import client_address
 from .api import bearer_user, build_auth_router
 from .csrf import CsrfProtection
+from .devices import Device, read_device
 from .lockout import InMemoryLockoutStore, Lockout, LockoutState, LockoutStore
 from .passwords import hash_password, validate_password, verify_password
 from .service import AdminAuth, AuthResult
 from .sessions import AdminSession, SessionCodec
+from .signins import SignIn, SignInRecorder
 from .tokens import (
     InMemoryRefreshTokenStore,
     RefreshRecord,
@@ -32,6 +34,7 @@ __all__ = [
     "AdminSession",
     "AuthResult",
     "CsrfProtection",
+    "Device",
     "InMemoryLockoutStore",
     "InMemoryRefreshTokenStore",
     "Lockout",
@@ -40,6 +43,8 @@ __all__ = [
     "RefreshRecord",
     "RefreshTokenStore",
     "SessionCodec",
+    "SignIn",
+    "SignInRecorder",
     "TokenPair",
     "TokenService",
     "UserModelConfig",
@@ -47,6 +52,7 @@ __all__ = [
     "build_auth_router",
     "client_address",
     "hash_password",
+    "read_device",
     "validate_password",
     "verify_password",
 ]
