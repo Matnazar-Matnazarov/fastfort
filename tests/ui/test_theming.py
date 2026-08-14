@@ -137,6 +137,35 @@ def test_an_explicit_theme_choice_beats_the_system_preference() -> None:
     assert ':root[data-ff-theme="dark"]' in tokens
 
 
+def test_visually_hidden_content_never_sits_on_a_table() -> None:
+    """`.ff-sr-only` on a `<table>` does not hide it from the layout.
+
+    A table treats `height` as a minimum and grows to fit its rows, so the
+    utility's `1px` box stays full size and `overflow: hidden` has nothing left
+    to clip. The box is absolutely positioned, which means it is still counted in
+    the page's scrollable overflow: the dashboard's hidden 30-row data table made
+    the document about 640px taller than the shell it sits in.
+
+    That is what took the sidebar off screen. The sidebar is `position: sticky`,
+    and a sticky grid item can only travel inside its own grid area -- the shell.
+    Once the page scrolled past where the shell ended, the sidebar had run out of
+    room and went up with everything else, on a page whose last 640px were blank.
+
+    Wrapping the table in a `<div class="ff-sr-only">` fixes it, because a div
+    does collapse to 1px and the clip stops at the div. Nothing in CSS rescues
+    the table form -- `max-height`, `contain` and the legacy `clip` were all
+    measured and all ignored -- so the shape of the markup is the guard, and this
+    is the test for it.
+    """
+    templates = Path(__file__).resolve().parents[2] / "fastfort" / "ui" / "templates"
+    offenders = [
+        path.relative_to(templates).as_posix()
+        for path in templates.rglob("*.html")
+        if re.search(r"<table[^>]*\bff-sr-only\b", path.read_text(encoding="utf-8"))
+    ]
+    assert offenders == [], f'wrap the table in a <div class="ff-sr-only">: {offenders}'
+
+
 def test_focus_is_never_removed_without_a_replacement(css: str) -> None:
     """Keyboard users navigate the admin constantly."""
     assert ":focus-visible {" in css
@@ -159,7 +188,7 @@ def _gzipped(*blobs: bytes) -> int:
 
 
 def test_the_everyday_page_stays_within_budget(css: str) -> None:
-    """What every page downloads is budgeted at 66 KB gzipped: the stylesheet,
+    """What every page downloads is budgeted at 67 KB gzipped: the stylesheet,
     `boot.js` and `fastfort.js`.
 
     Both halves are weighed, not just the stylesheet. The budget exists to keep
@@ -195,6 +224,13 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
     been calling without it being defined in that bundle at all -- a
     ReferenceError on every keystroke, which is what made choosing an hour do
     nothing.
+
+    Raised again, to 67 KB, for the note on `.ff-sr-only` recording why the
+    utility must never sit on a `<table>`. Two hundred bytes for a comment is a
+    poor trade in the abstract; it is a good one here, because the bug it
+    describes -- an invisible table growing the page until the sticky sidebar
+    scrolled off the top of it -- took an afternoon and a headless browser to
+    find, and nothing in the rule itself hints at it.
     """
     js = CSS_DIR.parent / "js"
     scripts = [js / name for name in ALWAYS_LOADED]
@@ -202,7 +238,7 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
     assert not missing, f"the budget cannot pass by measuring nothing: {missing}"
 
     compressed = _gzipped(css.encode("utf-8"), *(path.read_bytes() for path in scripts))
-    assert compressed < 66_000, f"{compressed} bytes gzipped"
+    assert compressed < 67_000, f"{compressed} bytes gzipped"
 
 
 def test_the_whole_front_end_stays_within_budget(css: str) -> None:

@@ -253,6 +253,21 @@ async def test_the_chart_is_readable_without_seeing_it(client: httpx.AsyncClient
     assert "<caption>" in body
 
 
+async def test_the_hidden_table_does_not_grow_the_page(client: httpx.AsyncClient) -> None:
+    """The clip has to be on a wrapper, because a table ignores it.
+
+    A `<table class="ff-sr-only">` keeps its full height -- `height` is a minimum
+    for a table -- so an invisible 30-row box stayed in the page's scrollable
+    overflow and made the document taller than the shell around it. The sidebar
+    is sticky inside that shell, so the extra scroll had nothing to hold it and
+    it went off the top of the screen, which is how this was noticed at all.
+    """
+    body = await dashboard(client)
+
+    assert '<table class="ff-sr-only"' not in body
+    assert '<div class="ff-sr-only">' in body
+
+
 async def test_the_chart_carries_no_script(client: httpx.AsyncClient) -> None:
     """It is drawn by the server. A chart that needs script to appear is a chart
     that is missing from the first paint of every dashboard."""
