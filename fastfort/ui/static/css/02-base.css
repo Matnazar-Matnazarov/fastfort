@@ -110,6 +110,12 @@ body {
 /* --- Screen-reader only ----------------------------------------------------
  * Clipped rather than `display: none`, so assistive technology still announces
  * it. Used for table sort state, icon-only button labels and live regions.
+ *
+ * Never on a `<table>`: `height` is a minimum for a table, so the box stays full
+ * size and, being absolutely positioned, stays in the page's scrollable
+ * overflow. That made the document taller than the shell, and the sticky sidebar
+ * ran out of room and scrolled away. Wrap tables in a `<div class="ff-sr-only">`
+ * -- see `test_visually_hidden_content_never_sits_on_a_table`.
  */
 
 .ff-sr-only {

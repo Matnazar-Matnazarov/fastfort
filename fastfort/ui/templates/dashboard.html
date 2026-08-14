@@ -85,17 +85,23 @@
             <span>{{ signups.bars[-1].iso }}</span>
           </div>
 
-          <table class="ff-sr-only">
-            <caption>{{ _("New accounts") }}</caption>
-            <thead>
-              <tr><th scope="col">{{ _("Date") }}</th><th scope="col">{{ _("Count") }}</th></tr>
-            </thead>
-            <tbody>
-              {% for bar in signups.bars %}
-                <tr><th scope="row">{{ bar.iso }}</th><td>{{ bar.count }}</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
+          {# The wrapper carries the clip, not the table: a table ignores the
+             utility's 1px height and stays full size, which left 30 rows of an
+             invisible table in the page's scrollable overflow -- see the note on
+             `.ff-sr-only`. #}
+          <div class="ff-sr-only">
+            <table>
+              <caption>{{ _("New accounts") }}</caption>
+              <thead>
+                <tr><th scope="col">{{ _("Date") }}</th><th scope="col">{{ _("Count") }}</th></tr>
+              </thead>
+              <tbody>
+                {% for bar in signups.bars %}
+                  <tr><th scope="row">{{ bar.iso }}</th><td>{{ bar.count }}</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     {% endif %}
