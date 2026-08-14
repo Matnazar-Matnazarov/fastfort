@@ -196,7 +196,13 @@ def build_admin_router(fort: FastFort) -> APIRouter:
     """Build the router that `FastFort.mount` attaches under `admin.url`."""
     settings = fort.settings
     admin_url = settings.admin.url
-    static_url = f"{admin_url}/static"
+    # The version is in the path, and it is the whole point of the segment: the
+    # bytes behind it are cached for a year, so the URL has to change when they
+    # do. It said so in a comment here for three releases while the URL was
+    # `/static/fastfort.css` and never changed at all -- which meant an upgrade
+    # served new HTML to every browser and CDN still holding yesterday's
+    # stylesheet, and the admin arrived with its layout missing.
+    static_url = f"{admin_url}/static/{__version__}"
     renderer = Renderer(settings)
     auth = AdminAuth(fort)
     fort.auth = auth
@@ -400,18 +406,45 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             enabled=not settings.debug,
         )
         headers = {
-            # Long-lived, because the URL changes with the package version in a
-            # release. During development auto-reload matters more than caching.
-            "Cache-Control": "no-cache" if settings.debug else "public, max-age=86400",
+            # A year, and `immutable`, because the URL carries the version: these
+            # exact bytes can never change behind it, so a browser should not
+            # even revalidate. The unversioned paths below are the ones that can
+            # go stale, and they say so with `no-cache`.
+            #
+            # During development auto-reload matters more than caching.
+            "Cache-Control": (
+                "no-cache" if settings.debug else "public, max-age=31536000, immutable"
+            ),
             "Vary": "Accept-Encoding",
         }
         if encoding:
             headers["Content-Encoding"] = encoding
         return Response(body, media_type=media_type, headers=headers)
 
-    @public.get("/static/fastfort.css", include_in_schema=False)
-    async def stylesheet(request: Request) -> Response:
+    def stale(response: Response) -> Response:
+        """Mark a response as one that has to be revalidated before it is reused.
+
+        For the addresses that do not carry a version. `no-cache` is not "do not
+        store" -- it is "ask me first", which costs one conditional request and
+        cannot serve a stylesheet from before an upgrade.
+        """
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+    @public.get("/static/{version}/fastfort.css", include_in_schema=False)
+    async def stylesheet(request: Request, version: str) -> Response:
         return asset(request, _bundled_css(debug=settings.debug), "text/css")
+
+    @public.get("/static/fastfort.css", include_in_schema=False)
+    async def stylesheet_unversioned(request: Request) -> Response:
+        """The address every page used before the version moved into the path.
+
+        Kept, and deliberately not cached: a project that overrode `base.html`
+        still points here, and this is the one URL whose contents change under
+        it. `stale(...)` is what makes that safe -- one conditional request per
+        page rather than a day of the wrong stylesheet.
+        """
+        return stale(asset(request, _bundled_css(debug=settings.debug), "text/css"))
 
     @public.post("/language", name="fastfort:language")
     async def set_language(request: Request) -> Any:
@@ -439,6 +472,10 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         )
         return response
 
+    @public.get("/static/{version}/favicon.svg", include_in_schema=False)
+    async def favicon_versioned(request: Request, version: str) -> Response:
+        return asset(request, _read_favicon(), "image/svg+xml")
+
     @public.get("/static/favicon.svg", include_in_schema=False)
     async def favicon(request: Request) -> Response:
         """The default admin icon, for projects that have not supplied one.
@@ -447,16 +484,25 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         every other unremarkable tab has -- and an admin is a tab people keep
         open and hunt for. `UISettings.favicon_url` still wins.
         """
-        return asset(request, _read_favicon(), "image/svg+xml")
+        return stale(asset(request, _read_favicon(), "image/svg+xml"))
 
-    @public.get("/static/js/{name}", include_in_schema=False)
-    async def script(request: Request, name: str) -> Response:
+    @public.get("/static/{version}/js/{name}", include_in_schema=False)
+    async def script(request: Request, version: str, name: str) -> Response:
         # An allow-list, not a path join: `name` comes from the URL, and
         # anything that reads a file by a name a request chose is one `..` away
-        # from serving the rest of the disk.
+        # from serving the rest of the disk. `version` is never used to find
+        # anything -- it is a cache key, and the bytes are whichever ones this
+        # process ships.
         if name not in SCRIPTS:
             raise HTTPException(status_code=404, detail="No such script.")
         return asset(request, _bundled_js(name, debug=settings.debug), "text/javascript")
+
+    @public.get("/static/js/{name}", include_in_schema=False)
+    async def script_unversioned(request: Request, name: str) -> Response:
+        """As above, for a project whose own template still points here."""
+        if name not in SCRIPTS:
+            raise HTTPException(status_code=404, detail="No such script.")
+        return stale(asset(request, _bundled_js(name, debug=settings.debug), "text/javascript"))
 
     # -- uploaded files -------------------------------------------------------
 
