@@ -150,6 +150,9 @@ the token expired.
 
 | | |
 |---|---|
+| 📊 **A dashboard you arrange** | `fort.set_dashboard(Metric(Order), Trend(Order), Breakdown(Order, on="status"), Recent(Invoice), Counts())`. Area charts, bar charts, sparklines with a signed delta, meters per value of a column — every one of them drawn by the server as SVG and boxes with a height. No charting library, no canvas, no new JavaScript, and each widget's docstring states how many queries it costs. Write your own by subclassing `Widget` |
+| 🕵 **Sign-in records** | `fort.record_sign_ins(SignInRecord)` writes who signed in, from which address, on which browser and platform — failures included, because a log of successes says nothing about the night somebody tried four hundred passwords. Client hints first, user-agent second, raw string always kept. No foreign key to the user, so the row outlives the account it describes |
+| 🛡 **Accounts a demo cannot break** | Four settings for what the admin may do to an account — change a password, change a *superuser's* password, delete an account, delete a superuser. All default to what the admin has always done. A protected password field is read-only *and* dropped from the write, because a read-only control that still accepts a posted value is a label rather than a protection |
 | 🎛 **Django-style admin** | `@admin.register`, `list_display`, `list_filter`, `search_fields`, `fieldsets`, `actions` |
 | 🗑 **Deletes you can trust** | The confirmation counts what actually goes: rows that cascade, rows kept with the link cleared, and rows that block the delete outright — refused with a sentence instead of a constraint violation |
 | 🎨 **A UI you will not want to replace** | Light and dark themes, brand colour from a single setting, ⌘K command palette, full keyboard navigation, real mobile layout |
@@ -192,10 +195,14 @@ place; it never owns them.
 ### Not in the box yet
 
 `fastfort/contrib/` is a placeholder. **Roles and permissions beyond
-`is_staff`/`is_superuser`, an audit log, and soft delete are not implemented** —
-the spec layer carries the `ChangeSet` an audit log would store and the
-field-masking it would need, but nothing writes one. Earlier versions of this
-README listed them as features. They were a plan.
+`is_staff`/`is_superuser` and soft delete are not implemented** — the spec layer
+carries the `ChangeSet` an audit log would store and the field-masking it would
+need, but nothing writes one. Earlier versions of this README listed them as
+features. They were a plan.
+
+Sign-in records are the one half of an audit log that now exists:
+`fort.record_sign_ins(...)` writes every attempt against a table your project
+owns. What it does *not* record is data changes — who edited which row.
 
 **Inline editing of related rows** is the other gap worth naming — Django's
 `InlineModelAdmin`, editing an invoice's lines on the invoice's own page. A
