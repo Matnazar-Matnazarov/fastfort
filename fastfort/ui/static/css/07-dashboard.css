@@ -1,0 +1,382 @@
+/* The dashboard: the grid its cards sit in, and the charts inside them.
+ *
+ * Loaded last, and used by one page. It is a sheet of its own rather than more
+ * of `06-widgets.css` because everything here answers to `admin/dashboard.py`
+ * -- when a widget changes shape, this is the file that changes with it.
+ *
+ * Every chart is drawn by the server: an SVG path, a few `<line>`s, and boxes
+ * with a height. There is no charting library, no canvas and no second request,
+ * so a chart is in the first paint, it prints, it takes the theme's own colours
+ * and it survives script being off. Script adds the tooltips and nothing else.
+ *
+ * One hue throughout, because the whole palette is derived from one number. A
+ * chart that needed six distinguishable colours could not honour that -- so no
+ * chart here needs one: a trend is a single series, and a breakdown compares
+ * bars by length, which is the channel people read most accurately anyway.
+ */
+
+/* --- The grid ------------------------------------------------------------
+ * Six columns, so a card can be a third, a half or the whole width. One column
+ * on a phone, halves on a tablet: a chart squeezed into a third of a narrow
+ * screen is a chart nobody can read.
+ */
+
+.ff-dash {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: var(--ff-space-4);
+}
+
+.ff-dash__cell {
+  grid-column: span 6;
+  min-width: 0;
+}
+
+/* Cards in one row match heights, which is the difference between a dashboard
+ * and a pile of boxes. The card has to be told to fill the cell: the cell is
+ * stretched by the grid, but the card inside it is not. */
+.ff-dash__cell > .ff-card {
+  height: 100%;
+}
+
+@media (min-width: 48rem) {
+  .ff-dash__cell--1,
+  .ff-dash__cell--2 {
+    grid-column: span 3;
+  }
+}
+
+@media (min-width: 72rem) {
+  .ff-dash__cell--1 {
+    grid-column: span 2;
+  }
+}
+
+/* --- Headline figure and its delta --------------------------------------- */
+
+.ff-figure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--ff-space-3);
+  margin-bottom: var(--ff-space-4);
+}
+
+/* Proportional figures, not tabular: at this size `tabular-nums` gives every
+ * digit the width of a zero and a number like 121 reads loose. Tabular figures
+ * belong in columns, where they line up. */
+.ff-figure__value {
+  font-size: var(--ff-text-2xl);
+  font-weight: var(--ff-weight-semibold);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--ff-text);
+}
+
+/* Never colour alone: the arrow carries the direction and the sign is printed,
+ * so this still reads in monochrome and to anyone who cannot separate the
+ * green from the red. */
+.ff-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ff-space-1);
+  font-size: var(--ff-text-sm);
+  font-weight: var(--ff-weight-medium);
+  color: var(--ff-text-muted);
+}
+
+.ff-delta--up {
+  color: var(--ff-success);
+}
+
+.ff-delta--down {
+  color: var(--ff-danger);
+}
+
+.ff-delta__note {
+  margin-inline-start: var(--ff-space-1);
+  font-weight: var(--ff-weight-normal);
+  color: var(--ff-text-subtle);
+}
+
+/* --- The plot ------------------------------------------------------------ */
+
+.ff-plot {
+  position: relative;
+  height: 10rem;
+  border-bottom: 1px solid var(--ff-border);
+}
+
+/* Stretched to the card's width, which is why nothing inside it is text: a
+ * `<text>` would be stretched with it and be a different width in every card.
+ * The labels are HTML, above and below. */
+.ff-plot__svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Without this the line thins and thickens with the width of the card, because
+ * the stroke is scaled by the same non-uniform transform as the path. */
+.ff-plot__line {
+  fill: none;
+  stroke: var(--ff-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* A wash rather than a saturated block: the fill is context for the line, and
+ * a solid one competes with it. */
+.ff-plot__area {
+  fill: var(--ff-accent);
+  fill-opacity: 0.1;
+  stroke: none;
+}
+
+.ff-plot__grid {
+  stroke: var(--ff-border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.ff-plot__peak {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  font-size: var(--ff-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ff-text-subtle);
+}
+
+/* One hit target per day, laid over the drawing. The line is two pixels wide,
+ * which is not something anybody can point at. */
+.ff-plot__slots,
+.ff-plot__bars {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.ff-plot__slot {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-radius: var(--ff-radius-sm) var(--ff-radius-sm) 0 0;
+}
+
+.ff-plot__slot:hover {
+  background: var(--ff-surface-hover);
+}
+
+/* Rounded at the top, square at the baseline: the round end marks where the
+ * value stops, and a bar rounded at both ends floats off its own axis. */
+.ff-plot__bar {
+  width: 100%;
+  /* Capped, so a fortnight's worth of bars in a full-width card draws columns
+   * rather than a row of filled panels. The leftover is air, not a wider bar. */
+  max-width: 1.5rem;
+  min-height: 0;
+  border-radius: var(--ff-radius-sm) var(--ff-radius-sm) 0 0;
+  background: var(--ff-accent);
+}
+
+.ff-plot__slot:hover .ff-plot__bar {
+  background: var(--ff-accent-hover);
+}
+
+.ff-plot__axis {
+  display: flex;
+  justify-content: space-between;
+  margin-block-start: var(--ff-space-2);
+  font-size: var(--ff-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ff-text-subtle);
+}
+
+/* --- Facts under a chart ------------------------------------------------- */
+
+.ff-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ff-space-6);
+  margin-block-start: var(--ff-space-4);
+  padding-block-start: var(--ff-space-4);
+  border-top: 1px solid var(--ff-border);
+}
+
+.ff-facts__item dt {
+  font-size: var(--ff-text-xs);
+  color: var(--ff-text-subtle);
+}
+
+.ff-facts__item dd {
+  margin-block-start: var(--ff-space-1);
+  font-size: var(--ff-text-base);
+  font-weight: var(--ff-weight-medium);
+  font-variant-numeric: tabular-nums;
+  color: var(--ff-text);
+}
+
+/* --- Metric card --------------------------------------------------------- */
+
+.ff-metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ff-space-2);
+  padding: var(--ff-space-5) var(--ff-space-6);
+}
+
+.ff-metric__head {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-2);
+  color: var(--ff-text-muted);
+}
+
+.ff-metric__icon {
+  display: grid;
+  place-items: center;
+  color: var(--ff-text-subtle);
+}
+
+.ff-metric__label {
+  font-size: var(--ff-text-base);
+}
+
+.ff-metric__value {
+  font-size: var(--ff-text-2xl);
+  font-weight: var(--ff-weight-semibold);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--ff-text);
+}
+
+/* Pushed to the foot of the card, so that a tile whose delta is missing --
+ * nothing to compare against yet -- still lines its sparkline up with the tile
+ * beside it rather than floating half way up. */
+.ff-spark {
+  width: 100%;
+  height: 2.5rem;
+  margin-block-start: auto;
+  padding-block-start: var(--ff-space-3);
+}
+
+/* --- Breakdown meters ---------------------------------------------------- */
+
+.ff-meters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ff-space-3);
+  list-style: none;
+  padding: 0;
+}
+
+/* A four-column row -- name, bar, count, share -- so the numbers line up down
+ * the card however long the names are. */
+.ff-meter {
+  display: grid;
+  grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr) auto 3.5rem;
+  align-items: center;
+  gap: var(--ff-space-3);
+  font-size: var(--ff-text-base);
+}
+
+.ff-meter__label {
+  color: var(--ff-text-muted);
+}
+
+.ff-meter__track {
+  block-size: 0.5rem;
+  border-radius: var(--ff-radius-full);
+  background: var(--ff-surface-sunken);
+  overflow: hidden;
+}
+
+.ff-meter__fill {
+  display: block;
+  block-size: 100%;
+  border-radius: var(--ff-radius-full);
+  background: var(--ff-accent);
+}
+
+/* The folded tail is not one of the values, so it does not wear their colour. */
+.ff-meter__fill--other {
+  background: var(--ff-border-strong);
+}
+
+.ff-meter__value {
+  font-variant-numeric: tabular-nums;
+  color: var(--ff-text);
+}
+
+.ff-meter__share {
+  font-size: var(--ff-text-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  color: var(--ff-text-subtle);
+}
+
+/* --- Recent rows --------------------------------------------------------- */
+
+.ff-feed {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  padding: 0;
+}
+
+.ff-feed__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ff-space-3);
+  padding-block: var(--ff-space-2);
+  border-bottom: 1px solid var(--ff-border);
+}
+
+.ff-feed__item:last-child {
+  border-bottom: 0;
+}
+
+.ff-feed__when {
+  flex: 0 0 auto;
+  font-size: var(--ff-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ff-text-subtle);
+}
+
+/* --- Grouped counts ------------------------------------------------------
+ * `auto-fill` rather than the `auto-fit` the page grid uses: an application
+ * with one model should get one tile the size of every other tile, and
+ * `auto-fit` collapses the empty tracks and stretches it across the row.
+ */
+
+.ff-tiles {
+  display: grid;
+  gap: var(--ff-space-4);
+  grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
+}
+
+.ff-section__title {
+  font-size: var(--ff-text-md);
+  font-weight: var(--ff-weight-semibold);
+  color: var(--ff-text);
+}
+
+.ff-section__group {
+  margin-block-start: var(--ff-space-4);
+}
+
+.ff-section__label {
+  margin-block-end: var(--ff-space-2);
+  font-size: var(--ff-text-xs);
+  font-weight: var(--ff-weight-semibold);
+  letter-spacing: 0.02em;
+  color: var(--ff-text-subtle);
+}

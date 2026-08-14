@@ -1,0 +1,119 @@
+{#
+  A trend: how many rows arrived per day.
+
+  Drawn by the server, as an SVG path and a handful of `<line>`s. No charting
+  library, no canvas and no second request -- the chart is in the first paint,
+  it inherits the theme's own colours, it prints, and it survives script being
+  off. The tooltips are the only part script adds, and a tooltip is not how
+  anyone reads a trend.
+
+  The plot carries no text. The SVG is stretched to the card's width, which
+  would stretch any `<text>` in it with everything else, so the labels are HTML
+  laid over and under the box instead -- where they also wrap, translate and
+  inherit the page's own type.
+#}
+{% set card = card.context %}
+{% set series = card.series %}
+
+<div class="ff-card">
+  <div class="ff-card__header">
+    <div class="ff-grow">
+      <h2 class="ff-card__title">{{ _(card.title) }}</h2>
+      <p class="ff-muted ff-mt-1">{{ _("Last {days} days", days=series.bars|length) }}</p>
+    </div>
+    {% if card.url %}
+      <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ card.url }}">
+        {{ _("View all") }}
+        {{ ff_icon("arrow-right", size=14) }}
+      </a>
+    {% endif %}
+  </div>
+
+  <div class="ff-card__body">
+    <div class="ff-figure">
+      <span class="ff-figure__value">{{ series.total }}</span>
+      {% include "dashboard/_delta.html" %}
+    </div>
+
+    {# `role="img"` with a label, because the shape means nothing read point by
+       point. The table at the foot carries the same numbers exactly, and is
+       what a screen reader is offered instead. #}
+    <div
+      class="ff-plot"
+      role="img"
+      aria-label="{{ _("Last {days} days", days=series.bars|length) }}"
+    >
+      <span class="ff-plot__peak" aria-hidden="true">{{ series.peak }}</span>
+
+      {% if card.bars %}
+        <div class="ff-plot__bars" aria-hidden="true">
+          {% for bar in series.bars %}
+            <div class="ff-plot__slot" data-ff-tip="{{ bar.iso }} · {{ bar.count }}">
+              <div class="ff-plot__bar" style="height: {{ series.height(bar) }}%"></div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <svg
+          class="ff-plot__svg"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+          focusable="false"
+        >
+          {% for y in series.gridlines %}
+            <line class="ff-plot__grid" x1="0" y1="{{ y }}" x2="100" y2="{{ y }}" />
+          {% endfor %}
+          <path class="ff-plot__area" d="{{ series.area }}" />
+          <polyline class="ff-plot__line" points="{{ series.line }}" />
+        </svg>
+        {# One hit target per day, over the drawing. The line itself is two
+           pixels wide, which is not something anybody points at. #}
+        <div class="ff-plot__slots" aria-hidden="true">
+          {% for bar in series.bars %}
+            <span class="ff-plot__slot" data-ff-tip="{{ bar.iso }} · {{ bar.count }}"></span>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="ff-plot__axis" aria-hidden="true">
+      <span>{{ series.bars[0].iso }}</span>
+      <span>{{ series.bars[-1].iso }}</span>
+    </div>
+
+    <dl class="ff-facts">
+      <div class="ff-facts__item">
+        <dt>{{ _("Total") }}</dt>
+        <dd>{{ series.total }}</dd>
+      </div>
+      <div class="ff-facts__item">
+        <dt>{{ _("Per day") }}</dt>
+        <dd>{{ series.average }}</dd>
+      </div>
+      {% if series.best and series.best.count %}
+        <div class="ff-facts__item">
+          <dt>{{ _("Busiest") }}</dt>
+          <dd>{{ series.best.iso }} · {{ series.best.count }}</dd>
+        </div>
+      {% endif %}
+    </dl>
+
+    {# The clip goes on the wrapper, never on the table: a table treats `height`
+       as a minimum and stays full size, and an invisible full-size box is still
+       part of the page's scrollable overflow. #}
+    <div class="ff-sr-only">
+      <table>
+        <caption>{{ _(card.title) }}</caption>
+        <thead>
+          <tr><th scope="col">{{ _("Date") }}</th><th scope="col">{{ _("Count") }}</th></tr>
+        </thead>
+        <tbody>
+          {% for bar in series.bars %}
+            <tr><th scope="row">{{ bar.iso }}</th><td>{{ bar.count }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>

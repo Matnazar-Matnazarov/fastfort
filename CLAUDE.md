@@ -51,7 +51,9 @@ fastfort/
   core/       FastFort object, registry, settings, hooks, exceptions
   spec/       ModelSpec / FieldSpec / ListQuery -- pure data, no web, no ORM
   orm/        base.py = the protocols; sqlalchemy/ and tortoise/ implement them
-  admin/      the HTTP surface: site.py (router), options.py (ModelAdmin), forms.py
+  admin/      the HTTP surface: site.py (router), options.py (ModelAdmin), forms.py,
+              dashboard.py (widgets), charts.py + insights.py (what they draw),
+              protection.py (what a deployment lets the admin do to an account)
   auth/       sessions, CSRF, Argon2 passwords, lockout, user-model detection
   ui/         Jinja renderer, theming, icons, static/{css,js}, templates/
   i18n/       catalogue loading + language negotiation (11 languages, Arabic RTL)
@@ -218,10 +220,28 @@ stop the admin acquiring a framework by degrees. Raising it is allowed and has
 happened three times; each raise names the feature that caused it in the test's
 docstring. Trimming comments to squeeze under it is not the intended fix.
 
-CSS is seven cascade layers loaded in order (`00-reset` … `06-widgets`) and
+CSS is eight cascade layers loaded in order (`00-reset` … `07-dashboard`) and
 concatenated into one response by `_read_css()`. The whole palette derives from one
 OKLCH hue custom property, which is why rebranding is a number in `UISettings` and
 not a forked stylesheet.
+
+**The dashboard is widgets, and every chart is server-drawn.**
+`fort.set_dashboard(Metric(...), Trend(...), Counts())` replaces the default
+layout; each widget resolves against `admin/dashboard.py::Context`, which owns the
+request's single unit of work, and returns a `Card` naming a template. Every
+widget's docstring states how many queries it costs, because this is the page that
+gets opened most. The charts are SVG paths and boxes with a height — the geometry
+is `admin/charts.py`, which is pure arithmetic and tested as such. There is no
+charting library and no new JavaScript, and a chart that needed six
+distinguishable colours could not honour the one-hue palette, so no chart needs
+one: a trend is a single series, and a breakdown compares bars by length.
+
+**What the admin may do to an account is `admin/protection.py`.** Four settings on
+`AuthSettings`, all defaulting to what the admin has always done, for the
+deployment where they should not — a public demo above all. A protected password
+is rendered read-only *and* dropped from the write: a read-only control that still
+accepts a posted value is a label, not a protection. It narrows
+`FieldSpec.editable` and can never widen it.
 
 The map is **hand-rolled Web Mercator**, not Leaflet — 256px tiles positioned by
 `transform`, one layer per zoom level so a zoom is instant and the previous level

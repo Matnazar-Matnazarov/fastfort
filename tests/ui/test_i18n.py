@@ -83,6 +83,18 @@ _INDIRECT = frozenset(
         "Add",
         "Delete selected",
         "Leave blank to keep the current password.",
+        # Dashboard widgets carry their own default titles, which reach the
+        # translator as `Card.context["title"]` rather than as a literal in a
+        # template. A project that passes `title=` supplies its own words and
+        # FastFort does not translate those, the same as a model's name.
+        "New accounts",
+        "Browse",
+        # `admin/protection.py` names its refusals as constants and translates
+        # the one that applied, so the literal never appears at a call site.
+        "Accounts cannot be deleted in this deployment.",
+        "Superusers cannot be deleted in this deployment.",
+        "Passwords cannot be changed in this deployment.",
+        "Only a superuser can change their own password here.",
     }
 )
 

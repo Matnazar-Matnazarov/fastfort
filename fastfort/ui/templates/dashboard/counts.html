@@ -1,0 +1,26 @@
+{#
+  Every registered model and how many rows it holds, grouped the way the sidebar
+  groups them.
+
+  Grouped rather than one flat grid of thirty tiles: the group is the first
+  thing someone scans for, and the sidebar has already taught them these names.
+#}
+{% set card = card.context %}
+
+<section class="ff-section">
+  <h2 class="ff-section__title">{{ _(card.title) }}</h2>
+
+  {% for group, entries in card.groups.items() %}
+    <div class="ff-section__group">
+      <h3 class="ff-section__label">{{ _(group) }}</h3>
+      <div class="ff-tiles">
+        {% for entry in entries %}
+          <a class="ff-stat" href="{{ entry.url }}">
+            <span class="ff-stat__value">{{ entry.count }}</span>
+            <span class="ff-stat__meta">{{ _(entry.title) }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+  {% endfor %}
+</section>

@@ -1,0 +1,17 @@
+{#
+  How a number moved, as an arrow, a sign and a percentage.
+
+  Never colour alone: the arrow says the direction and the sign is printed, so
+  the badge still reads in monochrome, in print, and to anyone who cannot tell
+  the green from the red. Nothing is rendered when there is nothing to compare
+  against -- the first half of the window being empty makes every percentage
+  infinite, and "+∞%" is a worse answer than no badge.
+#}
+{% if series.delta is not none %}
+  {% set direction = "up" if series.delta > 0 else ("down" if series.delta < 0 else "flat") %}
+  <span class="ff-delta ff-delta--{{ direction }}">
+    {{ ff_icon("trending-up" if direction == "up" else ("trending-down" if direction == "down" else "minus"), size=14) }}
+    {{ "+" if series.delta > 0 }}{{ series.delta }}%
+    <span class="ff-delta__note">{{ _("vs previous {days} days", days=series.half) }}</span>
+  </span>
+{% endif %}

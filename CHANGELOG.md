@@ -10,6 +10,127 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-14
+
+The release that makes the front page worth opening, and the one that answers
+two questions an admin should never have had to be asked twice: *who has been
+signing in?* and *what can a visitor take apart?*
+
+### Added
+
+- **The dashboard is widgets a project arranges.** `fort.set_dashboard(...)`
+  takes a list; what a project that configures nothing gets is the layout it
+  always had -- the model counts and the signups chart -- for exactly the
+  queries it always cost.
+
+  ```python
+  from fastfort.admin import Breakdown, Counts, Metric, Recent, Trend
+
+  fort.set_dashboard(
+      Metric(Shipment, days=14),
+      Metric(Invoice, days=14),
+      Trend(Shipment, days=30),
+      Breakdown(Shipment, on="status"),
+      Recent(Invoice, limit=5),
+      Counts(),
+  )
+  ```
+
+  - `Metric` is a number, a signed delta against the first half of its own
+    window, and a sparkline. `Trend` is the same series drawn large, as an area
+    chart or as bars, with the window's total, its busiest day and its daily
+    average underneath. `Breakdown` is one meter per value of a column.
+    `Recent` is the newest rows. `Counts` is every model's row count, grouped
+    the way the sidebar groups them.
+  - Every widget states its cost in its own docstring, because a dashboard is
+    the page that gets opened most: `Counts` is one query per model, `Trend`
+    and `Metric` one per day, `Breakdown` one per value of the column, `Recent`
+    one. All of them share the request's single unit of work.
+  - A widget that cannot say anything renders nothing at all -- a column that
+    does not exist, a model with no date, a `dashboard_days` of zero. A typo in
+    a configuration file costs a card, never the page.
+  - Subclass `fastfort.admin.dashboard.Widget`, return a `Card` naming a
+    template of your own, and it renders exactly like a built-in one. Nothing
+    in the page is special-cased for the five that ship.
+
+- **Every chart is drawn by the server.** An SVG path, a few `<line>`s and
+  boxes with a height -- no charting library, no canvas, no second request, and
+  not one byte of new JavaScript. The charts are in the first paint, they
+  print, they take the theme's colours, and they work with script switched off;
+  script adds the tooltips and nothing else. The accessible table beside each
+  chart carries the same numbers exactly.
+
+- **A record of who signed in, from where, and on what.**
+  `fort.record_sign_ins(SignInRecord)` writes a row per attempt: the address,
+  the browser, the platform, the kind of device, the raw user-agent, and
+  whether it worked.
+  - `fastfort.orm.sqlalchemy.SignInRecordMixin` declares the columns, because
+    FastFort ships no migrations and the table is the project's. A project that
+    wants fewer columns declares fewer; only `at`, `successful` and `address`
+    are required.
+  - The device is read from `Sec-CH-UA` and its siblings first and from the
+    user-agent second, because the client hints are structured fields and the
+    user-agent is a sentence that has been accreting since 1994. The raw string
+    is always stored beside the reading: the reading can be wrong.
+  - Failures are recorded by default. A log of successes says nothing about the
+    night somebody tried four hundred passwords.
+  - There is no foreign key to the user table. An audit row that cascades away
+    with the account is not an audit row, and "who deleted this account" is
+    what these exist to answer.
+  - Writing a record can never fail a sign-in: it runs in its own transaction,
+    and a failure is logged rather than raised. A missing audit table must not
+    be able to lock out the people who could fix it.
+  - `locate=` turns an address into a place for a project that has a GeoIP
+    database. FastFort bundles none and calls none: one would be a hundred
+    megabytes going stale inside a wheel, and the other would hand every
+    administrator's address to a third party from inside the login handler.
+
+- **Four settings for what the admin may do to an account**, for the deployment
+  where "an administrator can do anything" is the wrong default -- a public
+  demo, a shared sandbox, a staging copy of production data:
+  `auth.allow_password_change`, `auth.allow_superuser_password_change`,
+  `auth.allow_user_delete`, `auth.allow_superuser_delete`. All four default to
+  what the admin has always done, so an existing project notices nothing.
+  - They apply to the user model and to nothing else, and to every
+    administrator equally, including the one who wrote them. Rules that differ
+    per person are authorisation, which is the project's own and plugs into the
+    admin gate.
+  - A protected password field is rendered read-only *and* dropped from the
+    write, because a read-only control that still accepts a posted value is a
+    label rather than a protection. `FieldSpec.editable` remains the single
+    source of truth for mass assignment: this narrows that set and can never
+    widen it.
+  - A bulk delete keeps the protected rows and removes the rest, and says how
+    many it kept. Someone who ticked forty rows and one protected account meant
+    to delete the forty.
+
+### Fixed
+
+- **The sidebar scrolled away with the page.** The dashboard's hidden data
+  table -- the version of the chart a screen reader is offered -- carried
+  `.ff-sr-only` on the `<table>` itself. A table treats `height` as a minimum
+  and grows to fit its rows, so the utility's 1px box never collapsed and
+  `overflow: hidden` had nothing to clip; being absolutely positioned, that
+  full-size box stayed in the page's scrollable overflow and made the document
+  some 640px taller than the shell drawn inside it. The sidebar is
+  `position: sticky` and a sticky grid item can only travel inside its own grid
+  area, so once the page scrolled past the end of the shell the sidebar went up
+  with it. Hidden tables are now wrapped in a `<div class="ff-sr-only">`, which
+  does collapse, and a test scans every shipped template for the old shape.
+
+### Changed
+
+- The stylesheet is eight files rather than seven: `07-dashboard.css` holds the
+  card grid, the plots, the meters and the stat tiles. The front-end budgets
+  move with it -- 67 KB to 70 KB for the everyday page, 88,000 to 92,000 bytes
+  for everything that ships -- and the JavaScript half of both did not move by
+  a single byte.
+- `insights.Series` gained `average`, `best`, `delta` and the coordinates a
+  chart is drawn from. `insights.build_distribution` and
+  `insights.build_recent` are new; `Breakdown` as a *data* class is now
+  `Distribution`, because `Breakdown` is the widget.
+
+
 ## [0.3.2] - 2026-08-13
 
 Numbered as a patch on purpose, so that a project pinned `>=0.3.1,<0.4`
@@ -1043,7 +1164,9 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.3.2...v0.4.0
+[0.3.2]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.2.0...v0.2.1
