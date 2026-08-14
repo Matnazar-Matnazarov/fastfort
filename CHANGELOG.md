@@ -10,6 +10,31 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-15
+
+### Fixed
+
+- **The stylesheet's URL never changed, so an upgrade served new pages with the
+  old CSS.** `/admin/static/fastfort.css` was cached for a day
+  (`public, max-age=86400`) behind a comment claiming "the URL changes with the
+  package version in a release" — it never had. Upgrading to 0.4.0 therefore
+  handed every browser and CDN that already held yesterday's copy a dashboard
+  full of markup whose rules did not exist yet: charts drawn at their natural
+  SVG size, meters as bulleted lists, tiles stacked one per row. On the hosted
+  demo that was `cf-cache-status: HIT` with an `age` of fourteen hours, and
+  nothing in any log.
+
+  The version is now in the path — `/admin/static/0.4.1/fastfort.css`,
+  `/admin/static/0.4.1/js/fastfort.js` — so the bytes behind a URL can never
+  change and the year-long `immutable` cache they now carry is safe. The
+  unversioned addresses still answer, for a project that overrode `base.html`,
+  and carry `no-cache`: one conditional request per page, and never a
+  stylesheet from before an upgrade. A version segment that is not the running
+  one serves the running bytes rather than 404ing — the segment is a cache key,
+  never a lookup, and an admin with no stylesheet is worse than one with the
+  wrong one.
+
+
 ## [0.4.0] - 2026-08-14
 
 The release that makes the front page worth opening, and the one that answers
@@ -1164,7 +1189,8 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.3.0...v0.3.1

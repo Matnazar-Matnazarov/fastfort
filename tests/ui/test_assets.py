@@ -21,6 +21,7 @@ from tests.conftest import sign_in
 from tests.orm.models import Product, StaffUser
 
 from fastfort import FastFort, FastFortSettings, admin
+from fastfort._version import __version__
 from fastfort.orm.sqlalchemy import SQLAlchemyBackend
 from fastfort.ui.compression import available_encodings
 
@@ -28,7 +29,16 @@ SECRET = "n7Qw2xLp9vRt4KjM8sYzB3cF6hVdA1gE"
 
 pytestmark = pytest.mark.usefixtures("seeded")
 
-ASSETS = ["/admin/static/fastfort.css", "/admin/static/js/fastfort.js"]
+#: What a page actually asks for. The version is in the path so that a release
+#: cannot be served against a cached stylesheet from the one before it.
+ASSETS = [
+    f"/admin/static/{__version__}/fastfort.css",
+    f"/admin/static/{__version__}/js/fastfort.js",
+]
+
+#: The addresses pages used before the version moved into the path. Still
+#: served, because a project may have overridden `base.html`.
+LEGACY_ASSETS = ["/admin/static/fastfort.css", "/admin/static/js/fastfort.js"]
 
 
 def build(backend: SQLAlchemyBackend, *, debug: bool = False) -> FastAPI:
@@ -119,3 +129,60 @@ async def test_a_page_is_not_compressed(client: httpx.AsyncClient) -> None:
 
     assert response.status_code == 200
     assert "content-encoding" not in response.headers
+
+
+# ---------------------------------------------------------------------------
+# Cache busting
+# ---------------------------------------------------------------------------
+
+
+async def test_the_page_asks_for_the_stylesheet_by_version(client: httpx.AsyncClient) -> None:
+    """The bug this exists for: an upgrade changed the HTML and left the URL of
+    the stylesheet alone, so every browser and CDN holding yesterday's copy
+    rendered the new page with the old rules -- for a day, on a live site, with
+    nothing in any log.
+
+    A version in the path is what makes the year-long cache below safe.
+    """
+    body = (await client.get("/admin/")).text
+
+    assert f"/admin/static/{__version__}/fastfort.css" in body
+    assert f"/admin/static/{__version__}/js/fastfort.js" in body
+    assert 'href="/admin/static/fastfort.css"' not in body
+
+
+@pytest.mark.parametrize("path", ASSETS)
+async def test_a_versioned_asset_is_cached_for_a_year(client: httpx.AsyncClient, path: str) -> None:
+    """`immutable`, because the bytes behind this exact URL can never change:
+    the next release asks for a different one."""
+    response = await client.get(path)
+
+    assert response.status_code == 200
+    assert "max-age=31536000" in response.headers["cache-control"]
+    assert "immutable" in response.headers["cache-control"]
+
+
+@pytest.mark.parametrize("path", LEGACY_ASSETS)
+async def test_an_unversioned_asset_still_answers_but_is_never_reused_blindly(
+    client: httpx.AsyncClient, path: str
+) -> None:
+    """This is the address whose contents change underneath it, so it has to be
+    revalidated. `no-cache` costs one conditional request per page and cannot
+    serve a stylesheet from before an upgrade."""
+    response = await client.get(path)
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache"
+
+
+async def test_a_version_that_is_not_this_one_still_serves_this_one(
+    client: httpx.AsyncClient,
+) -> None:
+    """The segment is a cache key, never a lookup. A stale page asking for an
+    older version gets the current bytes rather than a 404 -- an admin with no
+    stylesheet at all is worse than one with the wrong one, and nothing on disk
+    is found by that string."""
+    response = await client.get("/admin/static/0.0.1/fastfort.css")
+
+    assert response.status_code == 200
+    assert ".ff-app" in response.text
