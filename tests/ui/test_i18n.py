@@ -83,6 +83,12 @@ _INDIRECT = frozenset(
         "Add",
         "Delete selected",
         "Leave blank to keep the current password.",
+        # Dashboard widgets carry their own default titles, which reach the
+        # translator as `Card.context["title"]` rather than as a literal in a
+        # template. A project that passes `title=` supplies its own words and
+        # FastFort does not translate those, the same as a model's name.
+        "New accounts",
+        "Browse",
     }
 )
 

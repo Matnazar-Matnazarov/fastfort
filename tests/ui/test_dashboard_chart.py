@@ -237,10 +237,16 @@ async def test_a_model_without_the_column_yields_an_empty_series(
 
 
 async def test_the_dashboard_draws_the_chart(client: httpx.AsyncClient) -> None:
+    """The default dashboard plots the user model as an area chart.
+
+    One `<polyline>` of thirty points rather than thirty boxes: the shape of a
+    month reads better as a line, and it is one attribute instead of thirty
+    elements. The bar form is still there behind `Trend(kind="bars")`.
+    """
     body = await dashboard(client)
 
-    assert "ff-chart" in body
-    assert body.count("ff-chart__bar") == 30
+    assert "ff-plot__line" in body
+    assert body.count('ff-plot__slot"') == 30
 
 
 async def test_the_chart_is_readable_without_seeing_it(client: httpx.AsyncClient) -> None:
@@ -272,7 +278,7 @@ async def test_the_chart_carries_no_script(client: httpx.AsyncClient) -> None:
     """It is drawn by the server. A chart that needs script to appear is a chart
     that is missing from the first paint of every dashboard."""
     body = await dashboard(client)
-    chart = body[body.index("ff-chart") : body.index("</table>")]
+    chart = body[body.index("ff-plot") : body.index("</table>")]
 
     assert "<script" not in chart
     assert "<canvas" not in chart
@@ -290,7 +296,7 @@ async def test_zero_days_switches_the_chart_off(
         await sign_in(client)
         body = await dashboard(client)
 
-    assert "ff-chart" not in body
+    assert "ff-plot" not in body
 
 
 async def test_the_window_follows_the_setting(
@@ -303,4 +309,4 @@ async def test_the_window_follows_the_setting(
         await sign_in(client)
         body = await dashboard(client)
 
-    assert body.count("ff-chart__bar") == 7
+    assert body.count('ff-plot__slot"') == 7

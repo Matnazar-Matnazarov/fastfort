@@ -188,7 +188,7 @@ def _gzipped(*blobs: bytes) -> int:
 
 
 def test_the_everyday_page_stays_within_budget(css: str) -> None:
-    """What every page downloads is budgeted at 67 KB gzipped: the stylesheet,
+    """What every page downloads is budgeted at 70 KB gzipped: the stylesheet,
     `boot.js` and `fastfort.js`.
 
     Both halves are weighed, not just the stylesheet. The budget exists to keep
@@ -231,6 +231,14 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
     describes -- an invisible table growing the page until the sticky sidebar
     scrolled off the top of it -- took an afternoon and a headless browser to
     find, and nothing in the rule itself hints at it.
+
+    Raised again, to 70 KB, for `07-dashboard.css`: the dashboard's card grid,
+    its plots, its meters and its stat tiles. It buys a page that draws area
+    charts, bar charts, sparklines with a signed delta, and a breakdown per
+    value of a column -- all of it server-rendered, so the JavaScript half of
+    this budget did not move by a single byte and neither did any page that is
+    not the dashboard. A charting library would have cost this much compressed
+    before drawing anything.
     """
     js = CSS_DIR.parent / "js"
     scripts = [js / name for name in ALWAYS_LOADED]
@@ -238,11 +246,11 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
     assert not missing, f"the budget cannot pass by measuring nothing: {missing}"
 
     compressed = _gzipped(css.encode("utf-8"), *(path.read_bytes() for path in scripts))
-    assert compressed < 67_000, f"{compressed} bytes gzipped"
+    assert compressed < 70_000, f"{compressed} bytes gzipped"
 
 
 def test_the_whole_front_end_stays_within_budget(css: str) -> None:
-    """Everything that ships, on-demand bundles included, is budgeted at 88,000 bytes.
+    """Everything that ships, on-demand bundles included, is budgeted at 92,000 bytes.
 
     The per-page budget above is the one that protects the common case, but on
     its own it would be a budget with a hole in it: anything could be moved into
@@ -261,11 +269,18 @@ def test_the_whole_front_end_stays_within_budget(css: str) -> None:
     single-precision overflow that blanked the map past zoom 19 while every
     tile was loaded.
 
-    This round: `boot.js` scrolls the current model back into a nav that scrolls
-    by itself. It has to be pre-paint, so it has to be in the one file that is
-    render-blocking, which is the most expensive place in the package for a byte
-    to live -- and it is still the right trade, because the alternative was a
-    sidebar that marked "you are here" below the fold on every navigation.
+    This round, to 92,000: the dashboard's own stylesheet, and the note on
+    `.ff-sr-only`. The dashboard is now widgets a project arranges -- charts,
+    sparklines, meters, grouped counts -- and every one of them is drawn by the
+    server. Nothing here is a script: the JavaScript in this package weighs
+    exactly what it did before the dashboard was rebuilt.
+
+    Before it: `boot.js` scrolling the current model back into a nav that
+    scrolls by itself. It has to be pre-paint, so it has to be in the one file
+    that is render-blocking, which is the most expensive place in the package
+    for a byte to live -- and it was still the right trade, because the
+    alternative was a sidebar that marked "you are here" below the fold on every
+    navigation.
 
     Each raise was a feature rather than an accumulation.
     """
@@ -273,7 +288,7 @@ def test_the_whole_front_end_stays_within_budget(css: str) -> None:
     assert scripts, "the budget cannot pass by measuring nothing"
 
     compressed = _gzipped(css.encode("utf-8"), *(script.read_bytes() for script in scripts))
-    assert compressed < 88_000, f"{compressed} bytes gzipped"
+    assert compressed < 92_000, f"{compressed} bytes gzipped"
 
 
 # ---------------------------------------------------------------------------

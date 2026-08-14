@@ -1,0 +1,36 @@
+{#
+  The newest rows, newest first. One query, and on most admins the card people
+  actually read: what happened since I last looked.
+#}
+{% set card = card.context %}
+
+<div class="ff-card">
+  <div class="ff-card__header">
+    <div class="ff-grow">
+      <h2 class="ff-card__title">
+        {{ _(card.title) if card.title else _("Latest {subject}", subject=_(card.subject)) }}
+      </h2>
+    </div>
+    {% if card.url %}
+      <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ card.url }}">
+        {{ _("View all") }}
+        {{ ff_icon("arrow-right", size=14) }}
+      </a>
+    {% endif %}
+  </div>
+
+  <div class="ff-card__body">
+    <ul class="ff-feed">
+      {% for row in card.rows %}
+        <li class="ff-feed__item">
+          {% if row.url %}
+            <a class="ff-link ff-truncate" href="{{ row.url }}">{{ row.label }}</a>
+          {% else %}
+            <span class="ff-truncate">{{ row.label }}</span>
+          {% endif %}
+          <span class="ff-feed__when">{{ row.when|ff_display }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>

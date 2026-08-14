@@ -1,3 +1,11 @@
+{#
+  The dashboard.
+
+  The page itself owns the header, the configuration warnings and the grid; each
+  card owns everything inside it. Which cards there are, and in what order, is
+  `fort.set_dashboard(...)` -- so this template never learns the name of a
+  widget, and a project's own widget renders exactly like a built-in one.
+#}
 {% extends "base.html" %}
 
 {% block content %}
@@ -6,8 +14,8 @@
       <h1 class="ff-h1">{{ _(settings.project_name) }}</h1>
       <p class="ff-muted ff-mt-2">
         {% if models %}
-          {{ _("{count} model registered", count=models|length) if models|length == 1
-             else _("{count} models registered", count=models|length) }}
+          {{ _("{count} model registered", count=models) if models == 1
+             else _("{count} models registered", count=models) }}
           · {{ dialect }}
         {% else %}
           {{ _("Nothing registered yet") }}
@@ -31,80 +39,16 @@
     </div>
   {% endif %}
 
-  {% if models %}
-    <div class="ff-grid ff-mt-6">
-      {% for model in models %}
-        <a class="ff-stat" href="{{ model.url }}">
-          <span class="ff-stat__label">{{ _(model.group) }}</span>
-          <span class="ff-stat__value">{{ model.count }}</span>
-          <span class="ff-stat__meta">{{ _(model.title) }}</span>
-        </a>
+  {% if cards %}
+    <div class="ff-dash ff-mt-6">
+      {% for card in cards %}
+        {# The span is the widget's own, and it is a small integer from a
+           constant in `admin/dashboard.py` -- never a number from a request. #}
+        <div class="ff-dash__cell ff-dash__cell--{{ card.span }}">
+          {% include card.template %}
+        </div>
       {% endfor %}
     </div>
-
-    {% if signups %}
-      {# Drawn by the server, not by a charting library. Bars are elements with a
-         height, so the chart is in the first paint, works with script disabled,
-         inherits the theme's own colours, and costs nothing to download. #}
-      <div class="ff-card ff-mt-6">
-        <div class="ff-card__header">
-          <div class="ff-grow">
-            <h2 class="ff-card__title">{{ _("New accounts") }}</h2>
-            <p class="ff-muted ff-mt-2">
-              {{ _("{count} in the last {days} days",
-                   count=signups.total, days=signups.bars|length) }}
-            </p>
-          </div>
-          {% if signups_url %}
-            <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ signups_url }}">
-              {{ _("View all") }}
-              {{ ff_icon("arrow-right", size=14) }}
-            </a>
-          {% endif %}
-        </div>
-
-        <div class="ff-card__body">
-          {# `role="img"` with a label, because the bars mean nothing read one by
-             one. The table below carries the same numbers for anyone who wants
-             them exactly, and is what a screen reader is offered. #}
-          <div
-            class="ff-chart"
-            role="img"
-            aria-label="{{ _("{count} in the last {days} days",
-                             count=signups.total, days=signups.bars|length) }}"
-          >
-            {% for bar in signups.bars %}
-              <div class="ff-chart__slot" data-ff-tip="{{ bar.iso }} · {{ bar.count }}">
-                <div class="ff-chart__bar" style="height: {{ signups.height(bar) }}%"></div>
-              </div>
-            {% endfor %}
-          </div>
-
-          <div class="ff-chart__axis" aria-hidden="true">
-            <span>{{ signups.bars[0].iso }}</span>
-            <span>{{ signups.bars[-1].iso }}</span>
-          </div>
-
-          {# The wrapper carries the clip, not the table: a table ignores the
-             utility's 1px height and stays full size, which left 30 rows of an
-             invisible table in the page's scrollable overflow -- see the note on
-             `.ff-sr-only`. #}
-          <div class="ff-sr-only">
-            <table>
-              <caption>{{ _("New accounts") }}</caption>
-              <thead>
-                <tr><th scope="col">{{ _("Date") }}</th><th scope="col">{{ _("Count") }}</th></tr>
-              </thead>
-              <tbody>
-                {% for bar in signups.bars %}
-                  <tr><th scope="row">{{ bar.iso }}</th><td>{{ bar.count }}</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    {% endif %}
   {% else %}
     <div class="ff-card ff-mt-6">
       <div class="ff-empty">

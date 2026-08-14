@@ -2204,58 +2204,12 @@ button.ff-datepicker__title:hover {
 }
 
 /* ===========================================================================
- * Signups chart
- *
- * Bars are elements with a height, drawn by the server. No canvas, no library,
- * no second request -- the chart is in the first paint, it inherits the theme's
- * own colours, and it survives script being off.
+ * Utilities the widgets share
  * ======================================================================== */
 
 .ff-grow {
   flex: 1;
   min-width: 0;
-}
-
-.ff-chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 8rem;
-  /* The baseline, so days with nothing still read as days rather than as gaps. */
-  border-bottom: 1px solid var(--ff-border);
-}
-
-.ff-chart__slot {
-  display: flex;
-  flex: 1;
-  align-items: flex-end;
-  min-width: 0;
-  height: 100%;
-  border-radius: var(--ff-radius-sm) var(--ff-radius-sm) 0 0;
-}
-
-.ff-chart__slot:hover {
-  background: var(--ff-surface-hover);
-}
-
-.ff-chart__bar {
-  width: 100%;
-  min-height: 0;
-  border-radius: var(--ff-radius-sm) var(--ff-radius-sm) 0 0;
-  background: var(--ff-accent);
-}
-
-.ff-chart__slot:hover .ff-chart__bar {
-  background: var(--ff-accent-hover);
-}
-
-.ff-chart__axis {
-  display: flex;
-  justify-content: space-between;
-  margin-top: var(--ff-space-2);
-  color: var(--ff-text-subtle);
-  font-size: var(--ff-text-xs);
-  font-variant-numeric: tabular-nums;
 }
 
 /* ===========================================================================

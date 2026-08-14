@@ -42,6 +42,7 @@ from fastfort.ui.renderer import Renderer
 from fastfort.ui.theming import Theme
 
 from .auth_views import build_auth_router
+from .dashboard import Context as DashboardContext
 from .export import EXPORT_FORMATS, stream_csv, stream_json, stream_xlsx
 from .files import SNIFF_LENGTH, UploadedFile, content_type_for, safe_filename
 from .forms import Form
@@ -80,6 +81,7 @@ CSS_SHEETS = (
     "04-components.css",
     "05-admin.css",
     "06-widgets.css",
+    "07-dashboard.css",
 )
 
 #: Every script this admin will serve. An allow-list, because the route reads a
@@ -508,50 +510,26 @@ def build_admin_router(fort: FastFort) -> APIRouter:
 
     @router.get("/", response_class=HTMLResponse, name="fastfort:dashboard")
     async def dashboard(request: Request) -> HTMLResponse:
-        models: list[dict[str, Any]] = []
-        signups: Series | None = None
-
+        # One unit of work for the whole page, however many widgets it has:
+        # eleven cards that each opened their own would be eleven connections
+        # for one page load. Nothing here writes, so it commits nothing.
         async with fort.backend.unit_of_work() as uow:
-            for entry in fort.registry:
-                model_admin = admin_for(entry.key)
-                adapter = fort.backend.adapter(entry.model, uow, key=entry.key)
-                models.append(
-                    {
-                        "key": entry.key,
-                        "title": model_admin.title,
-                        "group": entry.key.split(".", 1)[0],
-                        "url": list_url(entry.key),
-                        "count": await adapter.count(ListQuery()),
-                    }
+            cards = await fort.dashboard.resolve(
+                DashboardContext(
+                    fort=fort,
+                    uow=uow,
+                    days=settings.admin.dashboard_days,
+                    list_url=list_url,
+                    admin_for=admin_for,
                 )
-
-            # In the same unit of work as the counts above, so the whole
-            # dashboard is one connection rather than two.
-            days = settings.admin.dashboard_days
-            user_key = ""
-            if days and fort.has_user_model:
-                user_model = fort.user_config.model
-                registered = fort.registry.get(user_model)
-                # The user model does not have to have an admin page of its own,
-                # so fall back to the key introspection would derive anyway.
-                user_key = registered.key if registered is not None else ""
-                signups = await build_series(
-                    fort.backend.adapter(user_model, uow, key=user_key or None),
-                    fort.backend.introspect(
-                        user_model, key=user_key or default_model_key(user_model)
-                    ),
-                    days=days,
-                    field=settings.admin.signup_field,
-                )
+            )
 
         context = base_context(request, None) | {
             "page_title": "Dashboard",
-            "models": models,
+            "cards": cards,
+            "models": len(fort.registry),
             "dialect": fort.backend.dialect,
             "issues": fort.check(),
-            "signups": signups if signups is not None and signups.field else None,
-            # Only when the model has a page to link to.
-            "signups_url": list_url(user_key) if signups is not None and user_key else "",
         }
         return page(request, "dashboard.html", context)
 

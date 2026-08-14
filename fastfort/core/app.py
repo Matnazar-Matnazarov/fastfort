@@ -55,6 +55,8 @@ class FastFort:
         #: Set by the admin router when it is built. Exposed so a project can
         #: reach `fort.auth.set_password(user, ...)` from a CLI or a seed script.
         self.auth: Any = None
+        #: `None` means the default layout; see the `dashboard` property.
+        self._dashboard: Any = None
 
     def __repr__(self) -> str:
         state = "mounted" if self._mounted_on is not None else "not mounted"
@@ -204,6 +206,59 @@ class FastFort:
 
         self._user_config = UserModelConfig.detect(model, known, **fields)
         return self._user_config
+
+    # -- dashboard ----------------------------------------------------------
+
+    @property
+    def dashboard(self) -> Any:
+        """The dashboard's widgets, defaulting to the layout everyone starts with.
+
+        Built on first read rather than in `__init__`, because the default names
+        classes from `fastfort.admin` and importing those from here at
+        construction time would be the admin layer reaching back into the core.
+        """
+        if self._dashboard is None:
+            from fastfort.admin.dashboard import Dashboard
+
+            self._dashboard = Dashboard()
+        return self._dashboard
+
+    def set_dashboard(self, *widgets: Any) -> None:
+        """Replace what the dashboard shows, in the order given::
+
+            from fastfort.admin import Counts, Metric, Recent, Trend
+
+            fort.set_dashboard(
+                Metric(Shipment, days=14),
+                Trend(Shipment, days=30),
+                Recent(Invoice),
+                Counts(),
+            )
+
+        Calling it with nothing empties the dashboard down to the page header,
+        which is a reasonable thing to want and a confusing thing to reach by
+        accident -- so it is spelled `fort.set_dashboard()` and nothing else.
+
+        Every widget is checked here rather than at render time. A dashboard is
+        configured once at start-up and read on every request; a typo that
+        raises on the first page load, in a stack that says nothing about which
+        argument was wrong, is a bad trade for one isinstance call.
+        """
+        from fastfort.admin.dashboard import Dashboard, Widget
+
+        for position, widget in enumerate(widgets):
+            if not isinstance(widget, Widget):
+                raise ConfigurationError(
+                    f"Argument {position + 1} to set_dashboard() is a "
+                    f"{type(widget).__name__}, which is not a dashboard widget.",
+                    hint=(
+                        "Pass instances of the widgets in fastfort.admin -- Counts(), "
+                        "Metric(Model), Trend(Model), Breakdown(Model, 'status'), "
+                        "Recent(Model) -- or of your own subclass of "
+                        "fastfort.admin.dashboard.Widget."
+                    ),
+                )
+        self._dashboard = Dashboard(widgets=widgets)
 
     # -- registration -------------------------------------------------------
 

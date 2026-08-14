@@ -1,0 +1,57 @@
+{#
+  What a column is made of: one meter per value.
+
+  Meters rather than a pie. A pie of six slices is six colours to tell apart and
+  six angles to compare, and a single brand hue cannot supply six that stay
+  distinct for everyone -- the palette here is derived from one number on
+  purpose. Bars sharing one hue compare by length, which is the one visual
+  channel people read accurately, and every row carries its own count and share
+  in text beside it.
+
+  Each bar's length is against the biggest value rather than the total: a column
+  split forty ways would otherwise draw forty slivers, and the percentage beside
+  it still says what the real share of the whole is.
+#}
+{% set card = card.context %}
+{% set distribution = card.distribution %}
+
+<div class="ff-card">
+  <div class="ff-card__header">
+    <div class="ff-grow">
+      <h2 class="ff-card__title">
+        {% if card.title %}
+          {{ _(card.title) }}
+        {% else %}
+          {{ _("{subject} by {label}", subject=_(card.subject), label=_(distribution.label)) }}
+        {% endif %}
+      </h2>
+      <p class="ff-muted ff-mt-1">{{ _("Total") }} · {{ distribution.total }}</p>
+    </div>
+    {% if card.url %}
+      <a class="ff-btn ff-btn--ghost ff-btn--sm" href="{{ card.url }}">
+        {{ _("View all") }}
+        {{ ff_icon("arrow-right", size=14) }}
+      </a>
+    {% endif %}
+  </div>
+
+  <div class="ff-card__body">
+    <ul class="ff-meters">
+      {% for part in distribution.slices %}
+        <li class="ff-meter">
+          <span class="ff-meter__label ff-truncate">
+            {{ _("Other") if part.other else _(part.label) }}
+          </span>
+          <span class="ff-meter__track">
+            <span
+              class="ff-meter__fill{{ ' ff-meter__fill--other' if part.other }}"
+              style="inline-size: {{ distribution.width(part) }}%"
+            ></span>
+          </span>
+          <span class="ff-meter__value">{{ part.count }}</span>
+          <span class="ff-meter__share">{{ distribution.share(part) }}%</span>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
