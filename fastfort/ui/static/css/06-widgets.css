@@ -269,6 +269,20 @@
   min-width: 100%;
   padding: 0;
   overflow: hidden;
+  /* A column, so that the room `place()` measured can be imposed on the panel
+   * and spent by the list inside it: the search box keeps its height and the
+   * options give way. Without the flex context the list's own `max-height`
+   * wins and the panel overflows the window instead of scrolling.
+   *
+   * Declared here rather than in `01-tokens.css` because it is not a theme
+   * token: it is one panel's measurement of where it happens to be on the
+   * screen, written inline by `place()` every time the panel opens. `none` is
+   * the value before script has run, which is exactly the old behaviour. */
+  --ff-pop-room: none;
+
+  display: flex;
+  flex-direction: column;
+  max-height: var(--ff-pop-room);
 }
 
 .ff-combo__panel[data-ff-place="above"] {
@@ -306,6 +320,11 @@
   padding: var(--ff-space-1);
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* A flex item will not shrink below the height of its content without this,
+   * so the list would keep its 16rem and push the panel past the window even
+   * with a `max-height` on the panel above it. This is the line that turns a
+   * clipped list into a scrolling one. */
+  min-height: 0;
 }
 
 .ff-combo__option {

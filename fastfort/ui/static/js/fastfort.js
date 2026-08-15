@@ -173,15 +173,44 @@
     element instanceof HTMLElement &&
     (element.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName));
 
-  /* Places a panel below its trigger, or above when there is not enough room
-   * below. Measured rather than assumed: a filter at the foot of a long list
-   * would otherwise open a list that runs off the bottom of the window. */
+  /* Places a panel below its trigger, or above when there is more room there.
+   * Measured rather than assumed: a filter at the foot of a long list would
+   * otherwise open a list that runs off the bottom of the window.
+   *
+   * It used to flip only when the space below fell under
+   * `Math.min(panel.offsetHeight + 16, 220)`. The cap is what went wrong: it
+   * says "220 pixels below is enough" about a panel that wants three hundred,
+   * so a combobox with anything between those two numbers underneath it opened
+   * downwards and was cut off by the bottom of the window -- the tag list on a
+   * long form lost its last two options, with 690 pixels of unused room above
+   * it. The cap was presumably there to stop a panel taller than the viewport
+   * flapping to a side that is no better; comparing the two sides answers that
+   * properly, and picking the larger one is never worse than picking a fixed
+   * number.
+   *
+   * `--ff-pop-room` is the second half. A side can be the better one and still
+   * be too small, and a panel that overflows the window is unreachable in a way
+   * a panel that scrolls is not -- so the room is handed to the stylesheet and
+   * the list inside shrinks to fit it. Set on the panel rather than measured in
+   * CSS because only script knows where the trigger ended up.
+   */
+  const MIN_PANEL_ROOM = 120;
+
   const place = (panel, trigger) => {
     panel.removeAttribute("data-ff-place");
-    const below = window.innerHeight - trigger.getBoundingClientRect().bottom;
-    if (below < Math.min(panel.offsetHeight + 16, 220)) {
-      panel.setAttribute("data-ff-place", "above");
-    }
+    const box = trigger.getBoundingClientRect();
+    const below = window.innerHeight - box.bottom;
+    const above = box.top;
+    // `offsetHeight` is the panel's natural height: it is measured while the
+    // panel is open and before any room is imposed, so it says what the panel
+    // would like rather than what it was last squeezed into.
+    const wanted = panel.offsetHeight + 16;
+
+    const flip = below < wanted && above > below;
+    if (flip) panel.setAttribute("data-ff-place", "above");
+
+    const room = Math.max((flip ? above : below) - 16, MIN_PANEL_ROOM);
+    panel.style.setProperty("--ff-pop-room", `${Math.round(room)}px`);
   };
 
   /* Whether a click passed through an element matching `selector`, for the

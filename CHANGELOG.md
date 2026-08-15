@@ -12,6 +12,23 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A dropdown low on a long form opened downwards and was cut off.** `place()`
+  flipped a panel above its trigger only when the space below fell under
+  `Math.min(panel.offsetHeight + 16, 220)`. The cap is what went wrong: it
+  asserts that 220 pixels below is enough for a panel that wants three hundred,
+  so anything between those two numbers opened downwards and ran off the bottom
+  of the window. Measured against the real function at the geometry reported —
+  240 pixels below the trigger, 692 above it — the panel opened downwards and
+  lost 81 pixels of its option list, with all that room going unused directly
+  above it.
+
+  It now compares the two sides and takes the larger, which answers the question
+  the cap was approximating and is never worse than a fixed number. And because
+  a side can be the larger one and still be too small, `place()` publishes the
+  room it measured as `--ff-pop-room`; the combobox panel takes that as a
+  `max-height` and the list inside gives way, so a panel that fits neither side
+  scrolls instead of overflowing the window, where it cannot be reached at all.
+
 - **The sign-in page still asked for its assets without the version.** Moving
   the version into the path is what makes the year-long `immutable` cache safe,
   and 0.4.1 did that in `admin/site.py` — but `admin/auth_views.py` composes the
