@@ -317,7 +317,7 @@
 
 .ff-combo__list {
   max-height: 16rem;
-  padding: var(--ff-space-1);
+  padding: var(--ff-space-1);el
   overflow-y: auto;
   overscroll-behavior: contain;
   /* A flex item will not shrink below the height of its content without this,
