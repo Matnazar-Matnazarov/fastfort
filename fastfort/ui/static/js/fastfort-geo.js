@@ -91,6 +91,23 @@
     return (Math.atan(Math.sinh(merc)) * 180) / Math.PI;
   };
 
+  /* The inverse of `parsePoint`, and the form the point box submits.
+   *
+   * Six decimal places is about a tenth of a metre, which is finer than any
+   * tile a map draws from and far finer than a click can aim; more digits are
+   * the float's rounding error written out, and they made the box look like a
+   * machine had been at it.
+   *
+   * It lived beside `PointMap` in `fastfort.js`. Splitting the geometry editor
+   * into this file carried `parsePoint` across and left this behind, so every
+   * click on a POINT map threw a ReferenceError out of `write()` -- before the
+   * `draw()` on the next line and before the value reached the input. The pin
+   * appeared on the next pan, which is the first redraw from anywhere else,
+   * and the box stayed empty, so the place a person had picked was silently
+   * not saved. Referenced once and declared nowhere is exactly what
+   * `test_every_name_the_scripts_call_is_one_they_declare` now looks for. */
+  const formatPoint = ({ lat, lng }) => `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
   /* Accepts what the server renders and what a person pastes: "41.2995,
    * 69.2401", with or without the space. Anything else means "no point yet",
    * which is a normal state for a nullable column. */

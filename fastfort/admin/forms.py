@@ -259,11 +259,29 @@ class Form:
             # better, so the box has to say what shape it wants. Without this a
             # duration field is an empty rectangle and the only way to learn the
             # format is to guess wrong and read the error.
-            help_override=format_help(spec, widget) if not spec.help_text else None,
+            help_override=self._help_for(spec, widget, writable),
             range_lower=range_lower,
             range_upper=range_upper,
             range_bounds=range_bounds,
         )
+
+    def _help_for(self, spec: FieldSpec, widget: str, writable: bool) -> str | None:
+        """The hint under a control, when the control cannot speak for itself.
+
+        A sensitive column is rendered empty whether or not something is stored
+        in it, so an edit form looks exactly like an empty one and there is no
+        way to tell a secret that saved from a secret that was lost. Somebody
+        typing a token, saving, reopening the row and finding the box blank
+        again concludes the save did nothing -- which is what was reported, and
+        it was reported about a value that had in fact been written.
+
+        The password control has said this since it was built. It says it here
+        too now, because `bind` applies the same rule to every sensitive field:
+        blank means unchanged.
+        """
+        if spec.sensitive and writable and self.instance is not None:
+            return "Leave blank to keep the current value."
+        return format_help(spec, widget) if not spec.help_text else None
 
     # -- binding ------------------------------------------------------------
 
@@ -332,6 +350,21 @@ class Form:
             form_field.raw = raw
 
             if raw == "":
+                # A sensitive column renders empty however much is stored in it:
+                # `_form_field` blanks the value so a secret is never printed
+                # onto a page. So an empty box is the *normal* state of one
+                # nobody touched, and reading it as "write null" wiped the
+                # secret off the row whenever somebody edited a different field
+                # -- correcting the label on an API token destroyed the token,
+                # and the page reported a successful save while doing it.
+                #
+                # Blank means unchanged, the rule `_bind_password` and
+                # `_bind_file` already apply for exactly this reason: a control
+                # that cannot show what is stored cannot be asked to clear it.
+                # On create there is nothing to keep, so the ordinary path runs
+                # and a required field still has to be filled in.
+                if spec.sensitive and self.instance is not None:
+                    continue
                 if spec.required:
                     form_field.errors.append("This field is required.")
                     continue

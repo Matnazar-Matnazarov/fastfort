@@ -404,6 +404,54 @@ async def test_a_sensitive_value_is_never_rendered(client: httpx.AsyncClient) ->
     assert 'type="password"' in body
 
 
+async def test_editing_another_field_does_not_wipe_a_sensitive_one(
+    client: httpx.AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """A secret the form is forbidden to show must survive a save that omits it.
+
+    `api_secret` is detected as sensitive from its name, so the form renders it
+    empty however much is stored -- the same as a password box and a file input,
+    and for the same reason. It was the only one of the three whose blank
+    submission was read as "write null": setting a token and then correcting the
+    label on the row destroyed the token, and the page said the save succeeded.
+
+    Nothing echoes the value back and the demo does not put it in a column, so
+    there was no way to notice until the credential stopped working.
+    """
+    path = "/admin/shop.product/1/"
+    await submit(client, path, name="Pixel Phone", api_secret="s3cret-value")
+
+    async with session_factory() as session:
+        stored = (await session.execute(sa.select(Product).where(Product.id == 1))).scalar_one()
+        assert stored.api_secret == "s3cret-value", "the secret must be written when it is given"
+
+    # The everyday edit: the secret's box rendered empty, so the browser submits
+    # it empty, which is what anyone who never touched the field sends.
+    await submit(client, path, name="Renamed Phone", api_secret="")
+
+    async with session_factory() as session:
+        after = (await session.execute(sa.select(Product).where(Product.id == 1))).scalar_one()
+
+    assert after.name == "Renamed Phone", "the edit that was asked for must still happen"
+    assert after.api_secret == "s3cret-value", "blank means unchanged, not cleared"
+
+
+async def test_a_sensitive_field_is_still_writable_when_it_is_new(
+    client: httpx.AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Blank-means-unchanged is an edit rule. On create there is nothing to keep."""
+    await submit(client, "/admin/shop.product/add", name="Fresh", price="10", api_secret="")
+
+    async with session_factory() as session:
+        created = (
+            (await session.execute(sa.select(Product).where(Product.name == "Fresh")))
+            .scalars()
+            .one()
+        )
+
+    assert created.api_secret in (None, ""), "a blank secret on create stays blank"
+
+
 async def test_a_hostile_value_is_escaped_into_the_form(client: httpx.AsyncClient) -> None:
     payload = '"><script>alert(1)</script>'
     response = await submit(client, "/admin/shop.product/add", name=payload, price="abc")
