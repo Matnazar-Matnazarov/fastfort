@@ -192,6 +192,42 @@ def test_opening_a_panel_does_not_scroll_the_page() -> None:
         assert "preventScroll" in call, call
 
 
+def test_a_select_configured_for_the_combobox_is_given_to_the_combobox() -> None:
+    """`data-ff-search` on a plain `<select>` configures nothing at all.
+
+    The enhancer's pass is over `select[data-ff-combo]`, and only the combobox
+    reads `data-ff-search`. A `<select>` carrying the second without the first
+    is therefore a control that asked to be upgraded and never was: the range
+    field's bounds selector rendered as the browser's own control, with the
+    operating system's blue highlight and its own typeface, beside four styled
+    controls on the same row.
+
+    A dead attribute is the visible half of the bug. The invisible half is that
+    nothing failed -- the page was a 200 and the select worked, it simply did
+    not look like the admin.
+    """
+    combo_only = ("data-ff-search", "data-ff-placeholder", "data-ff-clearable", "data-ff-url")
+    offenders: list[str] = []
+
+    for path in sorted(TEMPLATES.rglob("*.html")):
+        text = path.read_text()
+        for match in re.finditer(r"<select\b(.*?)>", text, re.S):
+            # Jinja comments out, or the prose explaining why a control is
+            # marked for the combobox counts as the marking. The first version
+            # of this test passed against the bug for exactly that reason: the
+            # comment naming `data-ff-combo` sat inside the tag it described.
+            attributes = re.sub(r"\{#.*?#\}", " ", match.group(1), flags=re.S)
+            configured = [name for name in combo_only if name in attributes]
+            if configured and "data-ff-combo" not in attributes:
+                line = text[: match.start()].count("\n") + 1
+                offenders.append(f"{path.relative_to(TEMPLATES)}:{line}  carries {configured}")
+
+    assert not offenders, (
+        "these selects are configured for the combobox but never handed to it:\n"
+        + "\n".join(offenders)
+    )
+
+
 def test_a_panel_opens_on_the_side_with_more_room() -> None:
     """A combobox low on a long form opened downwards and was cut off.
 

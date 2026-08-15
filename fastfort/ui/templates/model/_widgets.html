@@ -467,6 +467,13 @@
           class="ff-select ff-select--sm"
           name="{{ field.name }}__bounds"
           aria-label="{{ _("Bounds") }}"
+          {# The enhancer's pass runs over selects marked for the combobox, and
+             this one was not marked -- so it stayed the browser's own control,
+             with the operating system's blue highlight and its own typeface,
+             beside four styled controls on the same row. The line below is the
+             tell: only the combobox reads it, so this select was already
+             asking to be one. #}
+          data-ff-combo
           data-ff-search="never"
           {% if field.errors %}aria-invalid="true" {% endif %}
         >
