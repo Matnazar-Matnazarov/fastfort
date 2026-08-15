@@ -10,6 +10,41 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Clicking a map placed no marker, and saved no coordinate.** `write()` called
+  `formatPoint`, which was declared nowhere: it lived beside `PointMap` in
+  `fastfort.js`, and splitting the geometry editor into `fastfort-geo.js`
+  carried `parsePoint` across and left it behind. Every click on a POINT map
+  therefore raised a `ReferenceError` — before the `draw()` on the next line and
+  before the value reached the control that submits. The pin appeared on the
+  next pan, because a pan is the first redraw from anywhere else, so the field
+  looked merely slow; in fact the box stayed empty and the place somebody had
+  chosen was never saved. It shipped in three releases.
+
+  `tests/ui/test_scripts.py` is the guard: it strips comments, strings and
+  regular expressions out of every script in the package and asserts that each
+  name a file *calls* is one it declares. There is no bundler here and no
+  linter that reads JavaScript, and every other test in `tests/ui/` reads the
+  scripts as text and greps them for a string — so all of them passed while the
+  function underneath was broken.
+
+- **Editing any field on a row destroyed its secrets.** A sensitive column is
+  rendered empty however much is stored in it, so that a token or a key is
+  never printed onto a page. `Form.bind` read that empty box as "write null":
+  correcting the label on an API token silently wiped the token, and the page
+  reported a successful save while doing it. Nothing echoes the value back and
+  such columns are usually kept out of `list_display`, so there was no way to
+  notice until the credential stopped working.
+
+  Blank now means unchanged, which is the rule `_bind_password` and `_bind_file`
+  have always applied for exactly this reason: a control that cannot show what
+  is stored cannot be asked to clear it. Creating a row is unaffected — there is
+  nothing to keep — and a required field still has to be filled in. The control
+  now also says so, in all eleven languages: *Leave blank to keep the current
+  value.* Without a word there, an edit form is indistinguishable from an empty
+  one, and a secret that saved is indistinguishable from one that was lost.
+
 ## [0.4.1] - 2026-08-15
 
 ### Fixed

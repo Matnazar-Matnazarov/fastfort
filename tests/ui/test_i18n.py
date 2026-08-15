@@ -83,6 +83,9 @@ _INDIRECT = frozenset(
         "Add",
         "Delete selected",
         "Leave blank to keep the current password.",
+        # The same sentence for every other sensitive column. `Form._help_for`
+        # returns it as a plain literal, so the scanner cannot see it either.
+        "Leave blank to keep the current value.",
         # Dashboard widgets carry their own default titles, which reach the
         # translator as `Card.context["title"]` rather than as a literal in a
         # template. A project that passes `title=` supplies its own words and
