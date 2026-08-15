@@ -30,6 +30,20 @@
   </div>
 
   <div class="ff-card__body">
+    {#
+      An all-zero window draws a flat rule along the baseline, which is the same
+      picture a chart that failed to render produces -- and on a new install
+      that is the very first thing the dashboard shows. So it says so instead,
+      and keeps the window's length in the sentence: "nothing in 7 days" is a
+      fact about the data, where an empty chart is a doubt about the software.
+    #}
+    {% if series.empty %}
+      <div class="ff-empty ff-empty--quiet">
+        <div class="ff-empty__icon" aria-hidden="true">{{ ff_icon("inbox", size=20) }}</div>
+        <div class="ff-empty__title">{{ _("Nothing in the last {days} days", days=series.bars|length) }}</div>
+        <p class="ff-empty__body">{{ _("Rows will appear here as they arrive.") }}</p>
+      </div>
+    {% else %}
     <div class="ff-figure">
       <span class="ff-figure__value">{{ series.total }}</span>
       {% include "dashboard/_delta.html" %}
@@ -115,5 +129,6 @@
         </tbody>
       </table>
     </div>
+    {% endif %}
   </div>
 </div>

@@ -99,6 +99,56 @@
   color: var(--ff-text-subtle);
 }
 
+/* "No earlier activity to compare" -- an explanation rather than a measurement,
+ * so it takes the subtle colour throughout and never one of the two that mean
+ * a direction. Where a percentage would be it prints nothing, because there
+ * genuinely is no number. */
+.ff-delta--none {
+  color: var(--ff-text-subtle);
+}
+
+/* --- The time range ------------------------------------------------------
+ * Links, not buttons: the control changes what the page shows, so it is a
+ * navigation and belongs in history. It works with script off for the same
+ * reason everything else here does.
+ */
+
+.ff-range {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-md);
+  background: var(--ff-surface-sunken);
+}
+
+.ff-range__option {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--ff-space-1) var(--ff-space-3);
+  border-radius: calc(var(--ff-radius-md) - 3px);
+  font-size: var(--ff-text-sm);
+  font-weight: var(--ff-weight-medium);
+  font-variant-numeric: tabular-nums;
+  color: var(--ff-text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ff-range__option:hover {
+  color: var(--ff-text);
+  background: var(--ff-surface);
+}
+
+/* `aria-current` is the state, and the selector is that attribute rather than a
+ * class the template also has to remember to set. One source of truth for "this
+ * is the window you are looking at", and it is the one a screen reader reads. */
+.ff-range__option[aria-current="page"] {
+  color: var(--ff-primary-text);
+  background: var(--ff-primary);
+}
+
 /* --- The plot ------------------------------------------------------------ */
 
 .ff-plot {
@@ -265,6 +315,26 @@
   height: 2.5rem;
   margin-block-start: auto;
   padding-block-start: var(--ff-space-3);
+}
+
+/* Stands where the sparkline would, and takes the same space, so a quiet tile
+ * still lines up with the tile beside it instead of collapsing to two thirds
+ * of its height and breaking the row. */
+.ff-metric__quiet {
+  display: flex;
+  align-items: flex-end;
+  min-height: 2.5rem;
+  margin-block-start: auto;
+  padding-block-start: var(--ff-space-3);
+  font-size: var(--ff-text-sm);
+  color: var(--ff-text-subtle);
+}
+
+/* The card-sized version, for a trend with nothing to plot. Shorter than the
+ * page-level empty state, which is furniture for a whole screen; this one sits
+ * inside a card that already has a title saying what is missing. */
+.ff-empty--quiet {
+  padding-block: var(--ff-space-6);
 }
 
 /* --- Breakdown meters ---------------------------------------------------- */

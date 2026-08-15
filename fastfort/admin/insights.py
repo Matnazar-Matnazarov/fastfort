@@ -110,6 +110,19 @@ class Series:
         """
         return max((bar.count for bar in self.bars), default=0) or 1
 
+    @property
+    def empty(self) -> bool:
+        """True when nothing happened in the window.
+
+        Worth asking, because the honest drawing of an all-zero series and the
+        drawing of a chart that failed are the same picture: a flat rule across
+        the bottom of the card. "New accounts · 0" under one was the first thing
+        a new installation ever showed, and it read as the dashboard being
+        broken rather than as the week having been quiet. The templates ask this
+        and say so in words instead.
+        """
+        return self.total == 0
+
     def height(self, bar: Bar) -> int:
         """`bar` as a percentage of the peak, rounded away from invisible."""
         return charts.bar_height(bar.count, self.peak)
