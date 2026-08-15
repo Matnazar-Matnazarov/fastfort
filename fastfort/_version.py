@@ -9,7 +9,7 @@ from __future__ import annotations
 
 __all__ = ["SCHEMA_VERSION", "__version__"]
 
-__version__ = "0.4.3"
+__version__ = "0.4.4"
 
 #: Version of the database schema owned by FastFort. It moves independently of
 #: `__version__`; `fastfort db upgrade` migrates the database up to this number.
