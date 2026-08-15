@@ -560,6 +560,8 @@ def build_admin_router(fort: FastFort) -> APIRouter:
 
     @router.get("/", response_class=HTMLResponse, name="fastfort:dashboard")
     async def dashboard(request: Request) -> HTMLResponse:
+        days, chosen = _dashboard_window(request, settings.admin)
+
         # One unit of work for the whole page, however many widgets it has:
         # eleven cards that each opened their own would be eleven connections
         # for one page load. Nothing here writes, so it commits nothing.
@@ -568,9 +570,10 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 DashboardContext(
                     fort=fort,
                     uow=uow,
-                    days=settings.admin.dashboard_days,
+                    days=days,
                     list_url=list_url,
                     admin_for=admin_for,
+                    chosen=chosen,
                 )
             )
 
@@ -580,6 +583,9 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             "models": len(fort.registry),
             "dialect": fort.backend.dialect,
             "issues": fort.check(),
+            "ranges": settings.admin.dashboard_ranges,
+            "days": days,
+            "range_chosen": chosen,
         }
         return page(request, "dashboard.html", context)
 
@@ -1543,6 +1549,34 @@ def build_admin_router(fort: FastFort) -> APIRouter:
 # ---------------------------------------------------------------------------
 # Presentation helpers
 # ---------------------------------------------------------------------------
+
+
+def _dashboard_window(request: Request, admin_settings: Any) -> tuple[int, bool]:
+    """How many days the dashboard covers, and whether the request asked.
+
+    `?days=` is raw query-string input reaching a page whose every widget costs
+    one query per day, so it is checked against the deployment's own allow-list
+    rather than clamped to a range: eleven cards times a free-form 365 is four
+    thousand queries from one address, and a clamp would happily serve it.
+    Anything not on the list -- a typo, a crawler, somebody trying it on -- is
+    not an error, it is just the default window, because a 400 on the front page
+    of an admin is a worse answer than the page it was already going to show.
+
+    The second value is what `Context.window` needs to tell "the page's default"
+    from "this is what was asked for". Only a value on the list counts as
+    asking: falling back must not make every pinned widget think it was
+    overridden.
+    """
+    default = int(admin_settings.dashboard_days)
+    allowed = tuple(admin_settings.dashboard_ranges)
+    raw = request.query_params.get("days")
+    if not raw or not allowed:
+        return default, False
+    try:
+        asked = int(raw)
+    except ValueError:
+        return default, False
+    return (asked, True) if asked in allowed else (default, False)
 
 
 #: HTML input types, keyed by widget name. Kept beside the widget map rather than

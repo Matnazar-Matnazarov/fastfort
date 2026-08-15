@@ -101,6 +101,26 @@ class Context:
     #: string it computes -- which is how a card ended up titled
     #: "<property object at 0x7f6cbe8ebf10>".
     admin_for: Callable[[str], Any]
+    #: True when the request named a window itself, through the range control.
+    #: It is what tells `window()` apart from the page's default, and without it
+    #: a widget that pinned its own `days` would ignore the control -- half the
+    #: cards moving to the chosen range and half staying where they were, which
+    #: reads as the control being broken rather than as the widget being
+    #: deliberate.
+    chosen: bool = False
+
+    def window(self, preferred: int) -> int:
+        """How many days a widget should cover.
+
+        A widget's own `days` is its *default*, not its instruction: it wins
+        while the page is showing the window it was configured with, and loses
+        the moment somebody asks for a different one. The alternative -- letting
+        a pinned widget keep its window -- was tried on paper and is worse than
+        having no control at all: pressing "7 days" would move the trend and
+        leave the metric beside it on fourteen, with both cards still captioned
+        truthfully and the page as a whole saying nothing coherent.
+        """
+        return self.days if self.chosen else (preferred or self.days)
 
     def key_for(self, model: type) -> str:
         """The registry key for `model`, or the one introspection would derive.
@@ -209,7 +229,7 @@ class Trend(Widget):
     span: int = FULL
 
     async def resolve(self, context: Context) -> Card | None:
-        days = self.days or context.days
+        days = context.window(self.days)
         if not days:
             return None
 
@@ -279,7 +299,7 @@ class Metric(Widget):
     span: int = THIRD
 
     async def resolve(self, context: Context) -> Card | None:
-        days = self.days or context.days
+        days = context.window(self.days)
         if not days:
             return None
 

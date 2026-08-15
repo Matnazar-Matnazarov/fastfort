@@ -183,6 +183,18 @@ class AdminSettings(BaseModel):
     #: Zero switches the chart off.
     dashboard_days: Annotated[int, Field(ge=0, le=365)] = 30
 
+    #: The windows the dashboard offers as links above its cards. The page
+    #: showed one fixed window and no way to ask for another, which makes it a
+    #: report rather than a dashboard -- the question after "how many this
+    #: month" is almost always "and last week?".
+    #:
+    #: An allow-list rather than a range, because `?days=` is raw query-string
+    #: input and every widget's cost is one query per day: a free-form number is
+    #: an invitation to ask for 365 days across eleven cards. A request naming
+    #: anything not in here falls back to `dashboard_days`. Empty switches the
+    #: control off and leaves the single fixed window.
+    dashboard_ranges: tuple[Annotated[int, Field(ge=1, le=365)], ...] = (7, 30, 90)
+
     #: The user-model column recording when an account was created. Detected
     #: from the usual names (`date_joined`, `created_at`, ...) when left empty;
     #: set it when the column is called something else. A name that is not a

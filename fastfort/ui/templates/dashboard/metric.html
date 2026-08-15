@@ -19,15 +19,23 @@
   <span class="ff-metric__value">{{ series.total }}</span>
   {% include "dashboard/_delta.html" %}
 
-  <svg
-    class="ff-spark"
-    viewBox="0 0 100 100"
-    preserveAspectRatio="none"
-    role="img"
-    aria-label="{{ _("Last {days} days", days=series.bars|length) }}"
-    focusable="false"
-  >
-    <path class="ff-plot__area" d="{{ series.area }}" />
-    <polyline class="ff-plot__line" points="{{ series.line }}" />
-  </svg>
+  {# A sparkline of nothing is a flat rule, which is exactly what a chart that
+     failed to draw looks like. Said in words instead. #}
+  {% if series.empty %}
+    <span class="ff-metric__quiet">
+      {{ _("Nothing in the last {days} days", days=series.bars|length) }}
+    </span>
+  {% else %}
+    <svg
+      class="ff-spark"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+      role="img"
+      aria-label="{{ _("Last {days} days", days=series.bars|length) }}"
+      focusable="false"
+    >
+      <path class="ff-plot__area" d="{{ series.area }}" />
+      <polyline class="ff-plot__line" points="{{ series.line }}" />
+    </svg>
+  {% endif %}
 </a>

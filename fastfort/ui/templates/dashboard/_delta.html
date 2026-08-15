@@ -14,4 +14,20 @@
     {{ "+" if series.delta > 0 }}{{ series.delta }}%
     <span class="ff-delta__note">{{ _("vs previous {days} days", days=series.half) }}</span>
   </span>
+{% elif not series.empty %}
+  {#
+    Rendering nothing here left two cards side by side, one carrying "-36.7%"
+    and the other carrying a gap of the same size, with no way to tell whether
+    the comparison was absent or the change was zero. Absent has a reason and
+    the reason is short, so it is printed: the earlier half of the window holds
+    nothing, which is what makes the percentage infinite rather than large.
+
+    Not on an empty card. There the whole card already says nothing happened,
+    and "no earlier activity" under "nothing in the last 30 days" is the same
+    sentence twice.
+  #}
+  <span class="ff-delta ff-delta--none">
+    {{ ff_icon("minus", size=14) }}
+    <span class="ff-delta__note">{{ _("No earlier activity to compare") }}</span>
+  </span>
 {% endif %}

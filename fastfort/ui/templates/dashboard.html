@@ -22,6 +22,40 @@
         {% endif %}
       </p>
     </div>
+
+    {#
+      The window every card on the page covers.
+
+      Links carrying `?days=`, not buttons and not a <select> that needs script
+      to submit: the whole admin works with scripting off, and this is a
+      navigation -- it changes what the page shows and belongs in history, so
+      the back button does what anybody would expect. The server checks the
+      number against `admin.dashboard_ranges` and falls back silently, so the
+      only values that ever reach a widget are ones the deployment allowed.
+
+      Rendered only when there is a choice to make: one window is not a choice,
+      and a single dead tab is worse than no control.
+    #}
+    {% if ranges|length > 1 %}
+      <nav class="ff-range" aria-label="{{ _("Days") }}">
+        {% for option in ranges %}
+          {#
+            The visible text is the bare number, because three options reading
+            "Last 30 days" each is a control wider than the heading above it.
+            The whole sentence goes in the label, so what a screen reader hears
+            is the sentence and not a stray "30" -- and both come out of
+            catalogue entries that already existed, so a compact control cost
+            no new translation in eleven languages.
+          #}
+          <a
+            class="ff-range__option"
+            href="?days={{ option }}"
+            aria-label="{{ _("Last {days} days", days=option) }}"
+            {% if option == days %}aria-current="page" {% endif %}
+          >{{ option }}</a>
+        {% endfor %}
+      </nav>
+    {% endif %}
   </div>
 
   {% if issues %}

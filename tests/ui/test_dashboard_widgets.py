@@ -206,6 +206,166 @@ async def test_a_widget_window_outranks_the_setting(
     assert body.count('ff-plot__slot"') == 7
 
 
+# ---------------------------------------------------------------------------
+# The time range
+# ---------------------------------------------------------------------------
+
+
+async def open_dashboard_at(app: FastAPI, query: str) -> str:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        await sign_in(client)
+        response = await client.get(f"/admin/{query}")
+    assert response.status_code == 200, response.text
+    return response.text
+
+
+async def test_the_range_control_offers_the_windows_the_deployment_allows(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> None:
+    body = await open_dashboard(build(backend, Trend(Product), dashboard_ranges=(7, 30, 90)))
+
+    for option in (7, 30, 90):
+        assert f'href="?days={option}"' in body
+    # Links, not a form and not a script: the whole admin works with scripting
+    # off, and changing what a page shows is a navigation.
+    assert "ff-range__option" in body
+
+
+async def test_one_window_is_not_a_choice_so_no_control_is_drawn(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> None:
+    """A single dead tab is worse than no control at all."""
+    body = await open_dashboard(build(backend, Trend(Product), dashboard_ranges=(30,)))
+
+    assert "ff-range__option" not in body
+
+
+async def test_asking_for_a_window_changes_every_chart_on_the_page(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> None:
+    """A widget's own `days` is a default, not an instruction.
+
+    Left as an instruction, pressing 7 would move the cards that named no window
+    and leave the ones that did where they were -- half a page on one window and
+    half on another, every caption still true and the page as a whole saying
+    nothing. See `Context.window`.
+    """
+    app = build(backend, Trend(Product, days=30), dashboard_days=30, dashboard_ranges=(7, 30))
+
+    assert (await open_dashboard(app)).count('ff-plot__slot"') == 30
+    assert (await open_dashboard_at(app, "?days=7")).count('ff-plot__slot"') == 7
+
+
+async def test_the_chosen_window_is_the_one_marked_current(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> None:
+    body = await open_dashboard_at(
+        build(backend, Trend(Product), dashboard_ranges=(7, 30, 90)), "?days=7"
+    )
+
+    # Scoped to the control: the sidebar marks the current *page* with the same
+    # attribute, which is correct there and would make a page-wide count of two.
+    control = body.split('class="ff-range"')[1].split("</nav>")[0]
+    assert control.count('aria-current="page"') == 1
+
+    # ...and it is the option that was asked for: the marker lands between that
+    # option's href and the `>` closing its tag.
+    opening_tag = control.split('href="?days=7"')[1].split(">")[0]
+    assert 'aria-current="page"' in opening_tag
+
+
+@pytest.mark.parametrize("asked", ["365", "0", "-1", "abc", "", "7.5"])
+async def test_a_window_the_deployment_did_not_allow_falls_back(
+    backend: SQLAlchemyBackend, staff_user: StaffUser, asked: str
+) -> None:
+    """`?days=` reaches a page whose every widget costs one query per day.
+
+    An allow-list rather than a clamp: eleven cards times a free-form 365 is
+    four thousand queries from one address, and a clamp would serve it happily.
+    A value that is not on the list is not an error either -- a 400 on the front
+    page of an admin is a worse answer than the page it was about to show.
+    """
+    app = build(backend, Trend(Product), dashboard_days=30, dashboard_ranges=(7, 30))
+    body = await open_dashboard_at(app, f"?days={asked}")
+
+    assert body.count('ff-plot__slot"') == 30
+
+
+async def test_the_control_is_off_when_the_deployment_names_no_ranges(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> None:
+    app = build(backend, Trend(Product), dashboard_days=30, dashboard_ranges=())
+    body = await open_dashboard_at(app, "?days=7")
+
+    assert "ff-range__option" not in body
+    assert body.count('ff-plot__slot"') == 30, "no allow-list means nothing is allowed"
+
+
+# ---------------------------------------------------------------------------
+# Nothing to show
+# ---------------------------------------------------------------------------
+
+
+async def test_a_window_with_nothing_in_it_says_so_instead_of_drawing_a_flat_line(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> None:
+    """An all-zero series and a chart that failed to render draw the same picture.
+
+    A flat rule along the baseline. On a new install that is the first thing the
+    dashboard ever shows, and it reads as the software being broken rather than
+    as the week having been quiet.
+    """
+    # `released_on` is seeded months in the past, so a recent window over it is
+    # genuinely empty -- a real date column with nothing in range, rather than a
+    # missing column, which is the different case that leaves the card off.
+    body = await open_dashboard(build(backend, Trend(Product, on="released_on", days=7)))
+
+    assert "Nothing in the last 7 days" in body
+    assert "ff-plot__svg" not in body, "the chart and the sentence are alternatives"
+    assert "ff-facts" not in body, "there are no facts to state about an empty window"
+
+
+async def test_an_empty_metric_drops_its_sparkline_for_the_same_reason(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> None:
+    body = await open_dashboard(build(backend, Metric(Product, on="released_on", days=7)))
+
+    assert "Nothing in the last 7 days" in body
+    assert "ff-spark" not in body
+
+
+async def test_a_window_with_rows_in_it_still_draws_its_chart(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> None:
+    """The guard above must not have turned every chart off.
+
+    `created_at` defaults to now for every seeded row, so this window is the
+    populated case the empty one is being told apart from.
+    """
+    body = await open_dashboard(build(backend, Trend(Product, on="created_at", days=7)))
+
+    assert "ff-plot__svg" in body
+    assert "Nothing in the last" not in body
+
+
+async def test_a_missing_comparison_says_why_rather_than_rendering_nothing(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> None:
+    """Two cards side by side, one carrying "-36.7%" and the other a gap of the
+    same size, left no way to tell an absent comparison from a change of zero.
+
+    Every seeded row was created today, so the earlier half of the window holds
+    nothing -- which is what makes the percentage infinite rather than large,
+    and is a reason short enough to print.
+    """
+    body = await open_dashboard(build(backend, Metric(Product, on="created_at", days=8)))
+
+    assert "No earlier activity to compare" in body
+    assert "ff-delta--none" in body
+
+
 async def test_recent_rows_link_to_the_row_they_name(
     backend: SQLAlchemyBackend, staff_user: StaffUser
 ) -> None:

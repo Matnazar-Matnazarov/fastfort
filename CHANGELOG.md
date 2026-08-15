@@ -10,6 +10,46 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **The dashboard has a time range.** `AdminSettings.dashboard_ranges` — `(7, 30,
+  90)` by default — draws a control above the cards, and every chart on the page
+  follows it. The page showed one fixed window and no way to ask for another,
+  which makes it a report rather than a dashboard: the question after "how many
+  this month" is almost always "and last week?".
+
+  Links carrying `?days=`, not a form and not a script, because changing what a
+  page shows is a navigation and belongs in history. The number is checked
+  against the deployment's own list rather than clamped to a range: every widget
+  costs one query per day, so eleven cards times a free-form 365 is four
+  thousand queries from one address and a clamp would serve it happily. A value
+  that is not on the list is not an error either — the page shows its default
+  window, because a 400 on the front page of an admin is a worse answer than the
+  page it was about to render.
+
+  A widget's own `days` is now its *default* rather than its instruction: the
+  control moves every card. Leaving pinned widgets alone was the alternative,
+  and it is worse than having no control — pressing "7" would move the trend and
+  leave the metric beside it on fourteen, both captions still true and the page
+  as a whole saying nothing. Set `dashboard_ranges=()` to switch the control off
+  and keep the single fixed window.
+
+### Changed
+
+- **A card with nothing to show says so.** An all-zero window drew a flat rule
+  along the baseline, which is exactly what a chart that failed to render looks
+  like — and on a new install it was the first thing the dashboard ever showed.
+  "New accounts · 0" under a flat line reads as broken software rather than as a
+  quiet week. Trends and metrics now print the sentence instead, and drop the
+  plot, the summary facts and the sparkline that were describing nothing.
+
+- **A missing comparison explains itself.** Two cards side by side, one carrying
+  "−36.7%" and the other a gap of the same size, left no way to tell an absent
+  comparison from a change of zero. Where the earlier half of the window is
+  empty — which is what makes the percentage infinite rather than large — the
+  badge now says *No earlier activity to compare*. Not on a card that is already
+  empty, where it would be the same sentence twice.
+
 ### Fixed
 
 - **Clicking a map placed no marker, and saved no coordinate.** `write()` called
