@@ -151,6 +151,32 @@ async def test_the_page_asks_for_the_stylesheet_by_version(client: httpx.AsyncCl
     assert 'href="/admin/static/fastfort.css"' not in body
 
 
+async def test_the_sign_in_page_asks_by_version_too(backend: SQLAlchemyBackend) -> None:
+    """The page built by `auth_views.py` rather than `site.py`, and the one the
+    check above did not cover.
+
+    Both files compose the static URL themselves, the version moved into it in
+    only one of them, and nothing noticed: this test read `/admin/` and every
+    other page in the suite is behind the gate. So the sign-in page went on
+    asking for `/admin/static/fastfort.css` -- the one address whose bytes
+    change underneath it -- and paid a conditional request for its stylesheet
+    and its script on every load, on the page an admin serves to anyone who is
+    not signed in yet.
+
+    Signed *out*, deliberately: the shared client has a session, and the sign-in
+    route redirects somebody who already has one away from a form they do not
+    need -- which is a 303 with an empty body and an assertion that passes
+    against nothing.
+    """
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=build(backend)), base_url="http://testserver"
+    ) as anonymous:
+        body = (await anonymous.get("/admin/login")).text
+
+    assert f"/admin/static/{__version__}/fastfort.css" in body
+    assert 'href="/admin/static/fastfort.css"' not in body
+
+
 @pytest.mark.parametrize("path", ASSETS)
 async def test_a_versioned_asset_is_cached_for_a_year(client: httpx.AsyncClient, path: str) -> None:
     """`immutable`, because the bytes behind this exact URL can never change:

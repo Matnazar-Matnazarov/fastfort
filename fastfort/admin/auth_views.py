@@ -47,7 +47,15 @@ def build_auth_router(fort: FastFort, auth: AdminAuth, renderer: Renderer) -> AP
     settings = fort.settings
     admin_url = settings.admin.url
     login_url = f"{admin_url}/login"
-    static_url = f"{admin_url}/static"
+    # Versioned, exactly as `site.py` builds it. Moving the version into the
+    # path is what makes the year-long `immutable` cache safe, and this file was
+    # missed when that landed -- so the sign-in page went on asking for
+    # `/admin/static/fastfort.css`, the one address whose bytes change
+    # underneath it. It is not a stale-stylesheet bug, because that address
+    # answers `no-cache` and is revalidated; it is the sign-in page paying a
+    # conditional request for its CSS and its script on every single load, for
+    # ever, while every other page in the admin pays none.
+    static_url = f"{admin_url}/static/{__version__}"
 
     router = APIRouter(tags=["fastfort-auth"])
 

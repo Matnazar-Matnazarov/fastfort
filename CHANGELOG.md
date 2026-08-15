@@ -10,6 +10,26 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The sign-in page still asked for its assets without the version.** Moving
+  the version into the path is what makes the year-long `immutable` cache safe,
+  and 0.4.1 did that in `admin/site.py` — but `admin/auth_views.py` composes the
+  static URL itself and was missed. So the one page an admin serves to people
+  who are not signed in yet went on requesting `/admin/static/fastfort.css`, the
+  address whose bytes change underneath it.
+
+  Not a stale-stylesheet bug: that address answers `no-cache` and is
+  revalidated, so the CSS was always current. It was the sign-in page paying a
+  conditional request for its stylesheet *and* its script on every single load,
+  for ever, while every other page in the admin paid none.
+
+  Nothing caught it because the test that checks for the versioned URL reads
+  `/admin/`, and every other page in the suite is behind the gate. It now reads
+  the sign-in page too, signed out — the shared client has a session, and the
+  route redirects somebody who already has one, which is a 303 with an empty
+  body and an assertion that passes against nothing.
+
 ## [0.4.2] - 2026-08-15
 
 Two bugs that both hid behind a page reporting a successful save, and the
