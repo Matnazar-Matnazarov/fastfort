@@ -220,8 +220,18 @@
   border-radius: var(--ff-radius-sm) var(--ff-radius-sm) 0 0;
 }
 
+/* The hit targets sit *over* the drawing, so this fill is in front of the line
+ * and the area rather than behind them. `--ff-surface-hover` is an opaque
+ * surface colour, and an opaque fill in front of a chart does not highlight a
+ * day -- it erases it: the hovered column came out as a white rectangle with
+ * the trend missing from inside it, which reads as the chart failing to draw
+ * exactly where the pointer is.
+ *
+ * A wash of the one hue instead, translucent, so the line and the area still
+ * read through the column that is being pointed at. Same reasoning as
+ * `.ff-plot__area`, which is a wash for the same reason. */
 .ff-plot__slot:hover {
-  background: var(--ff-surface-hover);
+  background: color-mix(in oklab, var(--ff-accent) 12%, transparent);
 }
 
 /* Rounded at the top, square at the baseline: the round end marks where the

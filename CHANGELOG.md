@@ -10,6 +10,40 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A stray `el` in `06-widgets.css` silently dropped the combobox's scrolling.**
+  Two characters, added to the end of `padding: var(--ff-space-1);` by the
+  0.4.3 release commit — which used `git add -A` and swept an unrelated
+  accidental edit in beside the version bump. A CSS parser recovers from a
+  malformed declaration by skipping to the next semicolon, so it ate the
+  `overflow-y: auto` on the line below: `.ff-combo__list` kept its `max-height`
+  and lost its scrollbar, which is precisely the behaviour 0.4.3 shipped to add.
+  A release commit touches the version and the changelog and nothing else.
+
+- **Hovering the trend chart erased the day under the pointer.** The hit targets
+  are laid *over* the drawing, and their hover fill was `--ff-surface-hover` —
+  an opaque surface colour. An opaque fill in front of a chart does not
+  highlight a column, it blanks it: the hovered day came out as a white
+  rectangle with the trend missing from inside it, which reads as the chart
+  failing to draw exactly where you are pointing. It is a translucent wash of
+  the one hue now, the same reasoning as the area fill underneath it, so the
+  line and the area still read through the column being pointed at.
+
+- **A range column's bounds selector was the browser's own control.** The
+  enhancer's pass runs over selects marked for the combobox and this one was
+  never marked, so it rendered with the operating system's blue highlight and
+  its own typeface beside four styled controls on the same row. Two things say
+  it was meant to be upgraded: it already carried `data-ff-search="never"`,
+  which nothing but the combobox reads, and the wrapper around it exists — with
+  a comment saying so — only because the combobox inserts its replacement
+  beside the native select and the sizing has to survive that swap.
+
+  `test_a_select_configured_for_the_combobox_is_given_to_the_combobox` now
+  fails on any `<select>` carrying combobox-only attributes without the marker,
+  because a dead attribute leaves no other trace: the page is a 200 and the
+  control works, it just does not look like the admin.
+
 ## [0.4.3] - 2026-08-15
 
 Two controls that rendered correctly and still could not be used.
