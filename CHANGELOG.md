@@ -10,6 +10,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-15
+
+Two bugs that both hid behind a page reporting a successful save, and the
+dashboard gaps that were defects rather than missing features.
+
 ### Added
 
 - **The dashboard has a time range.** `AdminSettings.dashboard_ranges` — `(7, 30,
@@ -1264,7 +1269,8 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.3.1...v0.3.2
