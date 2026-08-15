@@ -192,6 +192,69 @@ def test_opening_a_panel_does_not_scroll_the_page() -> None:
         assert "preventScroll" in call, call
 
 
+def test_a_panel_opens_on_the_side_with_more_room() -> None:
+    """A combobox low on a long form opened downwards and was cut off.
+
+    `place()` flipped a panel above its trigger only when the space below fell
+    under `Math.min(panel.offsetHeight + 16, 220)`. The cap is the bug: it
+    asserts that 220 pixels below is enough for a panel that wants three
+    hundred, so anything between those two numbers opened downwards and ran off
+    the bottom of the window. The tag list on a product form lost its last
+    options with 690 pixels of unused room directly above it.
+
+    Measured against the real function, at the geometry that was reported:
+
+        below=240  above=692  ->  opened below, clipped by 81px
+
+    Comparing the two sides answers the question the cap was trying to
+    approximate, and picking the larger side is never worse than picking a
+    fixed number.
+    """
+    source = (STATIC / "js" / "fastfort.js").read_text()
+    body = re.search(r"const place = \(panel, trigger\) => \{(.*?)\n  \};", source, re.S)
+    assert body, "place() has moved or changed shape"
+    logic = body.group(1)
+
+    assert "box.top" in logic, "the space above the trigger has to be measured to be compared"
+    assert re.search(r"above\s*>\s*below", logic), "the two sides have to be compared"
+    # The cap that caused it. A fixed pixel budget compared against the panel's
+    # own height is exactly the shape of the mistake.
+    assert "220" not in logic, "a fixed cap on the room a panel needs is what broke this"
+
+
+def test_a_panel_that_fits_neither_side_scrolls_rather_than_overflowing() -> None:
+    """Picking the better side is not enough on a short window.
+
+    A side can be the larger one and still be too small, and a panel that
+    overflows the window is unreachable in a way a panel that scrolls is not.
+    So `place()` hands the room it measured to the stylesheet and the list
+    inside gives way.
+
+    `min-height: 0` is the load-bearing line: a flex item will not shrink below
+    its content, so without it the list keeps its 16rem and pushes the panel
+    past the window even with a max-height above it.
+    """
+    source = (STATIC / "js" / "fastfort.js").read_text()
+    widgets = (STATIC / "css" / "06-widgets.css").read_text()
+
+    # The call, not the name: every script here documents itself, so a plain
+    # substring search finds the comment explaining the variable and passes
+    # against code that no longer sets it.
+    assert re.search(r"setProperty\(\s*[\"'`]--ff-pop-room", source), (
+        "the measured room has to actually be set on the panel, not just described"
+    )
+
+    panel = re.search(r"\.ff-combo__panel \{(.*?)\n\}", widgets, re.S)
+    assert panel, ".ff-combo__panel has moved"
+    assert "max-height: var(--ff-pop-room" in panel.group(1)
+    assert "flex-direction: column" in panel.group(1), "the list can only give way in a column"
+
+    options = re.search(r"\.ff-combo__list \{(.*?)\n\}", widgets, re.S)
+    assert options, ".ff-combo__list has moved"
+    assert "min-height: 0" in options.group(1), "without this the list refuses to shrink"
+    assert "overflow-y: auto" in options.group(1)
+
+
 # ---------------------------------------------------------------------------
 # Settings
 # ---------------------------------------------------------------------------
