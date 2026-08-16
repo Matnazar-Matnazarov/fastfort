@@ -1730,13 +1730,26 @@
   visibility: hidden;
 }
 
-.ff-item[aria-current="true"] {
+.ff-item[aria-current="true"],
+.ff-item[aria-pressed="true"] {
   color: var(--ff-text);
   font-weight: var(--ff-weight-medium);
 }
 
-.ff-item[aria-current="true"] .ff-item__mark {
+.ff-item[aria-current="true"] .ff-item__mark,
+.ff-item[aria-pressed="true"] .ff-item__mark {
   visibility: visible;
+}
+
+/* A scrollable list of `.ff-item` rows inside a dropdown panel, capped so a
+ * menu with many entries -- a model with a dozen columns -- grows a
+ * scrollbar instead of the page. */
+.ff-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 13rem;
+  overflow-y: auto;
 }
 
 /* ===========================================================================
