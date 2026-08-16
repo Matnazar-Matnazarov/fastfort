@@ -196,6 +196,35 @@
       <div class="ff-toolbar__end">
         <span class="ff-busy ff-spinner" aria-hidden="true"></span>
 
+        {% if columns %}
+          {# A client-only preference -- remembered per list, applied straight
+             to the table's cells rather than the row that requested them, so
+             it works whether or not this project has ever heard of it. The
+             trigger is JS-only because there is nothing to fall back to:
+             every column already shows without script, which is what this
+             control's own default draws too.
+
+             Row density is a separate, project-wide setting already --
+             `UISettings.density`, which retunes `--ff-density` for the whole
+             admin, not just one table -- so this menu does not repeat it. #}
+          <div class="ff-dropdown">
+            <button class="ff-btn ff-btn--sm ff-js-only" type="button" data-ff-menu>
+              {{ ff_icon("eye", size=15) }}
+              {{ _("Columns") }}
+            </button>
+            <div class="ff-pop ff-dropdown__panel" hidden data-ff-columns-menu="{{ current_key }}">
+              <div class="ff-menu-list ff-scroll">
+                {% for column in columns %}
+                  <button class="ff-item" type="button" data-ff-col="{{ column.name }}" aria-pressed="true">
+                    <span class="ff-item__label">{{ column.label }}</span>
+                    <span class="ff-item__mark" aria-hidden="true">{{ ff_icon("check", size=14) }}</span>
+                  </button>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        {% endif %}
+
         {% if exports %}
           {# Downloads what is on screen, filters and ordering included. A button
              that ignored them would export the whole model, which is never what

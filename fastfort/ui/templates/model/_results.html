@@ -7,7 +7,12 @@
 #}
   {% if page.items %}
     <div class="ff-table-wrap ff-scroll">
-      <table class="ff-table" {% if actions %}data-ff-selectable{% endif %}>
+      {# `data-ff-columns` is this list's identity for the column-visibility and
+         row-density preferences in fastfort.js -- read fresh on every render of
+         this partial, including the fragment a live filter or sort swaps in, so
+         a hidden column stays hidden across a live update without the toolbar
+         that hides it needing to do anything itself. #}
+      <table class="ff-table" data-ff-columns="{{ current_key }}" {% if actions %}data-ff-selectable{% endif %}>
         <thead>
           <tr>
             {% if actions %}
@@ -21,7 +26,7 @@
               </th>
             {% endif %}
             {% for column in columns %}
-              <th scope="col" {% if column.sort_state != "none" %}aria-sort="{{ column.sort_state }}"{% endif %}>
+              <th scope="col" data-ff-col="{{ column.name }}" {% if column.sort_state != "none" %}aria-sort="{{ column.sort_state }}"{% endif %}>
                 {% if column.sort_url %}
                   <a
                     class="ff-table__sort"
@@ -67,7 +72,7 @@
                 </td>
               {% endif %}
               {% for cell in row.cells %}
-                <td {% if cell.numeric %}class="ff-numeric"{% endif %}>
+                <td data-ff-col="{{ columns[loop.index0].name }}" {% if cell.numeric %}class="ff-numeric"{% endif %}>
                   {% if cell.boolean %}
                     {{ cell.value|ff_bool }}
                   {% elif cell.image %}

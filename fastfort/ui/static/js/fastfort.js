@@ -2753,6 +2753,69 @@
   });
 
   // =========================================================================
+  // Listing: column visibility
+  // =========================================================================
+
+  /* A client-only preference, remembered per list and re-applied to every
+   * render of its table -- including the fragment a live filter or sort
+   * swaps in. That is why the state lives on the table itself (read fresh by
+   * `once()` on every fresh node) rather than only in the menu that toggles
+   * it: a menu wired to one table would go stale the moment a live update
+   * replaced it with another.
+   *
+   * Row density is a project-wide setting already -- `UISettings.density`,
+   * which retunes `--ff-density` for the whole admin through the spacing
+   * tokens every rule already uses -- so this does not grow a second,
+   * table-only version of the same idea beside it. */
+  const hiddenColumns = (key) => {
+    try {
+      const raw = JSON.parse(read(`ff:columns:${key}`) || "[]");
+      return Array.isArray(raw) ? raw : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const applyHiddenColumns = (table) => {
+    const hidden = hiddenColumns(table.dataset.ffColumns);
+    for (const cell of table.querySelectorAll("[data-ff-col]")) {
+      cell.hidden = hidden.includes(cell.dataset.ffCol);
+    }
+  };
+
+  enhancers.push((scope) => {
+    for (const table of scope.querySelectorAll("[data-ff-columns]")) {
+      if (once(table, "ffColsReady")) applyHiddenColumns(table);
+    }
+
+    for (const menu of scope.querySelectorAll("[data-ff-columns-menu]")) {
+      if (!once(menu, "ffColsMenuReady")) continue;
+      const key = menu.dataset.ffColumnsMenu;
+      const hidden = hiddenColumns(key);
+
+      for (const button of menu.querySelectorAll("[data-ff-col]")) {
+        const col = button.dataset.ffCol;
+        button.setAttribute("aria-pressed", String(!hidden.includes(col)));
+        button.addEventListener("click", () => {
+          const shown = button.getAttribute("aria-pressed") !== "true";
+          button.setAttribute("aria-pressed", String(shown));
+          const next = shown
+            ? hiddenColumns(key).filter((c) => c !== col)
+            : [...hiddenColumns(key), col];
+          write(`ff:columns:${key}`, JSON.stringify(next));
+
+          // The toolbar that owns this menu survives a live update untouched,
+          // so the table is looked up fresh here rather than captured once --
+          // the table `once()` re-primed above may by now be a different node
+          // than the one on screen when this menu was built.
+          const table = document.querySelector(`[data-ff-columns="${CSS.escape(key)}"]`);
+          if (table) applyHiddenColumns(table);
+        });
+      }
+    }
+  });
+
+  // =========================================================================
   // Listing: row selection and bulk actions
   // =========================================================================
 
