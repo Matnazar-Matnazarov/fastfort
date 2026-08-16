@@ -188,7 +188,7 @@ def _gzipped(*blobs: bytes) -> int:
 
 
 def test_the_everyday_page_stays_within_budget(css: str) -> None:
-    """What every page downloads is budgeted at 70 KB gzipped: the stylesheet,
+    """What every page downloads is budgeted at 72 KB gzipped: the stylesheet,
     `boot.js` and `fastfort.js`.
 
     Both halves are weighed, not just the stylesheet. The budget exists to keep
@@ -239,6 +239,25 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
     this budget did not move by a single byte and neither did any page that is
     not the dashboard. A charting library would have cost this much compressed
     before drawing anything.
+
+    Raised again, to 72 KB, for two list-view controls landing together:
+    column visibility and saved views. Both are a client-only preference, kept
+    in `localStorage`, applied on top of a page that is already correct
+    without it -- a wide model's list can hide what nobody reads on this
+    screen, and a filter worth coming back to can be given a name, since the
+    query string it lives in was already shareable. Neither moves what the
+    page looks like with JavaScript off: there is nothing to fall back to,
+    because the default each one replaces *is* today's only behaviour, which
+    is why both triggers are `.ff-js-only` rather than a control with a
+    second, server-rendered form standing behind them.
+
+    Row density was on the table for this round and is not here. The admin
+    already retunes spacing for the whole page from one setting,
+    `UISettings.density`, driving every `--ff-space-*` token through
+    `--ff-density` -- so a second, table-only version of the same idea would
+    not have been a feature. It would have been the same attribute name,
+    `data-ff-density`, meaning two different things depending on which
+    element carried it.
     """
     js = CSS_DIR.parent / "js"
     scripts = [js / name for name in ALWAYS_LOADED]
@@ -246,11 +265,11 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
     assert not missing, f"the budget cannot pass by measuring nothing: {missing}"
 
     compressed = _gzipped(css.encode("utf-8"), *(path.read_bytes() for path in scripts))
-    assert compressed < 70_000, f"{compressed} bytes gzipped"
+    assert compressed < 72_000, f"{compressed} bytes gzipped"
 
 
 def test_the_whole_front_end_stays_within_budget(css: str) -> None:
-    """Everything that ships, on-demand bundles included, is budgeted at 92,000 bytes.
+    """Everything that ships, on-demand bundles included, is budgeted at 94,000 bytes.
 
     The per-page budget above is the one that protects the common case, but on
     its own it would be a budget with a hole in it: anything could be moved into
@@ -282,13 +301,18 @@ def test_the_whole_front_end_stays_within_budget(css: str) -> None:
     alternative was a sidebar that marked "you are here" below the fold on every
     navigation.
 
+    Raised again, to 94,000, for column visibility and saved views on the
+    list page -- see the matching note on the everyday budget above, which is
+    the one this raise actually costs: nothing here lives in an on-demand
+    bundle, because a list view is the page every admin has.
+
     Each raise was a feature rather than an accumulation.
     """
     scripts = sorted((CSS_DIR.parent / "js").glob("*.js"))
     assert scripts, "the budget cannot pass by measuring nothing"
 
     compressed = _gzipped(css.encode("utf-8"), *(script.read_bytes() for script in scripts))
-    assert compressed < 92_000, f"{compressed} bytes gzipped"
+    assert compressed < 94_000, f"{compressed} bytes gzipped"
 
 
 # ---------------------------------------------------------------------------
