@@ -1742,14 +1742,39 @@
 }
 
 /* A scrollable list of `.ff-item` rows inside a dropdown panel, capped so a
- * menu with many entries -- a model with a dozen columns -- grows a
- * scrollbar instead of the page. */
+ * menu with many entries -- a model with a dozen columns, a shelf of saved
+ * views -- grows a scrollbar instead of the page. Shared rather than named
+ * for one caller, because both of those are exactly the same shape. */
 .ff-menu-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
   max-height: 13rem;
   overflow-y: auto;
+}
+
+/* A saved view's row: the link takes the width, its remove button stays a
+ * fixed icon square beside it -- unlike a plain `.ff-item`, which is the
+ * whole clickable row and has no room for a second control of its own. */
+.ff-views-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-1);
+}
+
+.ff-views-row .ff-item {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ff-views-save {
+  display: flex;
+  gap: var(--ff-space-2);
+}
+
+.ff-views-save .ff-input {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* ===========================================================================
