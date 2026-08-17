@@ -187,6 +187,40 @@
         </div>
       {% endif %}
 
+      {# A filter is already shareable -- it lives in the query string, so the
+         URL on screen is the whole story. What is missing is a name for it,
+         which is what this adds: a client-only shelf of named URLs, kept in
+         this browser rather than in a table, because the query string is
+         already the source of truth and a second copy of it server-side would
+         only be a second place for the two to disagree. #}
+      <div class="ff-dropdown">
+        <button class="ff-btn ff-btn--sm ff-js-only" type="button" data-ff-menu>
+          {{ ff_icon("star", size=15) }}
+          {{ _("Views") }}
+        </button>
+        <div class="ff-pop ff-dropdown__panel" hidden data-ff-views="{{ current_key }}">
+          <div class="ff-menu-list ff-scroll" data-ff-views-list></div>
+          {# A `<div>`, not a `<form>`: this whole panel already sits inside the
+             toolbar's own `<form method="get">`, and a form nested inside
+             another is invalid HTML that browsers silently flatten -- which
+             is exactly the kind of bug that only shows up as "the wrong
+             button submitted". Enter-in-the-input and the Save button are
+             wired to the same handler in fastfort.js instead. #}
+          <div class="ff-views-save ff-mt-2" data-ff-views-save>
+            <input
+              class="ff-input ff-input--sm"
+              type="text"
+              data-ff-views-name
+              placeholder="{{ _("Name this view…") }}"
+              maxlength="60"
+            />
+            <button class="ff-btn ff-btn--sm ff-btn--primary" type="button" data-ff-views-add>
+              {{ _("Save") }}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {# The ordering rides along in a hidden field, so applying a filter does
          not silently reset the column the user sorted by. #}
       {% if ordering_param %}
