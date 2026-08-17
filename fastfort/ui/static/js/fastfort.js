@@ -2816,6 +2816,92 @@
   });
 
   // =========================================================================
+  // Listing: saved views
+  // =========================================================================
+
+  /* A shelf of named URLs, kept in this browser. The query string is already
+   * the whole state of a filtered, searched, sorted list -- these just give a
+   * name to one worth coming back to, so nothing here talks to the server. */
+  enhancers.push((scope) => {
+    for (const menu of scope.querySelectorAll("[data-ff-views]")) {
+      if (!once(menu, "ffViewsReady")) continue;
+      const storeKey = `ff:views:${menu.dataset.ffViews}`;
+      const list = menu.querySelector("[data-ff-views-list]");
+      const input = menu.querySelector("[data-ff-views-name]");
+      const addButton = menu.querySelector("[data-ff-views-add]");
+
+      const load = () => {
+        try {
+          const saved = JSON.parse(read(storeKey) || "[]");
+          return Array.isArray(saved) ? saved : [];
+        } catch {
+          return [];
+        }
+      };
+
+      const render = () => {
+        const views = load();
+        list.replaceChildren(
+          ...views.map((view) =>
+            el("div", { class: "ff-views-row" }, [
+              el("a", { class: "ff-item", href: view.query, text: view.name }),
+              el(
+                "button",
+                {
+                  class: "ff-btn ff-btn--ghost ff-btn--icon ff-btn--sm",
+                  type: "button",
+                  "aria-label": t("Remove"),
+                  onclick: (event) => {
+                    event.preventDefault();
+                    write(
+                      storeKey,
+                      JSON.stringify(load().filter((entry) => entry.name !== view.name)),
+                    );
+                    render();
+                  },
+                },
+                icon("close", 13),
+              ),
+            ]),
+          ),
+        );
+      };
+
+      render();
+
+      if (!input || !addButton) continue;
+
+      // Not a `<form>` -- see the comment beside its markup in list.html --
+      // so Enter and the button's click are wired to the same handler by
+      // hand instead of coming free with submit.
+      const add = () => {
+        const name = input.value.trim();
+        if (!name) return;
+
+        // The page number is not part of what "this view" means -- recalling
+        // a saved view always starts at its first page.
+        const params = new URLSearchParams(window.location.search);
+        params.delete("p");
+        const search = params.toString();
+        const query = window.location.pathname + (search ? `?${search}` : "");
+
+        const views = [{ name, query }, ...load().filter((entry) => entry.name !== name)];
+        write(storeKey, JSON.stringify(views.slice(0, 20)));
+        input.value = "";
+        render();
+      };
+
+      addButton.addEventListener("click", add);
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          add();
+        }
+      });
+    }
+  });
+
+  // =========================================================================
   // Listing: row selection and bulk actions
   // =========================================================================
 
