@@ -159,6 +159,15 @@ async def test_the_list_carries_column_visibility_controls(client: httpx.AsyncCl
     assert 'data-ff-col="name" aria-pressed="true"' in body
 
 
+async def test_the_list_offers_a_way_to_save_the_current_view(client: httpx.AsyncClient) -> None:
+    """Shareable already, through the query string; this adds a name for it."""
+    body = (await client.get("/admin/shop.product/")).text
+
+    assert 'data-ff-views="shop.product"' in body
+    assert "data-ff-views-list" in body
+    assert "data-ff-views-name" in body
+
+
 # ---------------------------------------------------------------------------
 # Create
 # ---------------------------------------------------------------------------
