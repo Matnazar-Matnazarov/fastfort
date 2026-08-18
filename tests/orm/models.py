@@ -82,6 +82,12 @@ class Product(Base):
         sa.DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC)
     )
 
+    # A soft-delete marker: null means not trashed, a timestamp means trashed
+    # at that moment. Nullable is the point of it, the same reason
+    # `released_on` above is -- a marker that could never be null could never
+    # say "not trashed" either.
+    deleted_at: Mapped[dt.datetime | None] = mapped_column(sa.DateTime(timezone=True), default=None)
+
     # No browser has a control for a duration, so this is the column that
     # proves the one FastFort draws is reachable from a real model.
     warranty: Mapped[dt.timedelta | None] = mapped_column(sa.Interval(), default=None)
