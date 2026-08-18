@@ -10,6 +10,47 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-19
+
+Three ways to touch fewer rows by hand: hide the columns you are not
+reading, name a filter worth coming back to, and delete without losing the
+row.
+
+### Added
+
+- **Column visibility on the list view.** A Columns menu beside Export, one
+  toggle per displayed column, remembered per list in `localStorage` and
+  applied straight to the table's own cells — so it survives a live filter
+  or sort, which swaps in a fresh set of rows under the same toolbar. A
+  client-only convenience throughout: the trigger is `.ff-js-only` because
+  there is nothing to fall back to, the same reason `Columns` reuses the
+  string the import page already carries rather than adding a second one.
+
+- **Saved views.** A filter was already shareable — it lives in the query
+  string — so what was missing was a name for one worth returning to. A
+  Views menu keeps a shelf of `{name, query}` pairs in the browser, next to
+  Columns. Nothing server-side: the query string was already the source of
+  truth, and a second copy of it would only be a second place for the two
+  to disagree.
+
+- **`ModelAdmin.soft_delete_field`.** Name a nullable boolean or
+  date/datetime column a project already owns, and `DELETE_ACTION` stops
+  calling `adapter.delete` — it writes the marker instead, through
+  `adapter.update`, which is the whole cost: no new table, no new adapter
+  method. `deletion_plan` is never consulted for a soft-deleted row, since
+  it has not actually left the table and nothing pointing at it needs to
+  cascade. The list gains a Trash view offering `RESTORE_ACTION` in place
+  of Delete, and the marker field is excluded from every create and edit
+  form automatically.
+
+### Changed
+
+- **The front-end size budget moves to 72 KB / 94,000 bytes** (from 70 KB /
+  92,000), for column visibility and saved views — see the docstrings on
+  both budget tests in `tests/ui/test_theming.py` for the exact accounting.
+  Soft delete costs nothing here: it is the delete pipeline and two
+  templates, not a line of `fastfort.js` or the stylesheets.
+
 ## [0.4.4] - 2026-08-15
 
 Three controls that rendered correctly and still looked wrong — one of them
