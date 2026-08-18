@@ -139,6 +139,35 @@ async def test_each_row_links_to_itself(client: httpx.AsyncClient) -> None:
     assert re.search(r'href="/admin/shop\.product/\d+/delete"', body)
 
 
+async def test_the_list_carries_column_visibility_controls(client: httpx.AsyncClient) -> None:
+    """`fastfort.js` reads these; the server's job is only to name the list and
+    tag every column, so the preference has something to find. A client-only
+    convenience -- the assertions here are about what is on the page, not
+    about hiding anything, since that part happens after it loads.
+    """
+    body = (await client.get("/admin/shop.product/")).text
+
+    # The table carries the list's identity, and its header names each
+    # column -- both are what fastfort.js keys its localStorage preference
+    # off and applies it to.
+    assert 'data-ff-columns="shop.product"' in body
+    assert '<th scope="col" data-ff-col="name"' in body
+
+    # The menu that edits the preference: one toggle per displayed column,
+    # rendered pressed (visible) by default.
+    assert 'data-ff-columns-menu="shop.product"' in body
+    assert 'data-ff-col="name" aria-pressed="true"' in body
+
+
+async def test_the_list_offers_a_way_to_save_the_current_view(client: httpx.AsyncClient) -> None:
+    """Shareable already, through the query string; this adds a name for it."""
+    body = (await client.get("/admin/shop.product/")).text
+
+    assert 'data-ff-views="shop.product"' in body
+    assert "data-ff-views-list" in body
+    assert "data-ff-views-name" in body
+
+
 # ---------------------------------------------------------------------------
 # Create
 # ---------------------------------------------------------------------------
