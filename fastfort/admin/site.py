@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from collections.abc import Callable
+from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -57,7 +58,7 @@ from .importing import (
     template_rows,
 )
 from .messages import Message, MessageLevel, Messages
-from .options import ModelAdmin
+from .options import DELETE_ACTION, RESTORE_ACTION, ModelAdmin
 from .protection import AccountGuard
 from .security import LANGUAGE_COOKIE, make_guard, safe_next_url, set_csrf_cookie
 from .values import split_multi
@@ -617,6 +618,17 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             max_page_size=settings.admin.max_page_size,
         )
 
+        # `?trashed=1` asks for the trash view instead of the ordinary list.
+        # Not a filter a project can declare through `list_filter` -- nobody
+        # should be able to reach it by guessing a query-string key -- so it
+        # is merged in after `from_params` has already validated everything
+        # the request is allowed to ask for on its own.
+        trashed = params.get("trashed") == "1" and model_admin.soft_delete_field is not None
+        if model_admin.soft_delete_field is not None:
+            query = replace(
+                query, filters=(*query.filters, model_admin.soft_delete_filter(trashed=trashed))
+            )
+
         async with fort.backend.unit_of_work() as uow:
             adapter = fort.backend.adapter(
                 entry.model,
@@ -666,6 +678,19 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         model_title = model_admin.title
         model_singular = model_admin.singular
 
+        # The trash view offers Restore in place of Delete -- `action_specs()`
+        # returns both once `soft_delete_field` is set, because it has no
+        # notion of which list a request is looking at; that is decided here,
+        # the one place that already knows.
+        actions = model_admin.action_specs()
+        if model_admin.soft_delete_field is not None:
+            wanted = RESTORE_ACTION if trashed else DELETE_ACTION
+            actions = tuple(
+                a
+                for a in actions
+                if a.name == wanted or a.name not in (DELETE_ACTION, RESTORE_ACTION)
+            )
+
         context = base_context(request, model_key) | {
             "page_title": model_title,
             "breadcrumbs": ({"label": model_title, "url": None},),
@@ -675,6 +700,17 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             "model_title": model_title,
             "model_singular": model_singular,
             "admin": model_admin,
+            "trashed": trashed,
+            "trash_url": (
+                _with_params(list_url(model_key), params, {"trashed": "1", "p": None})
+                if model_admin.soft_delete_field is not None and not trashed
+                else None
+            ),
+            "list_url_no_trash": (
+                _with_params(list_url(model_key), params, {"trashed": None, "p": None})
+                if trashed
+                else None
+            ),
             "page": page_result,
             "query": query,
             "list_url": list_url(model_key),
@@ -691,12 +727,16 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 media_url=f"{admin_url}/media",
             ),
             "filters": filter_controls,
-            # Named in the delete confirmation, so it says what else goes.
-            "cascades": _cascades(model_admin),
+            # Named in the delete confirmation, so it says what else goes. Not
+            # asked for a soft-delete model: the row does not leave the
+            # table, so nothing pointing at it needs to cascade, and naming
+            # relations that will not actually be touched is the trap this
+            # hint exists to prevent, not cause.
+            "cascades": () if model_admin.soft_delete_field is not None else _cascades(model_admin),
             "active_filters": _active_filters(
                 filter_controls, query, params, list_url(model_key), context_translator
             ),
-            "actions": model_admin.action_specs(),
+            "actions": actions,
             "action_url": f"{admin_url}/{model_key}/action",
             # The export keeps the current search, filters and ordering, so the
             # file is the table on screen rather than the whole model.
@@ -1105,7 +1145,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             # be pointed at without having a page.
             "relation_links": _relation_links(admin_for, model_admin, admin_url),
             "popup": popup,
-            "cascades": _cascades(model_admin),
+            "cascades": () if model_admin.soft_delete_field is not None else _cascades(model_admin),
             "delete_url": f"{object_url(model_key, pk)}delete" if editing else None,
             "object_label": label if editing else "",
             "submit_label": (
@@ -1346,6 +1386,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
     async def delete_confirm(request: Request, model_key: str, object_key: str) -> Any:
         model_admin = _require_admin(admin_for, model_key)
         entry = fort.registry.entry_for_key(model_key)
+        soft = model_admin.soft_delete_field is not None
 
         async with fort.backend.unit_of_work() as uow:
             adapter = fort.backend.adapter(entry.model, uow, key=model_key)
@@ -1361,8 +1402,13 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 return redirect(object_url(model_key, key), notices.danger(message))
             # What else this takes with it, counted before anything is written.
             # "This cannot be undone" is not a confirmation on its own; the
-            # question people have is what happens to the rows underneath.
-            plan = await adapter.deletion_plan([instance])
+            # question people have is what happens to the rows underneath --
+            # a question a soft delete has no answer to, because the row has
+            # not actually left the table and nothing pointing at it needs to
+            # move. Asking `deletion_plan` for a soft-deleted row would still
+            # answer truthfully, but it would be answering a question this
+            # page no longer needs to ask.
+            plan = await adapter.deletion_plan([instance]) if not soft else None
 
         delete_translate = translator_for(request)
         delete_model_title = model_admin.title
@@ -1383,9 +1429,10 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 ),
                 "admin": model_admin,
                 "label": label,
-                "cascades": _cascades(model_admin),
-                "related": _related_groups(fort, plan, admin_url),
-                "blocked": plan.blocked,
+                "soft_delete": soft,
+                "cascades": _cascades(model_admin) if not soft else (),
+                "related": _related_groups(fort, plan, admin_url) if plan is not None else (),
+                "blocked": plan.blocked if plan is not None else False,
                 "action_url": f"{object_url(model_key, key)}delete",
                 "cancel_url": object_url(model_key, key),
             },
@@ -1395,6 +1442,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
     async def delete_submit(request: Request, model_key: str, object_key: str) -> Any:
         model_admin = _require_admin(admin_for, model_key)
         entry = fort.registry.entry_for_key(model_key)
+        soft = model_admin.soft_delete_field is not None
 
         try:
             await verify_csrf(request)
@@ -1421,12 +1469,18 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             if refusal:
                 return redirect(back, notices.danger(translate(refusal)))
 
-            plan = await adapter.deletion_plan([instance])
-            if plan.blocked:
-                return redirect(back, notices.danger(_protected_message(fort, plan, translate)))
+            if not soft:
+                plan = await adapter.deletion_plan([instance])
+                if plan.blocked:
+                    return redirect(back, notices.danger(_protected_message(fort, plan, translate)))
 
             try:
-                await adapter.delete(instance)
+                if soft:
+                    assert model_admin.soft_delete_field is not None
+                    trashed_value, _ = model_admin.soft_delete_values()
+                    await adapter.update(instance, {model_admin.soft_delete_field: trashed_value})
+                else:
+                    await adapter.delete(instance)
                 # Explicit, inside the guard: a constraint the database only
                 # checks at commit would otherwise be raised on the way out of
                 # this block, past every handler that could explain it.
@@ -1435,15 +1489,26 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 await uow.rollback()
                 return redirect(back, notices.danger(f"Could not delete this row: {exc.message}"))
 
+        # Two calls rather than one call on a string chosen by a ternary: the
+        # completeness check that keeps every literal argument in the
+        # catalogues works by scanning source text for the exact shape of a
+        # call site, and a string chosen before the call arrives as a plain
+        # name rather than that shape, so it would pass unseen and
+        # untranslated in nine languages -- as, briefly, this one did.
+        success_message = (
+            translate(
+                "{model} “{name}” was moved to trash.",
+                model=translate(model_admin.singular),
+                name=label,
+            )
+            if soft
+            else translate(
+                "{model} “{name}” was deleted.", model=translate(model_admin.singular), name=label
+            )
+        )
         return redirect(
             list_url(model_key),
-            notices.success(
-                translate(
-                    "{model} “{name}” was deleted.",
-                    model=translate(model_admin.singular),
-                    name=label,
-                )
-            ),
+            notices.success(success_message),
         )
 
     # -- bulk actions -------------------------------------------------------
@@ -1490,37 +1555,69 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 return redirect(target, notices.info("Those rows no longer exist."))
 
             try:
-                if name == "delete":
+                if name == DELETE_ACTION:
+                    soft = model_admin.soft_delete_field is not None
+
                     # Protected accounts are dropped from the selection rather
                     # than failing it: someone who ticked forty rows and one
-                    # protected account meant to delete the forty.
+                    # protected account meant to delete the forty. Applies
+                    # whether the delete is soft or hard -- a protection this
+                    # deployment grants an account is not a statement about
+                    # cascades, so a soft delete does not bypass it.
                     objects, refused = guard.deletable(model_key, objects)
                     if not objects:
                         return redirect(target, notices.danger(translator_for(request)(refused)))
 
-                    # The same check the single-row delete makes. A bulk delete
-                    # is where it matters most: half the rows going and the rest
-                    # failing on a foreign key is the worst possible outcome, and
-                    # it is what happens without this.
-                    plan = await adapter.deletion_plan(objects)
-                    if plan.blocked:
-                        return redirect(
-                            target,
-                            notices.danger(_protected_message(fort, plan, translator_for(request))),
-                        )
-                    for obj in objects:
-                        await adapter.delete(obj)
-                    deleted = (
-                        f"{len(objects)} {model_admin.title.lower()} were deleted."
+                    if not soft:
+                        # The same check the single-row delete makes. A bulk
+                        # delete is where it matters most: half the rows
+                        # going and the rest failing on a foreign key is the
+                        # worst possible outcome, and it is what happens
+                        # without this. Not asked at all for a soft delete --
+                        # the rows never leave the table, so nothing pointing
+                        # at them needs to cascade.
+                        plan = await adapter.deletion_plan(objects)
+                        if plan.blocked:
+                            return redirect(
+                                target,
+                                notices.danger(
+                                    _protected_message(fort, plan, translator_for(request))
+                                ),
+                            )
+
+                    if soft:
+                        assert model_admin.soft_delete_field is not None
+                        trashed_value, _ = model_admin.soft_delete_values()
+                        for obj in objects:
+                            await adapter.update(
+                                obj, {model_admin.soft_delete_field: trashed_value}
+                            )
+                        verb = "were moved to trash" if len(objects) != 1 else "was moved to trash"
+                    else:
+                        for obj in objects:
+                            await adapter.delete(obj)
+                        verb = "were deleted" if len(objects) != 1 else "was deleted"
+                    counted = (
+                        f"{len(objects)} {model_admin.title.lower()} {verb}."
                         if len(objects) != 1
-                        else f"One {model_admin.singular.lower()} was deleted."
+                        else f"One {model_admin.singular.lower()} {verb}."
                     )
                     # The refusal rides along with the count, so the number in
                     # the notice is never a surprise.
                     message = (
-                        notices.warning(f"{deleted} {translator_for(request)(refused)}")
+                        notices.warning(f"{counted} {translator_for(request)(refused)}")
                         if refused
-                        else notices.success(deleted)
+                        else notices.success(counted)
+                    )
+                elif name == RESTORE_ACTION:
+                    assert model_admin.soft_delete_field is not None
+                    _, restored_value = model_admin.soft_delete_values()
+                    for obj in objects:
+                        await adapter.update(obj, {model_admin.soft_delete_field: restored_value})
+                    message = notices.success(
+                        f"{len(objects)} {model_admin.title.lower()} were restored."
+                        if len(objects) != 1
+                        else f"One {model_admin.singular.lower()} was restored."
                     )
                 else:
                     handler = model_admin.action_handler(name)

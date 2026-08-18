@@ -59,6 +59,7 @@ ICONS: dict[str, str] = {
     "check": '<path d="m4 12 5 5L20 6"/>',
     "close": '<path d="M6 6 18 18M18 6 6 18"/>',
     "trash": '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/>',
+    "restore": '<path d="M3 3v6h6"/><path d="M3.5 9a9 9 0 1 0 2.5-5.5L3 6"/>',
     "edit": '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
     "save": '<path d="M5 3h11l3 3v15H5Z"/><path d="M8 3v6h7V3M8 21v-7h8v7"/>',
     "eye": (

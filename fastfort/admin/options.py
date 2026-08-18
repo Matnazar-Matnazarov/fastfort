@@ -10,10 +10,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from fastfort.core.exceptions import ConfigurationError
-from fastfort.spec import FieldType, SortSpec
+from fastfort.spec import FieldType, Filter, FilterOperator, SortSpec
 from fastfort.ui.icons import icon_names, is_icon
 
 from .widgets import WIDGET_NAMES
@@ -25,6 +26,15 @@ __all__ = ["Action", "ModelAdmin", "action"]
 
 #: The name of the delete action every model gets for free.
 DELETE_ACTION = "delete"
+
+#: Offered instead of `DELETE_ACTION` on the trash view of a model that
+#: declared `soft_delete_field` -- see the option's own docstring.
+RESTORE_ACTION = "restore"
+
+#: Types `soft_delete_field` may name. Nullable is checked separately: the
+#: marker's *value* is what says trashed or not, so a column that could never
+#: be null could never say "not trashed" either.
+_SOFT_DELETE_TYPES = frozenset({FieldType.BOOLEAN, FieldType.DATE, FieldType.DATETIME})
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +121,21 @@ class ModelAdmin:
 
     #: Fields shown but never written. Merged into the spec's own allow-list.
     readonly_fields: ClassVar[Sequence[str]] = ()
+
+    #: A nullable boolean or date/datetime column that means "trashed" rather
+    #: than gone. Set it and `DELETE_ACTION` stops calling `adapter.delete` --
+    #: it writes the marker instead, `deletion_plan` is never consulted (a
+    #: trashed row has not actually left the table, so nothing it referenced
+    #: needs to cascade), and the list gains a trash view offering
+    #: `RESTORE_ACTION` in place of delete.
+    #:
+    #: No new table, no new adapter method: a soft delete is a write to a
+    #: column the project already owns, so it goes through `adapter.update`
+    #: exactly like any other field. Excluded from create/edit forms
+    #: automatically -- see `editable_field_names` -- because it is the
+    #: deletion pipeline's column, not one a form should let someone set by
+    #: hand.
+    soft_delete_field: ClassVar[str | None] = None
 
     #: Columns that store a password hash. Their control takes a new password and
     #: a confirmation, hashes it, and leaves the stored value alone when both are
@@ -250,6 +275,34 @@ class ModelAdmin:
             available = ", ".join(icon_names())
             problems.append(f"icon names {self.icon!r}, which is not one of: {available}")
 
+        if self.soft_delete_field is not None:
+            if self.soft_delete_field not in known:
+                problems.append(
+                    f"soft_delete_field names {self.soft_delete_field!r}, "
+                    f"which {self.spec.key} has no"
+                )
+            else:
+                marker = self.spec.field(self.soft_delete_field)
+                if marker.type not in _SOFT_DELETE_TYPES:
+                    kinds = ", ".join(sorted(t.value for t in _SOFT_DELETE_TYPES))
+                    problems.append(
+                        f"soft_delete_field names {self.soft_delete_field!r}, which is a "
+                        f"{marker.type.value} column; it must be one of: {kinds}"
+                    )
+                # A boolean marker is its own two states and needs nothing else --
+                # `is_deleted = False` is a perfectly ordinary, usually
+                # not-null column. A date/datetime marker's *nullability* is
+                # what carries the second state: the moment it was trashed, or
+                # nothing. Requiring null on a boolean would reject the
+                # ordinary shape of that column for no reason connected to
+                # what this option actually needs from it.
+                elif marker.type is not FieldType.BOOLEAN and not marker.nullable:
+                    problems.append(
+                        f"soft_delete_field names {self.soft_delete_field!r}, which is not "
+                        "nullable -- a date or datetime marker needs null to mean "
+                        "'not trashed', so it has to be able to hold both"
+                    )
+
         for name in self.actions:
             if name == DELETE_ACTION:
                 continue
@@ -370,13 +423,67 @@ class ModelAdmin:
         )
 
     def editable_field_names(self) -> frozenset[str]:
-        """Writable fields: the spec's allow-list minus anything marked read-only."""
-        return frozenset(field.name for field in self.spec.editable_fields) - frozenset(
-            self.readonly_fields
+        """Writable fields: the spec's allow-list minus anything marked read-only.
+
+        `soft_delete_field` is excluded here too, and not by being added to
+        `readonly_fields`: a read-only field still renders, in a box that
+        says what the row will not accept. This one is the deletion
+        pipeline's own bookkeeping and should not appear on the form at all.
+        """
+        locked = set(self.readonly_fields)
+        if self.soft_delete_field is not None:
+            locked.add(self.soft_delete_field)
+        return frozenset(field.name for field in self.spec.editable_fields) - locked
+
+    def soft_delete_filter(self, *, trashed: bool) -> Filter:
+        """The condition that keeps trashed rows out of the ordinary list, or
+        keeps only them on the trash view.
+
+        A boolean marker is compared directly: `is_deleted = true` is what a
+        SQL `WHERE` clause already means. A date/datetime marker is compared
+        for nullness instead -- there is no fixed "trashed" timestamp to
+        equal, only the presence of *some* value versus none -- which is the
+        same reason `deletion_plan`'s own queries branch on column kind
+        rather than trying to make every type answer to one comparison.
+        """
+        assert self.soft_delete_field is not None
+        marker = self.spec.field(self.soft_delete_field)
+        if marker.type is FieldType.BOOLEAN:
+            return Filter(
+                field=self.soft_delete_field,
+                operator=FilterOperator.EXACT,
+                value="true" if trashed else "false",
+            )
+        return Filter(
+            field=self.soft_delete_field,
+            operator=FilterOperator.ISNULL,
+            value="false" if trashed else "true",
         )
 
+    def soft_delete_values(self) -> tuple[Any, Any]:
+        """`(trashed, restored)` for `soft_delete_field`.
+
+        A boolean marker takes `True`/`False`. A date or datetime marker takes
+        the moment it was trashed and `None` -- `deleted_at` reads as a
+        sentence a bare flag never does, which is the usual reason a project
+        reaches for one over the other.
+        """
+        assert self.soft_delete_field is not None
+        marker = self.spec.field(self.soft_delete_field)
+        if marker.type is FieldType.BOOLEAN:
+            return True, False
+        return datetime.now(UTC), None
+
     def action_specs(self) -> tuple[Action, ...]:
-        """The bulk actions this model offers, in declaration order."""
+        """The bulk actions this model offers, in declaration order.
+
+        `RESTORE_ACTION` is not named in `actions` the way a project's own
+        `@admin.action` methods are -- it comes free the moment
+        `soft_delete_field` is set, the same way `DELETE_ACTION` needs no
+        method of its own. Which of the two a request actually sees (delete
+        on the ordinary list, restore on the trash view) is decided in
+        `list_view`, not here: this only says what exists.
+        """
         found: list[Action] = []
         for name in self.actions:
             if name == DELETE_ACTION:
@@ -394,6 +501,13 @@ class ModelAdmin:
             declared = getattr(handler, "ff_action", None)
             if declared is not None:
                 found.append(declared)
+        if self.soft_delete_field is not None and DELETE_ACTION in self.actions:
+            # Not `danger`, and so not confirmed either -- the bulk bar only
+            # asks before a `danger` action, and a restore is the one action
+            # here that undoes rather than causes the thing worth pausing
+            # over. Asking "are you sure?" before an action whose entire
+            # point is safety is a step nobody needed.
+            found.append(Action(name=RESTORE_ACTION, label="Restore selected", icon="restore"))
         return tuple(found)
 
     def action_handler(self, name: str) -> Any:

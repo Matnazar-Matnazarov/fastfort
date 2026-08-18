@@ -126,7 +126,7 @@
                     data-ff-tip-align="end"
                     data-ff-method="post"
                     data-ff-confirm="{{ _("Delete {name}?", name=row.label) }}"
-                    data-ff-confirm-body="{{ _("This action cannot be undone.") }}"
+                    data-ff-confirm-body="{{ _("It can be restored from Trash.") if admin.soft_delete_field else _("This action cannot be undone.") }}"
                     {% if cascades %}
                       {# Naming what else goes is the difference between a
                          confirmation and a trap, so the dialog has to say
