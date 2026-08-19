@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import re
 from collections.abc import AsyncIterator
+from decimal import Decimal
 from typing import Any
 
 import httpx
 import pytest
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from tests.conftest import sign_in
 from tests.orm.models import Category, Product, StaffUser
 
@@ -126,3 +128,147 @@ def test_a_non_nullable_boolean_marker_is_accepted() -> None:
 async def test_the_marker_field_is_excluded_from_the_form(client: httpx.AsyncClient) -> None:
     body = (await client.get("/admin/shop.trashable_product/add")).text
     assert "deleted_at" not in body
+
+
+# ---------------------------------------------------------------------------
+# The ordinary list
+# ---------------------------------------------------------------------------
+
+
+async def test_the_ordinary_list_shows_untrashed_rows(client: httpx.AsyncClient) -> None:
+    body = (await client.get("/admin/shop.trashable_product/")).text
+    assert "Pixel Phone" in body
+
+
+async def test_the_ordinary_list_offers_a_link_to_the_trash(client: httpx.AsyncClient) -> None:
+    body = (await client.get("/admin/shop.trashable_product/")).text
+    assert 'href="/admin/shop.trashable_product/?trashed=1"' in body
+
+
+# ---------------------------------------------------------------------------
+# Deleting is trashing
+# ---------------------------------------------------------------------------
+
+
+async def test_deleting_a_row_keeps_it_in_the_database(
+    client: httpx.AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    async with session_factory() as session:
+        product = Product(name="Doomed Widget", price=Decimal("9.99"), stock=1)
+        session.add(product)
+        await session.commit()
+        product_id = product.id
+
+    response = await submit(client, f"/admin/shop.trashable_product/{product_id}/delete")
+    assert response.status_code == 200
+    assert "was moved to trash" in response.text
+
+    async with session_factory() as session:
+        still_there = await session.get(Product, product_id)
+        assert still_there is not None
+        assert still_there.deleted_at is not None
+
+
+async def test_a_trashed_row_leaves_the_ordinary_list(
+    client: httpx.AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    async with session_factory() as session:
+        product = Product(name="Doomed Widget Two", price=Decimal("9.99"), stock=1)
+        session.add(product)
+        await session.commit()
+        product_id = product.id
+
+    await submit(client, f"/admin/shop.trashable_product/{product_id}/delete")
+
+    body = (await client.get("/admin/shop.trashable_product/")).text
+    assert "Doomed Widget Two" not in body
+
+
+async def test_a_trashed_row_appears_on_the_trash_view(
+    client: httpx.AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    async with session_factory() as session:
+        product = Product(name="Doomed Widget Three", price=Decimal("9.99"), stock=1)
+        session.add(product)
+        await session.commit()
+        product_id = product.id
+
+    await submit(client, f"/admin/shop.trashable_product/{product_id}/delete")
+
+    body = (await client.get("/admin/shop.trashable_product/?trashed=1")).text
+    assert "Doomed Widget Three" in body
+
+
+async def test_the_trash_view_does_not_show_untrashed_rows(client: httpx.AsyncClient) -> None:
+    body = (await client.get("/admin/shop.trashable_product/?trashed=1")).text
+    assert "Pixel Phone" not in body
+
+
+async def test_the_confirmation_page_does_not_warn_about_cascades(
+    client: httpx.AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Nothing points at this product, but the admin still declares relations
+    that would cascade under a real delete -- the point is that a soft delete
+    does not ask `deletion_plan` at all, so this warning cannot appear even
+    when a project's own model would otherwise draw one."""
+    async with session_factory() as session:
+        product = Product(name="Doomed Widget Four", price=Decimal("9.99"), stock=1)
+        session.add(product)
+        await session.commit()
+        product_id = product.id
+
+    body = (await client.get(f"/admin/shop.trashable_product/{product_id}/delete")).text
+    assert "will be deleted too" not in body
+    assert "restored from Trash" in body
+
+
+# ---------------------------------------------------------------------------
+# Restoring
+# ---------------------------------------------------------------------------
+
+
+async def test_restoring_a_row_returns_it_to_the_ordinary_list(
+    client: httpx.AsyncClient, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    async with session_factory() as session:
+        product = Product(name="Reprieved Widget", price=Decimal("9.99"), stock=1)
+        session.add(product)
+        await session.commit()
+        product_id = product.id
+
+    await submit(client, f"/admin/shop.trashable_product/{product_id}/delete")
+
+    # `/action` is POST-only, so its own CSRF field can't be scraped by a GET
+    # the way `submit()` normally does -- the bulk bar's hidden field on the
+    # list page it posts from carries the same token.
+    response = await client.post(
+        "/admin/shop.trashable_product/action",
+        data={
+            "_csrf": await token(client, "/admin/shop.trashable_product/?trashed=1"),
+            "action": "restore",
+            "keys": str(product_id),
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "was restored" in response.text
+
+    body = (await client.get("/admin/shop.trashable_product/")).text
+    assert "Reprieved Widget" in body
+
+    async with session_factory() as session:
+        restored = await session.get(Product, product_id)
+        assert restored is not None
+        assert restored.deleted_at is None
+
+
+async def test_the_trash_view_offers_restore_not_delete(client: httpx.AsyncClient) -> None:
+    body = (await client.get("/admin/shop.trashable_product/?trashed=1")).text
+    assert 'value="restore"' in body
+    assert 'value="delete"' not in body
+
+
+async def test_the_ordinary_list_offers_delete_not_restore(client: httpx.AsyncClient) -> None:
+    body = (await client.get("/admin/shop.trashable_product/")).text
+    assert 'value="delete"' in body
+    assert 'value="restore"' not in body
