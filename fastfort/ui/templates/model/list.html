@@ -3,21 +3,44 @@
 {% block content %}
   <div class="ff-page-header">
     <div class="ff-page-header__text">
-      <h1 class="ff-h1">{{ model_title }}</h1>
+      <h1 class="ff-h1">
+        {{ model_title }}
+        {% if trashed %}<span class="ff-badge">{{ _("Trash") }}</span> {% endif %}
+      </h1>
       <p class="ff-muted ff-mt-2">
         {% if page.total %}
           {{ "{:,}".format(page.total) }} {{ (model_title if page.total != 1 else model_singular)|lower }}
+        {% elif trashed %}
+          {{ _("Nothing in the trash.") }}
         {% else %}
           {{ _("Nothing here yet") }}
         {% endif %}
       </p>
     </div>
-    {% if add_url %}
+    {% if add_url or trash_url or list_url_no_trash %}
       <div class="ff-page-header__actions">
-        <a class="ff-btn ff-btn--primary" href="{{ add_url }}">
-          {{ ff_icon("plus", size=16) }}
-          {{ _("Add {name}", name=model_singular) }}
-        </a>
+        {% if trash_url %}
+          {# A separate view, not a filter: it changes which rows exist on the
+             page rather than which of the current rows are shown, which is
+             why this is a link beside Add rather than a control inside the
+             toolbar form. #}
+          <a class="ff-btn ff-btn--ghost" href="{{ trash_url }}">
+            {{ ff_icon("trash", size=16) }}
+            {{ _("Trash") }}
+          </a>
+        {% endif %}
+        {% if list_url_no_trash %}
+          <a class="ff-btn ff-btn--ghost" href="{{ list_url_no_trash }}">
+            {{ ff_icon("chevron-left", size=16) }}
+            {{ _("Back to list") }}
+          </a>
+        {% endif %}
+        {% if add_url %}
+          <a class="ff-btn ff-btn--primary" href="{{ add_url }}">
+            {{ ff_icon("plus", size=16) }}
+            {{ _("Add {name}", name=model_singular) }}
+          </a>
+        {% endif %}
       </div>
     {% endif %}
   </div>
@@ -344,7 +367,7 @@
           value="{{ entry.name }}"
           {% if entry.danger %}
             data-ff-confirm="{{ _(entry.label) }}"
-            data-ff-confirm-body="{{ _("This cannot be undone.") }}"
+            data-ff-confirm-body="{{ _("It can be restored from Trash.") if admin.soft_delete_field and entry.name == "delete" else _("This cannot be undone.") }}"
             data-ff-confirm-label="{{ _(entry.label) }}"
           {% endif %}
         >

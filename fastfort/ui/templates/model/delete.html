@@ -33,7 +33,9 @@
   <div class="ff-page-header">
     <div class="ff-page-header__text">
       <h1 class="ff-h1">{{ _("Delete {name}", name=model_singular|lower) }}</h1>
-      <p class="ff-muted ff-mt-2">{{ _("This cannot be undone.") }}</p>
+      <p class="ff-muted ff-mt-2">
+        {{ _("It can be restored from Trash.") if soft_delete else _("This cannot be undone.") }}
+      </p>
     </div>
   </div>
 
@@ -41,9 +43,12 @@
     <div class="ff-card__body ff-stack">
       <p>{{ _("Delete {name}?", name=label) }}</p>
 
-      {% set protected = related | selectattr("effect", "equalto", "protect") | list %}
-      {% set cascaded = related | selectattr("effect", "equalto", "delete") | list %}
-      {% set cleared = related | selectattr("effect", "equalto", "clear") | list %}
+      {# A soft delete does not remove the row, so nothing pointing at it needs
+         to cascade -- the related-records warnings below answer a question
+         that only applies to a delete that actually empties the table. #}
+      {% set protected = [] if soft_delete else related | selectattr("effect", "equalto", "protect") | list %}
+      {% set cascaded = [] if soft_delete else related | selectattr("effect", "equalto", "delete") | list %}
+      {% set cleared = [] if soft_delete else related | selectattr("effect", "equalto", "clear") | list %}
 
       {% if protected %}
         {# The database would refuse this, so the button is not offered. Failing
@@ -100,8 +105,9 @@
       <form class="ff-row" method="post" action="{{ action_url }}">
         <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
         {% if not blocked %}
-          <button class="ff-btn ff-btn--danger" type="submit">
-            {{ _("Yes, delete this {name}", name=model_singular|lower) }}
+          <button class="ff-btn {{ 'ff-btn--primary' if soft_delete else 'ff-btn--danger' }}" type="submit">
+            {{ _("Move this {name} to trash", name=model_singular|lower) if soft_delete
+               else _("Yes, delete this {name}", name=model_singular|lower) }}
           </button>
         {% endif %}
         <a class="ff-btn ff-btn--ghost" href="{{ cancel_url }}">
