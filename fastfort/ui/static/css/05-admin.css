@@ -163,6 +163,156 @@
   grid-column: 1 / -1;
 }
 
+/* ---------------------------------------------------------------------------
+ * Form sections
+ *
+ * A form is one card when it declares no `fieldsets`, and a stack of them when
+ * it does -- so the gap lives on the sibling rather than inside the card, and
+ * the ungrouped form is unchanged by all of this.
+ * ------------------------------------------------------------------------ */
+
+.ff-card + .ff-card,
+.ff-card + .ff-fieldset,
+.ff-fieldset + .ff-card,
+.ff-fieldset + .ff-fieldset {
+  margin-block-start: var(--ff-space-4);
+}
+
+.ff-fieldset__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ff-space-3);
+  padding: var(--ff-space-4) var(--ff-space-5);
+  font-size: var(--ff-text-sm);
+  font-weight: var(--ff-weight-medium);
+  color: var(--ff-text);
+  cursor: pointer;
+  /* The browser's own marker is replaced by the chevron in the markup, which
+   * can be turned by a rule rather than being whatever the platform draws. */
+  list-style: none;
+  user-select: none;
+}
+
+.ff-fieldset__summary::-webkit-details-marker {
+  display: none;
+}
+
+.ff-fieldset__summary:hover {
+  background: var(--ff-surface-hover);
+}
+
+.ff-fieldset__summary:focus-visible {
+  outline: 2px solid var(--ff-accent);
+  outline-offset: -2px;
+}
+
+.ff-fieldset__summary .ff-icon {
+  flex: 0 0 auto;
+  color: var(--ff-text-subtle);
+  transition: transform var(--ff-duration-fast) var(--ff-ease);
+}
+
+.ff-fieldset[open] .ff-fieldset__summary .ff-icon {
+  transform: rotate(180deg);
+}
+
+/* Separates the heading from the controls, but only once open -- a shut
+ * section is a single bar, and a rule under it would draw a line to nothing. */
+.ff-fieldset[open] .ff-fieldset__summary {
+  border-block-end: 1px solid var(--ff-border);
+}
+
+.ff-fieldset__description {
+  padding: var(--ff-space-4) var(--ff-space-5) 0;
+  margin: 0;
+  font-size: var(--ff-text-sm);
+  color: var(--ff-text-muted);
+  max-inline-size: 70ch;
+}
+
+/* The body already carries the padding, so a description above it would
+ * otherwise leave a double gap between the sentence and the first control. */
+.ff-fieldset__description + .ff-card__body {
+  padding-block-start: var(--ff-space-4);
+}
+
+/* ---------------------------------------------------------------------------
+ * Inlines
+ *
+ * The parent's children, as rows inside the parent's own form. Denser than a
+ * list table: this is a form, and a row of full-height inputs would push the
+ * Save button off a screen holding ten lines.
+ * ------------------------------------------------------------------------ */
+
+.ff-inline__head {
+  padding: var(--ff-space-4) var(--ff-space-5);
+  border-block-end: 1px solid var(--ff-border);
+}
+
+.ff-inline__title {
+  margin: 0;
+  font-size: var(--ff-text-sm);
+  font-weight: var(--ff-weight-medium);
+  color: var(--ff-text);
+}
+
+.ff-inline__table thead th {
+  font-size: var(--ff-text-xs);
+}
+
+.ff-inline__table tbody td {
+  padding: var(--ff-space-2) var(--ff-space-3);
+  vertical-align: top;
+}
+
+/* Unlike a list table, the first cell here is a control rather than an
+ * identifier, so it should not recede. */
+.ff-inline__table tbody td:first-child {
+  font-size: inherit;
+  color: inherit;
+}
+
+.ff-inline__table tbody tr:hover {
+  background: none;
+}
+
+.ff-inline__row[data-invalid="true"] {
+  background: var(--ff-danger-subtle);
+}
+
+.ff-inline__readonly {
+  display: inline-block;
+  padding-block: var(--ff-space-2);
+  color: var(--ff-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ff-inline__remove {
+  inline-size: 1px;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.ff-inline__remove-label {
+  display: inline-flex;
+  align-items: center;
+  padding-block: var(--ff-space-2);
+  cursor: pointer;
+}
+
+.ff-inline__foot {
+  padding: var(--ff-space-3) var(--ff-space-5) var(--ff-space-4);
+}
+
+/* A row ticked for removal stays visible and legible -- it is not gone until
+ * the parent is saved, and hiding it would make the tick impossible to undo. */
+.ff-inline__row:has([name$="_delete"]:checked) {
+  opacity: 0.55;
+  text-decoration: line-through;
+  text-decoration-color: var(--ff-danger);
+}
+
 /* Sticky, so Save is reachable without scrolling a long form back up. */
 .ff-form-actions {
   position: sticky;
