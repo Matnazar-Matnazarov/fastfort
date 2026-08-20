@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 
     from fastfort.core.app import FastFort
 
-__all__ = ["RefreshRequest", "TokenResponse", "bearer_user", "build_auth_router"]
+__all__ = ["RefreshRequest", "TokenResponse", "bearer_user", "build_auth_router", "token_user"]
 
 #: `auto_error=False` so a missing header reaches our own handler and becomes the
 #: same 401 as a bad one. Left to FastAPI it is a 403, which is the wrong code
@@ -97,6 +97,44 @@ def bearer_user(fort: FastFort) -> Callable[..., Coroutine[Any, Any, Any]]:
             # account and a forged token are both "this token does not identify
             # anyone", and distinguishing them tells whoever is holding a token
             # whether the account behind it exists.
+            raise _unauthorized("That token does not identify an active account.")
+        return user
+
+    return dependency
+
+
+def token_user(fort: FastFort) -> Callable[..., Coroutine[Any, Any, Any]]:
+    """A FastAPI dependency resolving a personal access token to a user row::
+
+        from fastfort.auth import token_user
+
+        machine = token_user(fort)
+
+        @app.get("/orders")
+        async def orders(user: Annotated[Any, Depends(machine)]) -> list[Order]:
+            ...
+
+    A separate dependency from `bearer_user` rather than one that accepts
+    either. They authenticate different things -- a JWT is a session with a
+    person behind it, a token is a standing grant to a machine -- and a route
+    that accepts both should say so by depending on both, rather than
+    inheriting it from a helper that quietly widened.
+
+    Every refusal is the same sentence: unknown, revoked, expired, or owned by
+    an account that has been deleted or deactivated. Telling them apart tells
+    whoever is holding the token which of those it is.
+    """
+
+    async def dependency(
+        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    ) -> Any:
+        if fort.api_tokens is None:
+            raise _unauthorized("API tokens are not enabled.")
+        if credentials is None or not credentials.credentials:
+            raise _unauthorized("No bearer token was sent.")
+
+        user = await fort.api_tokens.resolve(credentials.credentials)
+        if user is None or not fort.user_config.is_active(user):
             raise _unauthorized("That token does not identify an active account.")
         return user
 

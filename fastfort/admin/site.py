@@ -43,6 +43,7 @@ from fastfort.ui.compression import compress_asset
 from fastfort.ui.renderer import Renderer
 from fastfort.ui.theming import Theme
 
+from .api_tokens import REVOKE_ACTION
 from .auth_views import build_auth_router
 from .dashboard import Context as DashboardContext
 from .export import EXPORT_FORMATS, stream_csv, stream_json, stream_xlsx
@@ -1125,6 +1126,97 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             )
         return built
 
+    def token_context(
+        request: Request, model_key: str, *, secret: str = "", issued: Any = None
+    ) -> dict[str, Any]:
+        """The minting page, and the one page that ever holds a live secret.
+
+        `secret` is empty on the way in and filled on the way out. It reaches
+        the template and nowhere else -- not the session, not a flash message,
+        not the redirect that would put it in a URL and therefore in a proxy
+        log.
+        """
+        model_admin = _require_admin(admin_for, model_key)
+        translate = translator_for(request)
+        return base_context(request, model_key) | {
+            "page_title": translate("New token"),
+            "model_title": model_admin.title,
+            "breadcrumbs": (
+                {"label": model_admin.title, "url": list_url(model_key)},
+                {"label": "New token", "url": None},
+            ),
+            "admin": model_admin,
+            "secret": secret,
+            "issued": issued,
+            # Always present. The renderer is strict, so a key the template
+            # reads on its ordinary path cannot be one the error path adds.
+            "error": "",
+            "action_url": f"{admin_url}/{model_key}/add",
+            "cancel_url": list_url(model_key),
+        }
+
+    async def mint_token(request: Request, model_key: str) -> Any:
+        """Issue a token and show its secret, once.
+
+        Renders rather than redirects, and that is the whole shape of it: a
+        redirect would have to carry the secret in the URL or in a flash
+        message, and both are places it would be written down -- a proxy log
+        for the first, a signed cookie for the second. Rendering it into this
+        one response means the secret exists in exactly one place that can be
+        read, and refreshing the page produces the minting form again rather
+        than the secret.
+        """
+        try:
+            await verify_csrf(request)
+        except SecurityError as exc:
+            return redirect(list_url(model_key), notices.danger(exc.message))
+
+        submitted = await request.form()
+        name = str(submitted.get("name", "")).strip()
+        scopes = str(submitted.get("scopes", "")).strip()
+        raw_expiry = str(submitted.get("expires_at", "")).strip()
+
+        expires_at: dt.datetime | None = None
+        if raw_expiry:
+            try:
+                expires_at = dt.datetime.fromisoformat(raw_expiry)
+            except ValueError:
+                context = token_context(request, model_key)
+                context["error"] = "That expiry is not a date FastFort can read."
+                return page(request, "model/new_token.html", context)
+            if expires_at.tzinfo is None:
+                # A `datetime-local` control has no zone, and comparing a naive
+                # value against an aware `now` raises rather than answering.
+                expires_at = expires_at.replace(tzinfo=dt.UTC)
+
+        actor = await fort.auth.current_user(request)
+        if actor is None:
+            return redirect(list_url(model_key), notices.danger("Sign in again to mint a token."))
+
+        issued = await fort.api_tokens.issue(
+            user=actor, name=name, scopes=scopes, expires_at=expires_at
+        )
+        return page(
+            request,
+            "model/new_token.html",
+            token_context(request, model_key, secret=issued.secret, issued=issued.obj),
+        )
+
+    def is_token_model(model_key: str) -> bool:
+        """Whether this registration is the table `enable_api_tokens` was given.
+
+        A token is minted rather than typed -- the secret has to be generated,
+        and shown exactly once -- so the add view for this one model answers
+        with a different page. Checked by identity against the model the
+        service holds, so a second table with the same columns is not mistaken
+        for it.
+        """
+        tokens = fort.api_tokens
+        if tokens is None:
+            return False
+        entry = fort.registry.entry_for_key(model_key)
+        return bool(entry.model is tokens.model)
+
     async def emit_write(
         request: Request,
         hook: Hook,
@@ -1302,6 +1394,9 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         model_admin = _require_admin(admin_for, model_key)
         entry = fort.registry.entry_for_key(model_key)
 
+        if is_token_model(model_key):
+            return page(request, "model/new_token.html", token_context(request, model_key))
+
         async with fort.backend.unit_of_work() as uow:
             adapter = fort.backend.adapter(entry.model, uow, key=model_key)
             choices, remote = await relation_choices(adapter, model_admin)
@@ -1325,6 +1420,9 @@ def build_admin_router(fort: FastFort) -> APIRouter:
     async def add_submit(request: Request, model_key: str) -> Any:
         model_admin = _require_admin(admin_for, model_key)
         entry = fort.registry.entry_for_key(model_key)
+
+        if is_token_model(model_key):
+            return await mint_token(request, model_key)
         submitted = await _form_data(request, settings.media)
 
         try:
@@ -1882,6 +1980,21 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                         f"{len(objects)} {model_admin.title.lower()} were restored."
                         if len(objects) != 1
                         else f"One {model_admin.singular.lower()} was restored."
+                    )
+                elif name == REVOKE_ACTION:
+                    # Written here rather than through `fort.api_tokens.revoke`,
+                    # which opens a unit of work of its own: these rows are
+                    # already live in this one, and a nested transaction would
+                    # break the all-or-nothing an action promises.
+                    now = dt.datetime.now(dt.UTC)
+                    for obj in objects:
+                        await emit_write(request, Hook.BEFORE_UPDATE, model_key, obj, {})
+                        written.append((Hook.AFTER_UPDATE, model_key, obj))
+                        await adapter.update(obj, {"revoked_at": now})
+                    message = notices.success(
+                        f"{len(objects)} tokens were revoked."
+                        if len(objects) != 1
+                        else "One token was revoked."
                     )
                 else:
                     handler = model_admin.action_handler(name)

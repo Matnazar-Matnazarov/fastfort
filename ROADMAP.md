@@ -186,24 +186,23 @@ is the difference between "fast" and "flickering" on a slow connection.
 Everything here was on the earlier competitive audit and none of it has moved.
 Ordered by how cheaply it lands.
 
-### 3.1 API token management — *cheapest real feature left*
+### ~~3.1 API token management~~ — **shipped**
 
 Create, scope, expire and revoke personal access tokens from the admin, with a
 last-used column and a write-once secret shown exactly once. This is close to a
 `ModelAdmin` over a token table plus the hashing `auth/` already does, and it is
 the piece a project needs before anything outside the browser can talk to it.
 
-### 3.2 Audit log, and the per-record activity timeline
+### 3.2 Audit log, and the per-record activity timeline — *hooks shipped*
 
-`core/hooks.py` already declares `BEFORE_CREATE`, `AFTER_UPDATE`,
+~~`core/hooks.py` already declares `BEFORE_CREATE`, `AFTER_UPDATE`,
 `BEFORE_DELETE` and the rest, with documented kwargs — and **nothing in
-`admin/site.py` ever emits them.** The mechanism is built and unit-tested; the
-call sites are missing. Emitting them is a small change; the audit log that
-listens is a `contrib/` module with its own table, and the timeline on a
-record's page is the UI for it.
+`admin/site.py` ever emits them.**~~ **Done.** Every write path the admin owns
+now emits, with `BEFORE_*` inside the transaction so a listener can veto and
+`AFTER_*` after the commit so nothing fires for a change that rolled back.
 
-Order matters: emit the hooks first, as their own release. They are useful to
-projects immediately, independent of whether FastFort ever ships the listener.
+What remains is the listener: an audit log in `contrib/` with its own table,
+and the per-record timeline that renders it.
 
 ### 3.3 TOTP two-factor authentication
 

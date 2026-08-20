@@ -60,6 +60,7 @@ class FastFort:
         #: Set by `record_sign_ins`. Kept so a project can reach the recorder
         #: again -- an API that signs people in writes its own rows through it.
         self._sign_in_recorder: Any = None
+        self._api_tokens: Any = None
 
     def __repr__(self) -> str:
         state = "mounted" if self._mounted_on is not None else "not mounted"
@@ -253,6 +254,45 @@ class FastFort:
         recorder.attach()
         self._sign_in_recorder = recorder
         return recorder
+
+    def enable_api_tokens(self, model: type) -> Any:
+        """Long-lived personal access tokens, against a table the project owns::
+
+            from fastfort.orm.sqlalchemy import ApiTokenMixin
+
+            class ApiToken(ApiTokenMixin, Base):
+                __tablename__ = "admin_api_token"
+
+            fort.enable_api_tokens(ApiToken)
+
+        For the things that are not browsers: a cron job, a deployment script,
+        a partner integration. `auth.api_enabled` issues JWTs from a password,
+        which is right for a client with a person behind it and wrong for a
+        machine that has no password to type and nobody awake to notice a
+        failed refresh.
+
+        The columns are checked here rather than on the first authenticated
+        request, so a mistyped schema names itself at start-up.
+
+        Returns the service, which is how a token is actually minted::
+
+            issued = await fort.api_tokens.issue(user=user, name="deploy")
+            print(issued.secret)  # the only time it is readable
+
+        The secret is never stored -- only its SHA-256 digest and a short
+        prefix. See `auth/api_tokens.py` for why that digest is not Argon2.
+        """
+        from fastfort.auth.api_tokens import ApiTokens
+
+        tokens = ApiTokens(self, model)
+        tokens.check()
+        self._api_tokens = tokens
+        return tokens
+
+    @property
+    def api_tokens(self) -> Any:
+        """The token service, or `None` until `enable_api_tokens` is called."""
+        return self._api_tokens
 
     # -- dashboard ----------------------------------------------------------
 

@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{#- Minting a token, and the one page that ever holds a live secret.
+
+    Two states in one template rather than two files: the form before, the
+    secret after. They are the same page in the same flow, and splitting them
+    would mean the reveal had a URL of its own -- a URL somebody could return
+    to, which is the one thing a write-once secret must not have. -#}
+
+{% block content %}
+  <div class="ff-page-header">
+    <div class="ff-page-header__text">
+      <h1 class="ff-h1">{{ _("New token") }}</h1>
+    </div>
+  </div>
+
+  {% if secret %}
+    <div class="ff-alert ff-alert--warning" role="alert">
+      <div>
+        <div class="ff-alert__title">{{ _("Copy this now") }}</div>
+        <p class="ff-mt-2">
+          {{ _("This is the only time the token can be shown. It is stored as a digest, so nobody can display it again. If it is lost, revoke it and mint another.") }}
+        </p>
+      </div>
+    </div>
+
+    <div class="ff-card ff-mt-4">
+      <div class="ff-card__body">
+        {# `readonly` rather than disabled: a disabled input cannot be selected,
+           and selecting it is the entire purpose of showing it. #}
+        <label class="ff-label" for="ff-token-secret">{{ _("Token") }}</label>
+        <input
+          class="ff-input ff-token-secret"
+          id="ff-token-secret"
+          type="text"
+          value="{{ secret }}"
+          readonly
+          spellcheck="false"
+          autocomplete="off"
+        />
+
+        <div class="ff-row ff-mt-4">
+          <a class="ff-btn ff-btn--primary" href="{{ cancel_url }}">{{ _("Done") }}</a>
+          <a class="ff-btn ff-btn--ghost" href="{{ action_url }}">{{ _("Mint another") }}</a>
+        </div>
+      </div>
+    </div>
+  {% else %}
+    {% if error %}
+      <div class="ff-alert ff-alert--danger" role="alert">
+        <div class="ff-alert__title">{{ _(error) }}</div>
+      </div>
+    {% endif %}
+
+    <div class="ff-card ff-mt-4">
+      <div class="ff-card__body">
+        <form class="ff-stack" method="post" action="{{ action_url }}">
+          <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+
+          <div class="ff-field">
+            <label class="ff-label" for="ff-token-name">{{ _("Name") }}</label>
+            <input class="ff-input" id="ff-token-name" type="text" name="name" required />
+            <span class="ff-help">
+              {{ _("What this token is for.") }}
+            </span>
+          </div>
+
+          <div class="ff-field">
+            <label class="ff-label" for="ff-token-scopes">{{ _("Scopes") }}</label>
+            <input class="ff-input" id="ff-token-scopes" type="text" name="scopes" />
+            <span class="ff-help">
+              {{ _("Space-separated, and yours to define.") }}
+            </span>
+          </div>
+
+          <div class="ff-field">
+            <label class="ff-label" for="ff-token-expiry">{{ _("Expires") }}</label>
+            <input
+              class="ff-input"
+              id="ff-token-expiry"
+              type="datetime-local"
+              name="expires_at"
+            />
+            <span class="ff-help">
+              {{ _("Leave empty for a token that does not expire.") }}
+            </span>
+          </div>
+
+          <div class="ff-row">
+            <button class="ff-btn ff-btn--primary" type="submit">
+              {{ ff_icon("key", size=15) }}
+              {{ _("Mint token") }}
+            </button>
+            <a class="ff-btn ff-btn--ghost" href="{{ cancel_url }}">{{ _("Cancel") }}</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+{% endblock %}
