@@ -256,15 +256,25 @@ Not scheduled. Listed so the reasoning is on record.
 
 ## Suggested sequence
 
-> **Status.** Tier 1 is done and so is the first half of Tier 2:
-> `fieldsets`, `inlines`, the density control and list keyboard navigation
-> all landed together. What remains in Tier 2 is inline cell editing (2.3),
-> bulk edit (2.4) and the loading state (2.5).
+> **Status — 0.6.0.** Tiers 1 and 2 are done. `fieldsets`, `inlines`, the
+> density control, list keyboard navigation, `list_editable` and
+> `bulk_editable` all shipped.
+>
+> 2.5, the loading state, turned out to be **already built** and better than
+> what this file proposed: the stylesheet dims the outgoing rows rather than
+> removing them, so the previous answer stays readable and the page never
+> collapses mid-request. A skeleton is the worse half of that trade — it
+> hides a jump that not emptying the table avoids entirely. Only a test was
+> missing. That entry was written from an incomplete read of the CSS.
+>
+> Next up is Tier 3, starting with API tokens (3.1) and the CRUD hook
+> emission that unlocks the audit log (3.2).
 
 | Release | Contents |
 |---|---|
 | ~~0.6.0~~ | ~~`fieldsets` (1.2), density control (2.1), row keyboard navigation (2.2)~~ — **shipped**, together with `inlines` |
 | ~~0.7.0~~ | ~~`inlines` (1.1)~~ — **shipped** in the same round |
+| ~~0.9.0~~ | ~~Inline cell editing (2.3), bulk edit (2.4), loading states (2.5)~~ — **shipped** in 0.6.0; 2.5 needed only a test |
 | 0.8.0 | CRUD hook emission (3.2 first half), API tokens (3.1) |
 | 0.9.0 | Inline cell editing (2.3), bulk edit (2.4), loading states (2.5) |
 | 1.0 | Audit log + timeline (3.2), TOTP (3.3), impersonation (3.4) |
