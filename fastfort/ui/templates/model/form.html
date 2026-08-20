@@ -17,6 +17,83 @@
   textarea_control
 %}
 
+{#- One control, with its label, help and errors.
+
+    A macro because the form now renders sections rather than one flat list,
+    and the alternative -- the same sixty lines under an `{% if %}` for the
+    titled case and again for the untitled one -- is two copies that drift.
+
+    Context is passed rather than closed over, the way every macro in
+    `_widgets.html` already takes `_` and its settings explicitly. -#}
+{% macro form_field(field, settings, media_url, autocomplete_url, relation_links, input_types, _) %}
+  {# The geometry kind decides width too -- a POLYGON's textarea earns
+     the full row the way any other textarea does, but a POINT with no
+     map configured is still a short text box next to nothing. Mirrors
+     `geometry_control`'s own default: a missing `GeometrySpec` reads
+     as POINT, which is what a `formfield_overrides = {"col": "point"}`
+     on a plain column looks like once its name resolves to
+     "geometry". #}
+  {% set geometry_kind = (field.spec.geometry.kind if field.spec.geometry
+                           else "POINT") if field.widget == "geometry" else "" %}
+  {# Long controls span both columns: a textarea squeezed into half a
+     page is worse than a taller form. #}
+  {% set wide = field.widget in ("textarea", "json", "relations", "keyvalue", "range")
+                or (field.widget == "geometry"
+                    and (settings.ui.map_tile_url or geometry_kind != "POINT")) %}
+  <div
+    class="ff-field{% if wide %} ff-field--wide{% endif %}"
+    {% if field.errors %}data-invalid="true" {% endif %}
+  >
+    <label class="ff-label" for="ff-{{ field.name }}">
+      {{ _(field.label) }}
+      {% if field.required %}
+        <span class="ff-required" aria-hidden="true">*</span>
+        <span class="ff-sr-only">{{ _("(required)") }}</span>
+      {% endif %}
+    </label>
+
+    {% if field.widget == "readonly" %}
+      {{ readonly_control(field) }}
+    {% elif field.widget == "textarea" or field.widget == "json" %}
+      {{ textarea_control(field) }}
+    {% elif field.widget == "geometry" %}
+      {{ geometry_control(field, settings.ui.map_tile_url, settings.ui.map_center,
+                           settings.ui.map_attribution, settings.ui.map_max_zoom) }}
+    {% elif field.widget in ("file", "image") %}
+      {{ file_control(field, media_url, settings.media.upload_limit, _) }}
+    {% elif field.widget == "color" %}
+      {{ color_control(field) }}
+    {% elif field.widget == "richtext" %}
+      {{ richtext_control(field) }}
+    {% elif field.widget == "nullboolean" %}
+      {{ nullboolean_control(field, _) }}
+    {% elif field.widget == "checkbox" %}
+      {{ checkbox_control(field, _) }}
+    {% elif field.widget == "password" %}
+      {{ password_control(field, _) }}
+    {% elif field.widget == "select" or field.widget == "relation" %}
+      {{ select_control(field, autocomplete_url, relation_links, _) }}
+    {% elif field.widget == "relations" %}
+      {{ relations_control(field, autocomplete_url, relation_links, _) }}
+    {% elif field.widget == "tags" %}
+      {{ tags_control(field) }}
+    {% elif field.widget == "keyvalue" %}
+      {{ keyvalue_control(field) }}
+    {% elif field.widget == "range" %}
+      {{ range_control(field, input_types, _) }}
+    {% else %}
+      {{ generic_control(field, input_types) }}
+    {% endif %}
+
+    {% if field.help_text and field.widget != "checkbox" %}
+      <span class="ff-help{% if field.help_is_for_no_script %} ff-no-js{% endif %}">{{ field.help_text }}</span>
+    {% endif %}
+    {% for message in field.errors %}
+      <span class="ff-error" role="alert">{{ message }}</span>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
 {% block content %}
   <div class="ff-page-header">
     <div class="ff-page-header__text">
@@ -86,78 +163,152 @@
       <input type="hidden" name="_version" value="{{ version_token }}" />
     {% endif %}
 
-    <div class="ff-card">
-      <div class="ff-card__body ff-form-grid">
-        {% for field in form.fields %}
-          {# The geometry kind decides width too -- a POLYGON's textarea earns
-             the full row the way any other textarea does, but a POINT with no
-             map configured is still a short text box next to nothing. Mirrors
-             `geometry_control`'s own default: a missing `GeometrySpec` reads
-             as POINT, which is what a `formfield_overrides = {"col": "point"}`
-             on a plain column looks like once its name resolves to
-             "geometry". #}
-          {% set geometry_kind = (field.spec.geometry.kind if field.spec.geometry
-                                   else "POINT") if field.widget == "geometry" else "" %}
-          {# Long controls span both columns: a textarea squeezed into half a
-             page is worse than a taller form. #}
-          {% set wide = field.widget in ("textarea", "json", "relations", "keyvalue", "range")
-                        or (field.widget == "geometry"
-                            and (settings.ui.map_tile_url or geometry_kind != "POINT")) %}
-          <div
-            class="ff-field{% if wide %} ff-field--wide{% endif %}"
-            {% if field.errors %}data-invalid="true" {% endif %}
-          >
-            <label class="ff-label" for="ff-{{ field.name }}">
-              {{ _(field.label) }}
-              {% if field.required %}
-                <span class="ff-required" aria-hidden="true">*</span>
-                <span class="ff-sr-only">{{ _("(required)") }}</span>
-              {% endif %}
-            </label>
-
-            {% if field.widget == "readonly" %}
-              {{ readonly_control(field) }}
-            {% elif field.widget == "textarea" or field.widget == "json" %}
-              {{ textarea_control(field) }}
-            {% elif field.widget == "geometry" %}
-              {{ geometry_control(field, settings.ui.map_tile_url, settings.ui.map_center,
-                                   settings.ui.map_attribution, settings.ui.map_max_zoom) }}
-            {% elif field.widget in ("file", "image") %}
-              {{ file_control(field, media_url, settings.media.upload_limit, _) }}
-            {% elif field.widget == "color" %}
-              {{ color_control(field) }}
-            {% elif field.widget == "richtext" %}
-              {{ richtext_control(field) }}
-            {% elif field.widget == "nullboolean" %}
-              {{ nullboolean_control(field, _) }}
-            {% elif field.widget == "checkbox" %}
-              {{ checkbox_control(field, _) }}
-            {% elif field.widget == "password" %}
-              {{ password_control(field, _) }}
-            {% elif field.widget == "select" or field.widget == "relation" %}
-              {{ select_control(field, autocomplete_url, relation_links, _) }}
-            {% elif field.widget == "relations" %}
-              {{ relations_control(field, autocomplete_url, relation_links, _) }}
-            {% elif field.widget == "tags" %}
-              {{ tags_control(field) }}
-            {% elif field.widget == "keyvalue" %}
-              {{ keyvalue_control(field) }}
-            {% elif field.widget == "range" %}
-              {{ range_control(field, input_types, _) }}
-            {% else %}
-              {{ generic_control(field, input_types) }}
-            {% endif %}
-
-            {% if field.help_text and field.widget != "checkbox" %}
-              <span class="ff-help{% if field.help_is_for_no_script %} ff-no-js{% endif %}">{{ field.help_text }}</span>
-            {% endif %}
-            {% for message in field.errors %}
-              <span class="ff-error" role="alert">{{ message }}</span>
+    {# One loop for both shapes. A form with no `fieldsets` produces exactly
+       one unnamed section holding every field, so there is no second code
+       path here for the ungrouped form -- see `Form.sections`. #}
+    {% for section in form.sections() %}
+      {% if section.title %}
+        {# `<details>`, not a div with a script-driven class: a collapsed
+           section still opens with scripting off, the same way the filter
+           panel and the export menu already do. #}
+        <details class="ff-card ff-fieldset" {% if not section.collapsed %}open{% endif %}>
+          <summary class="ff-fieldset__summary">
+            <span class="ff-fieldset__title">{{ _(section.title) }}</span>
+            {{ ff_icon("chevron-down", size=16) }}
+          </summary>
+          {% if section.description %}
+            <p class="ff-fieldset__description">{{ _(section.description) }}</p>
+          {% endif %}
+          <div class="ff-card__body ff-form-grid">
+            {% for field in section.fields %}
+              {{ form_field(field, settings, media_url, autocomplete_url,
+                            relation_links, input_types, _) }}
             {% endfor %}
           </div>
-        {% endfor %}
-      </div>
-    </div>
+        </details>
+      {% else %}
+        <div class="ff-card">
+          {% if section.description %}
+            <p class="ff-fieldset__description">{{ _(section.description) }}</p>
+          {% endif %}
+          <div class="ff-card__body ff-form-grid">
+            {% for field in section.fields %}
+              {{ form_field(field, settings, media_url, autocomplete_url,
+                            relation_links, input_types, _) }}
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    {% endfor %}
+
+    {# The children, under the parent's own fields and inside its form: one
+       POST writes both, in one transaction. See `admin/inlines.py`. #}
+    {% for inline in inlines %}
+      <section class="ff-card ff-inline" data-ff-inline="{{ inline.prefix }}">
+        <div class="ff-inline__head">
+          <h2 class="ff-inline__title">{{ _(inline.title) }}</h2>
+        </div>
+        <div class="ff-table-wrap ff-scroll">
+          <table class="ff-table ff-inline__table">
+            <thead>
+              <tr>
+                {% for column in inline.columns %}
+                  <th scope="col">{{ _(column.label) }}</th>
+                {% endfor %}
+                {% if inline.can_delete %}
+                  <th scope="col" class="ff-inline__remove">
+                    <span class="ff-sr-only">{{ _("Remove") }}</span>
+                  </th>
+                {% endif %}
+              </tr>
+            </thead>
+            <tbody data-ff-inline-rows>
+              {% for row in inline.rows %}
+                <tr class="ff-inline__row"{% if row.has_errors %} data-invalid="true"{% endif %}>
+                  {% for cell in row.cells %}
+                    <td>
+                      {# The label is the column header, so each control carries
+                         its own accessible name instead of repeating it on
+                         screen once per row. #}
+                      {% if cell.widget == "readonly" %}
+                        <span class="ff-inline__readonly">{{ cell.value }}</span>
+                      {% elif cell.widget == "checkbox" %}
+                        <input
+                          class="ff-check"
+                          type="checkbox"
+                          name="{{ cell.name }}"
+                          aria-label="{{ _(cell.label) }}"
+                          {% if cell.value in ("true", "True", "on", "1") %}checked {% endif %}
+                        />
+                      {% elif cell.widget in ("select", "relation", "nullboolean") %}
+                        <select
+                          class="ff-select ff-select--sm"
+                          name="{{ cell.name }}"
+                          aria-label="{{ _(cell.label) }}"
+                        >
+                          {# An em dash is an em dash in every language the admin speaks. #}
+                          <option value="">—</option>
+                          {% for choice in cell.choices %}
+                            <option
+                              value="{{ choice.value }}"
+                              {% if cell.value == choice.value|string %}selected {% endif %}
+                            >{{ choice.label }}</option>
+                          {% endfor %}
+                        </select>
+                      {% else %}
+                        <input
+                          class="ff-input ff-input--sm"
+                          type="{{ input_types.get(cell.widget, "text") }}"
+                          name="{{ cell.name }}"
+                          value="{{ cell.value }}"
+                          aria-label="{{ _(cell.label) }}"
+                          {% if cell.required %}data-ff-required {% endif %}
+                        />
+                      {% endif %}
+                      {% for message in cell.errors %}
+                        <span class="ff-error" role="alert">{{ message }}</span>
+                      {% endfor %}
+                    </td>
+                  {% endfor %}
+                  {% if inline.can_delete %}
+                    <td class="ff-inline__remove">
+                      {# A checkbox, not a button: removing a saved child is
+                         part of the parent's save, so it has to survive the
+                         round trip that a click-to-delete would not. #}
+                      <label class="ff-inline__remove-label">
+                        <input
+                          class="ff-check"
+                          type="checkbox"
+                          name="{{ inline.prefix }}-{{ row.index }}-_delete"
+                          {% if row.deleted %}checked {% endif %}
+                        />
+                        <span class="ff-sr-only">{{ _("Remove") }}</span>
+                      </label>
+                    </td>
+                  {% endif %}
+                  {% if row.pk %}
+                    <input
+                      type="hidden"
+                      name="{{ inline.prefix }}-{{ row.index }}-_pk"
+                      value="{{ row.pk }}"
+                    />
+                  {% endif %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {# Script clones the last row and renumbers it. Without script the
+           `extra` blank rows the server already rendered are how a child gets
+           added, which is why `extra` defaults to one rather than zero. #}
+        <div class="ff-inline__foot ff-js-only">
+          <button class="ff-btn ff-btn--sm" type="button" data-ff-inline-add>
+            {{ ff_icon("plus", size=14) }}
+            {{ _("Add another") }}
+          </button>
+        </div>
+      </section>
+    {% endfor %}
 
     <div class="ff-form-actions">
       <button class="ff-btn ff-btn--primary" type="submit">

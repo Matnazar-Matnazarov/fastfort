@@ -6,6 +6,7 @@
   "Accounts cannot be deleted in this deployment.": "لا يمكن حذف الحسابات في هذا التثبيت.",
   "Actions": "الإجراءات",
   "Add": "إضافة",
+  "Add another": "إضافة صف آخر",
   "Add the first {name}": "أضف أول {name}",
   "Add {name}": "إضافة {name}",
   "Administration for {project}": "لوحة إدارة {project}",

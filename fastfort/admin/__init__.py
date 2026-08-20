@@ -16,6 +16,7 @@ from .dashboard import (
 )
 from .decorators import display, register
 from .forms import Form, FormField
+from .inlines import InlineAdmin, TabularInline
 from .messages import Message, MessageLevel, Messages
 from .options import Action, ModelAdmin, action
 from .site import build_admin_router
@@ -30,6 +31,7 @@ __all__ = [
     "Counts",
     "Form",
     "FormField",
+    "InlineAdmin",
     "Message",
     "MessageLevel",
     "Messages",
@@ -37,6 +39,7 @@ __all__ = [
     "ModelAdmin",
     "Recent",
     "Signups",
+    "TabularInline",
     "Trend",
     "Widget",
     "action",

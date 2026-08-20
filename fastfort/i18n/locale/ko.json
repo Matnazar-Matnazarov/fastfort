@@ -6,6 +6,7 @@
   "Accounts cannot be deleted in this deployment.": "이 배포에서는 계정을 삭제할 수 없습니다.",
   "Actions": "작업",
   "Add": "추가",
+  "Add another": "하나 더 추가",
   "Add the first {name}": "첫 {name} 추가",
   "Add {name}": "{name} 추가",
   "Administration for {project}": "{project} 관리",

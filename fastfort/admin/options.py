@@ -122,6 +122,27 @@ class ModelAdmin:
     #: Fields shown but never written. Merged into the spec's own allow-list.
     readonly_fields: ClassVar[Sequence[str]] = ()
 
+    #: The form's sections, in order. Without it every field lands in one
+    #: unnamed group, which is what a short form wants; a model with twenty
+    #: columns is a wall of controls until this is set::
+    #:
+    #:     fieldsets = (
+    #:         (None, {"fields": ("name", "sku", "category")}),
+    #:         ("Pricing", {"fields": ("price", "cost"),
+    #:                      "description": "Shown to customers."}),
+    #:         ("Logistics", {"fields": ("weight",), "collapsed": True}),
+    #:     )
+    #:
+    #: A `None` title renders the section without a heading, for the opening
+    #: group that needs no name. `collapsed` renders it shut -- as a
+    #: `<details>`, so it still opens without script.
+    #:
+    #: Naming a field twice is an error, and so is omitting one the database
+    #: requires: a form that cannot produce a saveable row should say so at
+    #: start-up rather than at the first `NOT NULL` violation. Leaving out an
+    #: optional field is allowed and is how a section list narrows a form.
+    fieldsets: ClassVar[Sequence[tuple[str | None, Mapping[str, Any]]]] = ()
+
     #: A nullable boolean or date/datetime column that means "trashed" rather
     #: than gone. Set it and `DELETE_ACTION` stops calling `adapter.delete` --
     #: it writes the marker instead, `deletion_plan` is never consulted (a
@@ -207,6 +228,19 @@ class ModelAdmin:
     #: read-only field here does not make it writable.
     import_fields: ClassVar[Sequence[str]] = ()
 
+    #: Child models edited on this model's own form, in order::
+    #:
+    #:     class OrderLineInline(admin.TabularInline):
+    #:         model = OrderLine
+    #:
+    #:     class OrderAdmin(admin.ModelAdmin):
+    #:         inlines = (OrderLineInline,)
+    #:
+    #: Saved in the parent's transaction: a child that fails validation leaves
+    #: the parent unwritten too, because half of an order is worse than none
+    #: of it. See `admin/inlines.py`.
+    inlines: ClassVar[Sequence[type[Any]]] = ()
+
     #: Bulk actions offered once rows are selected. `"delete"` is built in and
     #: enabled by default; anything else is the name of a method carrying
     #: `@admin.action`. Set to `()` to offer none, which is how a model whose rows
@@ -274,6 +308,29 @@ class ModelAdmin:
         if self.icon is not None and not is_icon(self.icon):
             available = ", ".join(icon_names())
             problems.append(f"icon names {self.icon!r}, which is not one of: {available}")
+
+        if self.fieldsets:
+            seen: set[str] = set()
+            for title, section in self.fieldsets:
+                where = f"fieldsets section {title!r}" if title else "the unnamed fieldsets section"
+                for name in section.get("fields", ()):
+                    if name not in known:
+                        problems.append(f"{where} names {name!r}, which {self.spec.key} has no")
+                    elif name in seen:
+                        problems.append(f"{where} names {name!r} a second time")
+                    seen.add(name)
+
+            # A field the database insists on, left out of every section, is a
+            # form that cannot produce a saveable row -- and it fails at the
+            # flush, with a constraint name, rather than here with a sentence.
+            # Optional fields may be omitted freely: that is how a section list
+            # narrows a form deliberately.
+            for field in self.spec.editable_fields:
+                if field.required and not field.has_db_default and field.name not in seen:
+                    problems.append(
+                        f"fieldsets leaves out {field.name!r}, which {self.spec.key} requires; "
+                        "the form could never save a new row"
+                    )
 
         if self.soft_delete_field is not None:
             if self.soft_delete_field not in known:

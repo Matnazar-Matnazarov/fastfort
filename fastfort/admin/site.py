@@ -35,6 +35,7 @@ from fastfort.core.exceptions import (
     SecurityError,
     ValidationError,
 )
+from fastfort.core.registry import default_model_key
 from fastfort.i18n import Translator, is_rtl, negotiate_language
 from fastfort.spec import Choice, DeletionPlan, FieldType, ListQuery, SortSpec
 from fastfort.ui.compression import compress_asset
@@ -56,6 +57,13 @@ from .importing import (
     read_table,
     sniff_format,
     template_rows,
+)
+from .inlines import (
+    InlineAdmin,
+    InlineSet,
+    apply_inline_set,
+    bind_inline_set,
+    build_inline_set,
 )
 from .messages import Message, MessageLevel, Messages
 from .options import DELETE_ACTION, RESTORE_ACTION, ModelAdmin
@@ -1048,6 +1056,66 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             tuple(dict.fromkeys((*model_admin.prefetch_related, *to_many))),
         )
 
+    #: Resolved inline configurations, per model key. Built on first use rather
+    #: than at registration: an inline needs the child's spec, and introspection
+    #: is the backend's job and costs a round trip the first time.
+    inline_cache: dict[str, tuple[InlineAdmin, ...]] = {}
+
+    def inlines_for(model_key: str, model_admin: ModelAdmin) -> tuple[InlineAdmin, ...]:
+        """This admin's inlines, each bound to its child's spec.
+
+        A child model does not have to be registered -- an order line is often
+        only ever edited on its order -- so its key falls back to the derived
+        one, exactly as `FastFort`'s own relation resolver does.
+        """
+        if model_key not in inline_cache:
+            resolved: list[InlineAdmin] = []
+            for declared in model_admin.inlines:
+                entry = fort.registry.get(declared.model)
+                child_key = entry.key if entry is not None else default_model_key(declared.model)
+                child_spec = fort.backend.introspect(declared.model, key=child_key)
+                resolved.append(declared(child_spec, model_admin.spec))
+            inline_cache[model_key] = tuple(resolved)
+        return inline_cache[model_key]
+
+    async def inline_sets(
+        model_key: str, model_admin: ModelAdmin, uow: Any, parent_pk: tuple[Any, ...] | None
+    ) -> list[InlineSet]:
+        """Every inline on this form, with its children loaded."""
+        built: list[InlineSet] = []
+        for inline in inlines_for(model_key, model_admin):
+            child_adapter = fort.backend.adapter(inline.model, uow, key=inline.spec.key)
+            built.append(
+                await build_inline_set(
+                    inline,
+                    adapter=child_adapter,
+                    parent_pk=parent_pk,
+                    choice_limit=settings.admin.autocomplete_limit,
+                )
+            )
+        return built
+
+    async def bind_all_inlines(
+        model_key: str, model_admin: ModelAdmin, uow: Any, submitted: Any
+    ) -> tuple[list[InlineSet], list[Any], bool]:
+        """Read every inline out of a submission, writing nothing.
+
+        The sets come back rebuilt from what was posted, which is what lets a
+        form that failed validation -- on the parent or on a child -- render
+        again with every typed value still in place.
+        """
+        bound: list[InlineSet] = []
+        plans: list[Any] = []
+        ok = True
+
+        for skeleton in await inline_sets(model_key, model_admin, uow, None):
+            rebuilt, plan = bind_inline_set(skeleton, submitted)
+            bound.append(rebuilt)
+            plans.append(plan)
+            if rebuilt.has_errors:
+                ok = False
+        return bound, plans, ok
+
     async def relation_choices(
         adapter: Any, model_admin: ModelAdmin
     ) -> tuple[dict[str, tuple[Choice, ...]], frozenset[str]]:
@@ -1085,6 +1153,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         instance: Any = None,
         label: str = "",
         pk: tuple[Any, ...] | None = None,
+        inlines: list[InlineSet] | None = None,
     ) -> dict[str, Any]:
         # A popup is the same form without the shell: it is opened from a field
         # on another form, so a sidebar full of other models is noise, and there
@@ -1153,6 +1222,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             ),
             "version_token": None,
             "input_types": INPUT_TYPES,
+            "inlines": inlines or [],
             "extra_scripts": _extra_scripts(form),
         }
 
@@ -1171,7 +1241,14 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 remote_relations=remote,
                 media=settings.media,
             )
-        return page(request, "model/form.html", form_context(request, model_key, model_admin, form))
+            # No parent yet, so no children to find: this is `extra` blank rows
+            # and nothing else.
+            sets = await inline_sets(model_key, model_admin, uow, None)
+        return page(
+            request,
+            "model/form.html",
+            form_context(request, model_key, model_admin, form, inlines=sets),
+        )
 
     @router.post("/{model_key}/add", name="fastfort:add-submit")
     async def add_submit(request: Request, model_key: str) -> Any:
@@ -1196,17 +1273,36 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 media=settings.media,
             )
             cleaned = form.bind(submitted)
+            # Bound before anything is written, for the same reason as in
+            # `change_submit`: the error paths below cannot afford a query.
+            # Rebuilt from what was posted rather than reloaded blank, so a
+            # parent that fails validation does not discard the child rows
+            # typed beside it.
+            inline_bound, inline_plans, inlines_ok = await bind_all_inlines(
+                model_key, model_admin, uow, submitted
+            )
 
-            if not form.is_valid:
+            if not form.is_valid or not inlines_ok:
                 await uow.rollback()
                 return page(
                     request,
                     "model/form.html",
-                    form_context(request, model_key, model_admin, form),
+                    form_context(request, model_key, model_admin, form, inlines=inline_bound),
                 )
 
             try:
                 created = await adapter.create(cleaned)
+                # `create` flushes, so the parent has its key and the children
+                # can point at it inside this same transaction.
+                for plan in inline_plans:
+                    await apply_inline_set(
+                        plan,
+                        adapter=fort.backend.adapter(
+                            plan.inline.model, uow, key=plan.inline.spec.key
+                        ),
+                        parent=created,
+                        spec=plan.inline.spec,
+                    )
                 label = adapter.label_for(created)
                 key = adapter.primary_key_of(created)
                 # Explicit rather than left to the context manager: a constraint
@@ -1271,11 +1367,20 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 ),
             )
             label = adapter.label_for(instance)
+            sets = await inline_sets(model_key, model_admin, uow, adapter.primary_key_of(instance))
 
         return page(
             request,
             "model/form.html",
-            form_context(request, model_key, model_admin, form, instance=instance, label=label),
+            form_context(
+                request,
+                model_key,
+                model_admin,
+                form,
+                instance=instance,
+                label=label,
+                inlines=sets,
+            ),
         )
 
     @router.post("/{model_key}/{object_key}/", name="fastfort:change-submit")
@@ -1324,6 +1429,14 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             label = adapter.label_for(instance)
             key = adapter.primary_key_of(instance)
 
+            # Bound once, here, rather than at each place that needs them.
+            # Binding reads the relation options, which is a query -- and the
+            # error paths below run after a failed write, where the session is
+            # in no state to answer one.
+            inline_bound, inline_plans, inlines_ok = await bind_all_inlines(
+                model_key, model_admin, uow, submitted
+            )
+
             def invalid() -> HTMLResponse:
                 return page(
                     request,
@@ -1336,16 +1449,26 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                         instance=instance,
                         label=label,
                         pk=key,
+                        inlines=inline_bound,
                     ),
                 )
 
-            if not form.is_valid:
+            if not form.is_valid or not inlines_ok:
                 response = invalid()
                 await uow.rollback()
                 return response
 
             try:
                 await adapter.update(instance, cleaned)
+                for plan in inline_plans:
+                    await apply_inline_set(
+                        plan,
+                        adapter=fort.backend.adapter(
+                            plan.inline.model, uow, key=plan.inline.spec.key
+                        ),
+                        parent=instance,
+                        spec=plan.inline.spec,
+                    )
                 label = adapter.label_for(instance)
                 key = adapter.primary_key_of(instance)
                 # Explicit rather than left to the context manager: a constraint

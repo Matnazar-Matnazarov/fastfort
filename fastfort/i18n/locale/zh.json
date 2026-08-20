@@ -6,6 +6,7 @@
   "Accounts cannot be deleted in this deployment.": "此部署中无法删除账户。",
   "Actions": "操作",
   "Add": "新增",
+  "Add another": "再添加一个",
   "Add the first {name}": "新增第一个{name}",
   "Add {name}": "新增{name}",
   "Administration for {project}": "{project} 管理后台",

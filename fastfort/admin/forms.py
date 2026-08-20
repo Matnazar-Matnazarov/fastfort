@@ -51,7 +51,7 @@ if TYPE_CHECKING:
 
     from .options import ModelAdmin
 
-__all__ = ["WIDGET_NAMES", "Form", "FormField", "widget_for"]
+__all__ = ["WIDGET_NAMES", "Form", "FormField", "FormSection", "widget_for"]
 
 
 @dataclass(slots=True)
@@ -130,6 +130,23 @@ class FormField:
         return bound_widget(self.spec.bounds.bound)
 
 
+@dataclass(frozen=True, slots=True)
+class FormSection:
+    """One group of controls on a form.
+
+    A form with no `fieldsets` produces exactly one of these, unnamed, holding
+    every field -- so the template loops sections in both cases and never
+    carries a second code path for the ungrouped form.
+    """
+
+    #: `None` for the opening group that needs no heading.
+    title: str | None
+    description: str | None
+    #: Rendered shut. A `<details>`, so it still opens without script.
+    collapsed: bool
+    fields: tuple[FormField, ...]
+
+
 class Form:
     """A model form derived from the spec and the admin's declarations."""
 
@@ -188,6 +205,37 @@ class Form:
             if field_spec.name in writable or field_spec.name in self.admin.readonly_fields:
                 shown.append(field_spec)
         return shown
+
+    def sections(self) -> tuple[FormSection, ...]:
+        """The form's groups, in render order.
+
+        Without `fieldsets` this is one unnamed section holding every field,
+        which is what makes the template's single loop correct for both cases.
+
+        A field named by a section but not actually visible -- withheld by
+        `protection.py` for this request, say -- is skipped rather than
+        rendered empty, and a section left with nothing at all is dropped:
+        an empty `<fieldset>` with a heading over it reads as a bug in the
+        page rather than as a deliberately narrow form.
+        """
+        if not self.admin.fieldsets:
+            return (FormSection(None, None, False, tuple(self.fields)),)
+
+        by_name = {field.name: field for field in self.fields}
+        sections: list[FormSection] = []
+        for title, declared in self.admin.fieldsets:
+            chosen = tuple(by_name[name] for name in declared.get("fields", ()) if name in by_name)
+            if not chosen:
+                continue
+            sections.append(
+                FormSection(
+                    title=title,
+                    description=declared.get("description"),
+                    collapsed=bool(declared.get("collapsed", False)),
+                    fields=chosen,
+                )
+            )
+        return tuple(sections)
 
     def writable_field_names(self) -> frozenset[str]:
         """What this form may write: the admin's allow-list, minus the locked."""
