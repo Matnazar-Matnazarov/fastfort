@@ -17,7 +17,7 @@ from fastfort.core.exceptions import ConfigurationError
 from fastfort.spec import FieldType, Filter, FilterOperator, SortSpec
 from fastfort.ui.icons import icon_names, is_icon
 
-from .widgets import WIDGET_NAMES
+from .widgets import WIDGET_NAMES, widget_for
 
 if TYPE_CHECKING:
     from fastfort.spec import ModelSpec
@@ -30,6 +30,38 @@ DELETE_ACTION = "delete"
 #: Offered instead of `DELETE_ACTION` on the trash view of a model that
 #: declared `soft_delete_field` -- see the option's own docstring.
 RESTORE_ACTION = "restore"
+
+#: Sets one field across every selected row. Offered only by a model that
+#: named the fields it will accept -- see `ModelAdmin.bulk_editable`.
+EDIT_ACTION = "edit"
+
+#: Controls a bulk edit can set: one box holding one value that means the same
+#: thing for every selected row. `readonly` is excluded for the obvious
+#: reason, and everything absent -- files, geometry, JSON, multi-valued
+#: relations -- is excluded because "the same value for forty rows" is not a
+#: sentence those columns can complete.
+BULK_EDIT_WIDGETS = frozenset(
+    {
+        "text",
+        "number",
+        "decimal",
+        "money",
+        "date",
+        "datetime",
+        "time",
+        "duration",
+        "email",
+        "url",
+        "inet",
+        "mac",
+        "bits",
+        "color",
+        "checkbox",
+        "nullboolean",
+        "select",
+        "relation",
+    }
+)
 
 #: Types `soft_delete_field` may name. Nullable is checked separately: the
 #: marker's *value* is what says trashed or not, so a column that could never
@@ -228,6 +260,33 @@ class ModelAdmin:
     #: read-only field here does not make it writable.
     import_fields: ClassVar[Sequence[str]] = ()
 
+    #: Columns editable in place on the list, without opening the form::
+    #:
+    #:     list_display = ("id", "name", "stock", "is_active")
+    #:     list_editable = ("stock", "is_active")
+    #:
+    #: The whole table becomes one form with one Save button, which is what
+    #: makes it work with scripting off: a control per row posting on its own
+    #: would be one request per cell and no way to submit any of them without
+    #: script. Django's `list_editable` is the same shape for the same reason.
+    #:
+    #: A column has to be in `list_display` to be editable there -- editing a
+    #: cell nobody can see is not a feature -- and takes the same narrow set of
+    #: controls a bulk edit does, for the same reason: a map or an upload card
+    #: in a table cell is worse than the form it saved a trip to.
+    list_editable: ClassVar[Sequence[str]] = ()
+
+    #: Fields a bulk edit may set across every selected row::
+    #:
+    #:     bulk_editable = ("status", "category", "is_active")
+    #:
+    #: Empty by default, which switches the action off. Opt-in rather than
+    #: free, unlike `delete`: a delete announces itself and asks, while one
+    #: mis-set column across forty rows is a silent change nobody sees until
+    #: later. Naming the fields is also how a project keeps the destructive
+    #: half of its schema out of a control that edits in bulk.
+    bulk_editable: ClassVar[Sequence[str]] = ()
+
     #: Child models edited on this model's own form, in order::
     #:
     #:     class OrderLineInline(admin.TabularInline):
@@ -308,6 +367,49 @@ class ModelAdmin:
         if self.icon is not None and not is_icon(self.icon):
             available = ", ".join(icon_names())
             problems.append(f"icon names {self.icon!r}, which is not one of: {available}")
+
+        for name in self.list_editable:
+            if name not in known:
+                problems.append(f"list_editable names {name!r}, which {self.spec.key} has no")
+                continue
+            if name not in self.columns():
+                problems.append(
+                    f"list_editable names {name!r}, which list_display does not show. "
+                    "A cell nobody can see cannot be edited in place."
+                )
+                continue
+            if name not in self.editable_field_names():
+                problems.append(
+                    f"list_editable names {name!r}, which is not writable. It cannot widen "
+                    "what FieldSpec.editable and readonly_fields already settled."
+                )
+                continue
+            widget = widget_for(self.spec.field(name))
+            if widget not in BULK_EDIT_WIDGETS:
+                offered = ", ".join(sorted(BULK_EDIT_WIDGETS))
+                problems.append(
+                    f"list_editable names {name!r}, which draws a {widget!r} control. "
+                    f"A table cell can hold: {offered}"
+                )
+
+        for name in self.bulk_editable:
+            if name not in known:
+                problems.append(f"bulk_editable names {name!r}, which {self.spec.key} has no")
+                continue
+            if name not in self.editable_field_names():
+                problems.append(
+                    f"bulk_editable names {name!r}, which is not writable. It cannot widen "
+                    "what FieldSpec.editable and readonly_fields already settled."
+                )
+                continue
+            widget = widget_for(self.spec.field(name))
+            if widget not in BULK_EDIT_WIDGETS:
+                offered = ", ".join(sorted(BULK_EDIT_WIDGETS))
+                problems.append(
+                    f"bulk_editable names {name!r}, which draws a {widget!r} control. "
+                    f"A bulk edit sets one value for every selected row, which these can "
+                    f"express: {offered}"
+                )
 
         if self.fieldsets:
             seen: set[str] = set()
@@ -558,6 +660,8 @@ class ModelAdmin:
             declared = getattr(handler, "ff_action", None)
             if declared is not None:
                 found.append(declared)
+        if self.bulk_editable:
+            found.append(Action(name=EDIT_ACTION, label="Edit selected", icon="edit"))
         if self.soft_delete_field is not None and DELETE_ACTION in self.actions:
             # Not `danger`, and so not confirmed either -- the bulk bar only
             # asks before a `danger` action, and a restore is the one action

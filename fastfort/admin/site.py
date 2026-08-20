@@ -66,10 +66,11 @@ from .inlines import (
     build_inline_set,
 )
 from .messages import Message, MessageLevel, Messages
-from .options import DELETE_ACTION, RESTORE_ACTION, ModelAdmin
+from .options import DELETE_ACTION, EDIT_ACTION, RESTORE_ACTION, ModelAdmin
 from .protection import AccountGuard
 from .security import LANGUAGE_COOKIE, make_guard, safe_next_url, set_csrf_cookie
-from .values import split_multi
+from .values import parse_value, render_value, split_multi
+from .widgets import widget_for
 
 if TYPE_CHECKING:
     from fastfort.core.app import FastFort
@@ -745,6 +746,15 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 filter_controls, query, params, list_url(model_key), context_translator
             ),
             "actions": actions,
+            # Only when something is editable in place: the template wraps the
+            # table in a form on the strength of this, and an empty form
+            # around a read-only table is markup nobody needs.
+            # The in-place controls need the same widget -> input-type table
+            # the form uses, so a date cell gets `type="date"` here too.
+            "input_types": INPUT_TYPES,
+            "list_edit_url": (
+                f"{admin_url}/{model_key}/list-edit" if model_admin.list_editable else None
+            ),
             "action_url": f"{admin_url}/{model_key}/action",
             # The export keeps the current search, filters and ordering, so the
             # file is the table on screen rather than the whole model.
@@ -1666,6 +1676,34 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         if name not in offered:
             return redirect(target, notices.danger("That action is not available here."))
 
+        # A bulk edit is a question before it is a write: which field, and to
+        # what. Answered on its own page rather than in a popover on the bar,
+        # so the whole thing works with scripting off -- the same shape as the
+        # delete confirmation, and the same shape Django's own
+        # intermediate-page actions take.
+        if name == EDIT_ACTION:
+            return page(
+                request,
+                "model/bulk_edit.html",
+                base_context(request, model_key)
+                | {
+                    "page_title": translator_for(request)("Edit selected"),
+                    "model_title": model_admin.title,
+                    "breadcrumbs": (
+                        {"label": model_admin.title, "url": list_url(model_key)},
+                        {"label": "Edit selected", "url": None},
+                    ),
+                    "admin": model_admin,
+                    "keys": keys,
+                    "fields": [
+                        {"name": field_name, "label": model_admin.spec.field(field_name).label}
+                        for field_name in model_admin.bulk_editable
+                    ],
+                    "action_url": f"{admin_url}/{model_key}/bulk-edit",
+                    "cancel_url": list_url(model_key),
+                },
+            )
+
         async with fort.backend.unit_of_work() as uow:
             adapter = fort.backend.adapter(entry.model, uow, key=model_key)
             objects = []
@@ -1761,6 +1799,166 @@ def build_admin_router(fort: FastFort) -> APIRouter:
 
         return redirect(target, message)
 
+    @router.post("/{model_key}/list-edit", name="fastfort:list-edit")
+    async def list_edit_submit(request: Request, model_key: str) -> Any:
+        """Save every cell edited in place on the list.
+
+        One request for the whole table rather than one per cell. A control
+        that posted on its own would need script to submit it, and the point
+        of rendering the table as a form is that it does not.
+
+        Only rows whose controls actually arrived are touched, and only the
+        columns `list_editable` named -- a name posted for anything else is
+        ignored rather than written, the same rule `bulk_editable` follows.
+        """
+        model_admin = _require_admin(admin_for, model_key)
+        entry = fort.registry.entry_for_key(model_key)
+        # Back to the list the edit was made on, filters and page intact.
+        target = _with_params(list_url(model_key), _flat_params(request), {})
+
+        try:
+            await verify_csrf(request)
+        except SecurityError as exc:
+            return redirect(target, notices.danger(exc.message))
+
+        if not model_admin.list_editable:
+            return redirect(target, notices.danger("Nothing here is editable in place."))
+
+        submitted = await request.form()
+        editable = set(model_admin.list_editable)
+
+        # `key -> {column: raw}`, gathered from the flat names the form posts.
+        pending: dict[str, dict[str, str]] = {}
+        for name in submitted:
+            raw_key, separator, column = str(name).rpartition(CELL_SEPARATOR)
+            if not separator or column not in editable:
+                continue
+            pending.setdefault(raw_key, {})[column] = str(submitted.get(name, ""))
+
+        # A checkbox posts nothing when unticked, so a row that carried one has
+        # to be told the absence means False. Which rows those are is read off
+        # the keys already gathered -- a row nobody edited posts nothing at all
+        # and must stay untouched.
+        checkboxes = [
+            column
+            for column in editable
+            if widget_for(model_admin.spec.field(column)) == "checkbox"
+        ]
+        if checkboxes:
+            for raw_key in list(pending):
+                for column in checkboxes:
+                    pending[raw_key].setdefault(column, "")
+
+        if not pending:
+            return redirect(target, notices.info("Nothing was changed."))
+
+        translate = translator_for(request)
+        async with fort.backend.unit_of_work() as uow:
+            adapter = fort.backend.adapter(entry.model, uow, key=model_key)
+            changed = 0
+            try:
+                for raw_key, values in pending.items():
+                    found = await adapter.get(parse_key(model_admin.spec, raw_key))
+                    if found is None:
+                        continue
+                    cleaned: dict[str, Any] = {}
+                    for column, raw in values.items():
+                        field_spec = model_admin.spec.field(column)
+                        cleaned[column] = (
+                            bool(raw)
+                            if widget_for(field_spec) == "checkbox"
+                            else parse_value(raw, field_spec)
+                        )
+                    await adapter.update(found, cleaned)
+                    changed += 1
+                # All the rows or none: a table half-saved is worse than one
+                # that refused, because nothing on screen says which half.
+                await uow.commit()
+            except (ValidationError, AdapterError, ValueError) as exc:
+                await uow.rollback()
+                message = getattr(exc, "message", str(exc))
+                return redirect(target, notices.danger(f"The edit failed: {message}"))
+
+        return redirect(
+            target,
+            notices.success(
+                translate("{count} rows were updated.", count=changed)
+                if changed != 1
+                else translate("One row was updated.")
+            ),
+        )
+
+    @router.post("/{model_key}/bulk-edit", name="fastfort:bulk-edit")
+    async def bulk_edit_submit(request: Request, model_key: str) -> Any:
+        """Apply one field's new value to every selected row.
+
+        A separate route from `/action` because it answers a different
+        question: `/action` is told what to do and to which rows, while this
+        arrives from a page that has already asked which field and what value.
+        """
+        model_admin = _require_admin(admin_for, model_key)
+        entry = fort.registry.entry_for_key(model_key)
+        target = list_url(model_key)
+
+        try:
+            await verify_csrf(request)
+        except SecurityError as exc:
+            return redirect(target, notices.danger(exc.message))
+
+        submitted = await request.form()
+        field_name = str(submitted.get("field", ""))
+        keys = [str(value) for value in submitted.getlist("keys")]
+
+        # Checked against the declaration, not against the spec: a field that
+        # is writable but was never named in `bulk_editable` must not become
+        # settable by posting its name.
+        if field_name not in model_admin.bulk_editable:
+            return redirect(target, notices.danger("That field cannot be edited in bulk."))
+        if not keys:
+            return redirect(target, notices.info("Nothing was selected."))
+
+        field_spec = model_admin.spec.field(field_name)
+        raw = str(submitted.get("value", ""))
+        try:
+            # A checkbox posts nothing when unticked, so its absence is False
+            # rather than "leave alone" -- there is no third state to mean the
+            # latter on a control that is one box.
+            value = (
+                bool(submitted.get("value"))
+                if widget_for(field_spec) == "checkbox"
+                else parse_value(raw, field_spec)
+            )
+        except ValueError as exc:
+            return redirect(target, notices.danger(str(exc)))
+
+        async with fort.backend.unit_of_work() as uow:
+            adapter = fort.backend.adapter(entry.model, uow, key=model_key)
+            changed = 0
+            try:
+                for key in keys:
+                    found = await adapter.get(parse_key(model_admin.spec, key))
+                    if found is None:
+                        continue
+                    await adapter.update(found, {field_name: value})
+                    changed += 1
+                # Inside the guard, so a constraint the database defers to
+                # commit is reported as a failed edit rather than raised on
+                # the way out. All the rows or none of them.
+                await uow.commit()
+            except (AdapterError, ValidationError) as exc:
+                await uow.rollback()
+                return redirect(target, notices.danger(f"The edit failed: {exc.message}"))
+
+        translate = translator_for(request)
+        return redirect(
+            target,
+            notices.success(
+                translate("{count} rows were updated.", count=changed)
+                if changed != 1
+                else translate("One row was updated.")
+            ),
+        )
+
     public.include_router(build_auth_router(fort, auth, renderer))
     public.include_router(router)
     return public
@@ -1809,6 +2007,12 @@ def _dashboard_window(request: Request, admin_settings: Any) -> tuple[int, bool]
 #: which is the fix for the crash this dict used to cause (see the widget's own
 #: comment in `widgets.py`) -- so a project's `register_widget()` name degrades
 #: to a plain text box instead of a 500 until it ships a template partial.
+#: Separates a row's key from a column's name in an in-place edit's control:
+#: `12~ab-stock`. A hyphen, and the key is *not* URL-quoted -- a composite key
+#: already joins on `~`, and quoting it here would make the submitted name
+#: disagree with the one `parse_key` reads back.
+CELL_SEPARATOR = "-"
+
 INPUT_TYPES = {
     "text": "text",
     "number": "number",
@@ -2268,6 +2472,25 @@ def _rows(
             # Only when there is something to show: an empty path would be a
             # broken-image icon in every row that has no picture yet.
             thumb = f"{media_url}/{value}" if name in images and media_url and value else None
+            # In-place editing. The control's name carries the row's key, so
+            # one form over the whole table can say which row each control
+            # belongs to -- see `list_edit_submit`.
+            editable: dict[str, Any] = {
+                "editable": False,
+                "input_name": "",
+                "input_widget": "",
+                "input_value": "",
+                "choices": (),
+            }
+            if field is not None and name in admin.list_editable:
+                editable = {
+                    "editable": True,
+                    "input_name": f"{raw_key}{CELL_SEPARATOR}{name}",
+                    "input_widget": widget_for(field),
+                    "input_value": render_value(getattr(obj, name, None), field),
+                    "choices": field.choices,
+                }
+
             cells.append(
                 {
                     "value": value,
@@ -2278,6 +2501,7 @@ def _rows(
                     # The first column links to the row, which is how people
                     # expect to open a record from a table.
                     "url": change_url if name in links else None,
+                    **editable,
                 }
             )
         rows.append(

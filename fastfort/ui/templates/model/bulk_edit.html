@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{#- Setting one field across every selected row.
+
+    Its own page rather than a popover on the bulk bar, so the whole thing
+    works with scripting off -- the same shape the delete confirmation takes,
+    and the same shape Django gives an action that needs to ask something
+    before it runs.
+
+    The value control is a plain text box whatever the column is. A per-type
+    control here would be a third renderer of the same widgets, after the form
+    and the inline row, and the two that already exist are the ones worth
+    keeping in step. The value is parsed against the column's own spec on the
+    way in either way, so a bad one is refused rather than coerced. -#}
+
+{% block content %}
+  <div class="ff-page-header">
+    <div class="ff-page-header__text">
+      <h1 class="ff-h1">{{ _("Edit selected") }}</h1>
+      <p class="ff-muted ff-mt-2">
+        {{ _("{count} rows are selected.", count=keys|length) if keys|length != 1
+           else _("One row is selected.") }}
+      </p>
+    </div>
+  </div>
+
+  <div class="ff-card">
+    <div class="ff-card__body">
+      <form class="ff-stack" method="post" action="{{ action_url }}">
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+        {# The selection travels with the form: re-running the list query here
+           would act on whatever matches now, which is not necessarily what was
+           on screen when the boxes were ticked. #}
+        {% for key in keys %}
+          <input type="hidden" name="keys" value="{{ key }}" />
+        {% endfor %}
+
+        <div class="ff-field">
+          <label class="ff-label" for="ff-bulk-field">{{ _("Field") }}</label>
+          <select class="ff-select" id="ff-bulk-field" name="field" required>
+            {% for field in fields %}
+              <option value="{{ field.name }}">{{ _(field.label) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="ff-field">
+          <label class="ff-label" for="ff-bulk-value">{{ _("New value") }}</label>
+          <input class="ff-input" id="ff-bulk-value" type="text" name="value" />
+          <span class="ff-help">
+            {{ _("Left empty, the field is cleared where the column allows it.") }}
+          </span>
+        </div>
+
+        <div class="ff-row">
+          <button class="ff-btn ff-btn--primary" type="submit">
+            {{ ff_icon("check", size=15) }}
+            {{ _("Apply to {count} rows", count=keys|length) if keys|length != 1
+               else _("Apply to one row") }}
+          </button>
+          <a class="ff-btn ff-btn--ghost" href="{{ cancel_url }}">{{ _("Cancel") }}</a>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}
