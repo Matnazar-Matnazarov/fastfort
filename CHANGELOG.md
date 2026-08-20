@@ -10,6 +10,52 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-21
+
+Tier 3 opens: the events the admin always declared now actually fire, and a
+project can issue credentials for the things that are not browsers.
+
+### Added
+
+- **The CRUD hooks are emitted.** `core/hooks.py` has declared
+  `BEFORE_CREATE`, `AFTER_UPDATE`, `BEFORE_DELETE` and the rest since before
+  0.4.0, with documented kwargs and its own unit tests — and nothing in
+  `admin/site.py` ever called them. A project that registered a listener got
+  silence, and no error to explain it.
+
+  Every write path the admin owns now emits: form create and change, single
+  and bulk delete, restore, in-place cell editing, bulk edit, and import.
+
+  Where they fire is the load-bearing part. `BEFORE_*` runs inside the
+  transaction, immediately before the write, so a listener that raises aborts
+  it — that is what makes a veto possible at all. `AFTER_*` runs once the
+  transaction has committed, so `AFTER_CREATE` means the row is durable
+  rather than merely flushed, and a listener that sends mail never fires for
+  a change that rolled back. In a batch, every `BEFORE_*` precedes every
+  `AFTER_*` rather than interleaving.
+
+- **Personal access tokens** — `ApiTokenMixin`, `fort.enable_api_tokens`,
+  `fort.api_tokens.issue`, and the `token_user` dependency for a project's
+  own routes. Long-lived, named, scoped, expiring and individually revocable,
+  for the cron job and the integration that have no password to type.
+
+  The digest is SHA-256 rather than Argon2, deliberately: a work factor makes
+  guessing expensive, and there is nothing to guess about 256 bits of uniform
+  entropy — while putting one here would cost every authenticated request the
+  ~100ms Argon2 is tuned to take. The secret is never stored and is readable
+  exactly once.
+
+- **`ApiTokenAdmin`** — minting, listing and revoking from the admin. Minting
+  is the add view rather than a route beside it, and it renders rather than
+  redirects: a redirect would put the secret in a URL or a flash message, and
+  the reveal must have no address to return to.
+
+### Changed
+
+- `Hook`'s docstring now states when each CRUD pair fires, because that is the
+  part a listener has to be written against.
+
+
 ## [0.6.0] - 2026-08-19
 
 The form and the list both grew what they had been missing: sections and
