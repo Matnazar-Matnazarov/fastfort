@@ -414,3 +414,11 @@
   padding: var(--ff-space-3) var(--ff-space-4);
   border-block-start: 1px solid var(--ff-border);
 }
+
+/* The one field that is meant to be selected rather than read. Monospace
+ * because a token is a string somebody copies character by character when the
+ * copy fails, and a proportional font makes that a guessing game. */
+.ff-token-secret {
+  font-family: var(--ff-font-mono);
+  font-size: var(--ff-text-sm);
+}

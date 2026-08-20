@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .api_tokens import ApiTokenAdmin
 from .dashboard import (
     FULL,
     HALF,
@@ -27,6 +28,7 @@ __all__ = [
     "HALF",
     "THIRD",
     "Action",
+    "ApiTokenAdmin",
     "Breakdown",
     "Counts",
     "Form",
