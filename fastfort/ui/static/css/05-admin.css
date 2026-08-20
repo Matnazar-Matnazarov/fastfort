@@ -384,3 +384,33 @@
   border-radius: 2px;
   background: var(--ff-border);
 }
+
+/* ---------------------------------------------------------------------------
+ * Editing in place
+ *
+ * The controls sit inside the list table, so they have to be quieter than the
+ * ones on a form: a row of boxes with full borders turns a table people read
+ * into a spreadsheet they have to parse. The border arrives on hover and
+ * focus, which is when it is telling somebody something.
+ * ------------------------------------------------------------------------ */
+
+.ff-cell-input {
+  border-color: transparent;
+  background: none;
+}
+
+.ff-cell-input:hover {
+  border-color: var(--ff-border);
+}
+
+.ff-cell-input:focus {
+  border-color: var(--ff-accent);
+  background: var(--ff-surface);
+}
+
+.ff-cell-save {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--ff-space-3) var(--ff-space-4);
+  border-block-start: 1px solid var(--ff-border);
+}
