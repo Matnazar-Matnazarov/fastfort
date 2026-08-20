@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
@@ -35,6 +35,7 @@ from fastfort.core.exceptions import (
     SecurityError,
     ValidationError,
 )
+from fastfort.core.hooks import Hook
 from fastfort.core.registry import default_model_key
 from fastfort.i18n import Translator, is_rtl, negotiate_language
 from fastfort.spec import Choice, DeletionPlan, FieldType, ListQuery, SortSpec
@@ -960,8 +961,23 @@ def build_admin_router(fort: FastFort) -> APIRouter:
 
             checking = str(submitted.get("check", "")) in ("1", "true", "on")
             written = 0
+            imported: list[tuple[Hook, str, Any]] = []
+
+            async def announce(hook: Hook, obj: Any) -> None:
+                """The before half now, the after half once the import commits.
+
+                An import either applies whole or rolls back whole, and it can
+                still fail on a row several hundred lines in -- so an
+                `AFTER_CREATE` emitted here would announce rows that are about
+                to go back out again.
+                """
+                if hook in (Hook.BEFORE_CREATE, Hook.BEFORE_UPDATE):
+                    await emit_write(request, hook, model_key, obj)
+                else:
+                    imported.append((hook, model_key, obj))
+
             if not plan.errors and not checking:
-                written = await _apply_import(adapter, model_admin, plan)
+                written = await _apply_import(adapter, model_admin, plan, announce)
 
             if plan.errors or checking:
                 # Rolled back explicitly rather than left to the context
@@ -977,6 +993,10 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                     "checked_only": checking and not plan.errors,
                 }
                 return page(request, "model/import.html", context)
+
+        # Only here, past every rollback above: an import announces what it
+        # wrote once the whole file is durable.
+        await emit_writes(request, imported)
 
         return redirect(
             list_url(model_key),
@@ -1104,6 +1124,47 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 )
             )
         return built
+
+    async def emit_write(
+        request: Request,
+        hook: Hook,
+        model_key: str,
+        obj: Any,
+        changes: Mapping[str, Any] | None = None,
+    ) -> None:
+        """One CRUD event, with the kwargs `Hook` documents for it.
+
+        `changes` travels only with the update pair, because that is what the
+        contract in `core/hooks.py` states and a listener written against it
+        takes by name.
+
+        Where these fire is the load-bearing half. `BEFORE_*` runs inside the
+        transaction, immediately before the write, so a listener that raises
+        aborts it -- which is what makes a veto possible at all. `AFTER_*`
+        runs once the transaction has committed, so "after_create" means the
+        row is durable rather than merely flushed: a listener that sends an
+        email or pushes to a queue must not fire for a change that then rolled
+        back. It is the same rule `form.commit_files` already follows for a
+        staged upload, for the same reason.
+
+        The cost of that split is that a listener raising on `AFTER_*` cannot
+        undo the write -- it surfaces as an error on a request that did change
+        the database. Deliberate: `core/hooks.py` states that listener errors
+        propagate, and swallowing them here would mean a project believes work
+        happened when it did not.
+        """
+        extra = {"changes": dict(changes)} if changes is not None else {}
+        await fort.hooks.emit(hook, request=request, model_key=model_key, obj=obj, **extra)
+
+    async def emit_writes(request: Request, events: Sequence[tuple[Hook, str, Any]]) -> None:
+        """The `AFTER_*` half of a batch, once its transaction is durable.
+
+        Bulk paths write many rows in one transaction, so what they did has to
+        be carried out of the `async with` block and emitted after it -- one
+        event per row, in the order they were written.
+        """
+        for hook, model_key, obj in events:
+            await emit_write(request, hook, model_key, obj)
 
     async def bind_all_inlines(
         model_key: str, model_admin: ModelAdmin, uow: Any, submitted: Any
@@ -1301,6 +1362,11 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 )
 
             try:
+                # Before the write and inside the transaction, so a listener
+                # that raises aborts the create rather than reporting one that
+                # already happened. `obj` is the cleaned data here -- there is
+                # no instance yet, which is the whole point of a before-create.
+                await emit_write(request, Hook.BEFORE_CREATE, model_key, cleaned)
                 created = await adapter.create(cleaned)
                 # `create` flushes, so the parent has its key and the children
                 # can point at it inside this same transaction.
@@ -1332,6 +1398,11 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             # `bind()` must not be left on disk by a transaction that then rolls
             # back, which is a stored path pointing at nothing.
             form.commit_files()
+
+        # Outside the block, for the same reason and one more: a listener that
+        # raises here must not leave the context manager rolling back a
+        # transaction that has already committed.
+        await emit_write(request, Hook.AFTER_CREATE, model_key, created)
 
         if request.query_params.get(POPUP_PARAM) == "1":
             return _popup_result(request, renderer, base_context, model_key, key, label)
@@ -1469,6 +1540,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 return response
 
             try:
+                await emit_write(request, Hook.BEFORE_UPDATE, model_key, instance, cleaned)
                 await adapter.update(instance, cleaned)
                 for plan in inline_plans:
                     await apply_inline_set(
@@ -1497,6 +1569,8 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             # `bind()` must not be left on disk by a transaction that then rolls
             # back, which is a stored path pointing at nothing.
             form.commit_files()
+
+        await emit_write(request, Hook.AFTER_UPDATE, model_key, instance, cleaned)
 
         if request.query_params.get(POPUP_PARAM) == "1":
             return _popup_result(request, renderer, base_context, model_key, key, label)
@@ -1608,6 +1682,12 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                     return redirect(back, notices.danger(_protected_message(fort, plan, translate)))
 
             try:
+                # A soft delete emits the delete pair too, not the update pair.
+                # It is a write to one column in mechanism and a deletion in
+                # intent, and a listener asking "what left this table" wants to
+                # hear about it -- the row is still readable either way, which
+                # is what a trash view exists to show.
+                await emit_write(request, Hook.BEFORE_DELETE, model_key, instance)
                 if soft:
                     assert model_admin.soft_delete_field is not None
                     trashed_value, _ = model_admin.soft_delete_values()
@@ -1621,6 +1701,13 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             except AdapterError as exc:
                 await uow.rollback()
                 return redirect(back, notices.danger(f"Could not delete this row: {exc.message}"))
+
+        # After the commit, and outside the block. A hard-deleted instance is
+        # detached from a row that no longer exists, but `expire_on_commit` is
+        # off on the project's session factory, so every attribute it held is
+        # still readable -- which is exactly what a listener recording what was
+        # deleted needs, and would not have if this fired any later.
+        await emit_write(request, Hook.AFTER_DELETE, model_key, instance)
 
         # Two calls rather than one call on a string chosen by a ternary: the
         # completeness check that keeps every literal argument in the
@@ -1704,6 +1791,11 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 },
             )
 
+        # Collected inside the transaction, emitted after it: an `AFTER_*` that
+        # fired before the commit would announce a change that a later row in
+        # the same batch could still roll back.
+        written: list[tuple[Hook, str, Any]] = []
+
         async with fort.backend.unit_of_work() as uow:
             adapter = fort.backend.adapter(entry.model, uow, key=model_key)
             objects = []
@@ -1746,6 +1838,10 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                                 ),
                             )
 
+                    for obj in objects:
+                        await emit_write(request, Hook.BEFORE_DELETE, model_key, obj)
+                        written.append((Hook.AFTER_DELETE, model_key, obj))
+
                     if soft:
                         assert model_admin.soft_delete_field is not None
                         trashed_value, _ = model_admin.soft_delete_values()
@@ -1773,7 +1869,14 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 elif name == RESTORE_ACTION:
                     assert model_admin.soft_delete_field is not None
                     _, restored_value = model_admin.soft_delete_values()
+                    # The update pair, not a pair of its own: restoring writes
+                    # the same column back and there is no `Hook.RESTORED` to
+                    # emit. `changes` names the column, so a listener can tell
+                    # this apart from any other update.
+                    change = {model_admin.soft_delete_field: restored_value}
                     for obj in objects:
+                        await emit_write(request, Hook.BEFORE_UPDATE, model_key, obj, change)
+                        written.append((Hook.AFTER_UPDATE, model_key, obj))
                         await adapter.update(obj, {model_admin.soft_delete_field: restored_value})
                     message = notices.success(
                         f"{len(objects)} {model_admin.title.lower()} were restored."
@@ -1796,6 +1899,11 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             except (AdapterError, ValidationError) as exc:
                 await uow.rollback()
                 return redirect(target, notices.danger(f"The action failed: {exc.message}"))
+
+        # One event per row, after the whole batch is durable. A custom
+        # `@admin.action` writes through the adapter itself and is not
+        # instrumented here -- it knows what it did and can emit its own.
+        await emit_writes(request, written)
 
         return redirect(target, message)
 
@@ -1853,6 +1961,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             return redirect(target, notices.info("Nothing was changed."))
 
         translate = translator_for(request)
+        written: list[tuple[Hook, str, Any]] = []
         async with fort.backend.unit_of_work() as uow:
             adapter = fort.backend.adapter(entry.model, uow, key=model_key)
             changed = 0
@@ -1869,6 +1978,8 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                             if widget_for(field_spec) == "checkbox"
                             else parse_value(raw, field_spec)
                         )
+                    await emit_write(request, Hook.BEFORE_UPDATE, model_key, found, cleaned)
+                    written.append((Hook.AFTER_UPDATE, model_key, found))
                     await adapter.update(found, cleaned)
                     changed += 1
                 # All the rows or none: a table half-saved is worse than one
@@ -1878,6 +1989,8 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 await uow.rollback()
                 message = getattr(exc, "message", str(exc))
                 return redirect(target, notices.danger(f"The edit failed: {message}"))
+
+        await emit_writes(request, written)
 
         return redirect(
             target,
@@ -1931,6 +2044,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         except ValueError as exc:
             return redirect(target, notices.danger(str(exc)))
 
+        written: list[tuple[Hook, str, Any]] = []
         async with fort.backend.unit_of_work() as uow:
             adapter = fort.backend.adapter(entry.model, uow, key=model_key)
             changed = 0
@@ -1939,6 +2053,10 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                     found = await adapter.get(parse_key(model_admin.spec, key))
                     if found is None:
                         continue
+                    await emit_write(
+                        request, Hook.BEFORE_UPDATE, model_key, found, {field_name: value}
+                    )
+                    written.append((Hook.AFTER_UPDATE, model_key, found))
                     await adapter.update(found, {field_name: value})
                     changed += 1
                 # Inside the guard, so a constraint the database defers to
@@ -1948,6 +2066,8 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             except (AdapterError, ValidationError) as exc:
                 await uow.rollback()
                 return redirect(target, notices.danger(f"The edit failed: {exc.message}"))
+
+        await emit_writes(request, written)
 
         translate = translator_for(request)
         return redirect(
@@ -2984,7 +3104,12 @@ def _looks_like_uuid(text: str) -> bool:
     return True
 
 
-async def _apply_import(adapter: Any, admin: ModelAdmin, plan: Plan) -> int:
+async def _apply_import(
+    adapter: Any,
+    admin: ModelAdmin,
+    plan: Plan,
+    announce: Callable[[Hook, Any], Awaitable[None]] | None = None,
+) -> int:
     """Write every row, updating where the file carried a key and creating where
     it did not.
 
@@ -3002,12 +3127,23 @@ async def _apply_import(adapter: Any, admin: ModelAdmin, plan: Plan) -> int:
     An unknown key is an error rather than an insert with that key: a file whose
     id column holds a typo would otherwise create a row nobody asked for and
     leave the one that was meant to change untouched.
+
+    `announce` is how the CRUD hooks reach an import without this function
+    learning what a request is. It is called before each write and again after
+    it; the caller owns the distinction between "before the write" and "after
+    the transaction", because only the caller knows when that transaction ends.
+    A row that fails validation is announced but never written -- which is the
+    same thing a `BEFORE_*` listener sees on any other failed write.
     """
     written = 0
     for row in plan.rows:
         try:
             if row.key is None:
-                await adapter.create(row.values)
+                if announce is not None:
+                    await announce(Hook.BEFORE_CREATE, row.values)
+                created = await adapter.create(row.values)
+                if announce is not None:
+                    await announce(Hook.AFTER_CREATE, created)
             else:
                 existing = await adapter.get(row.key)
                 if existing is None:
@@ -3020,7 +3156,11 @@ async def _apply_import(adapter: Any, admin: ModelAdmin, plan: Plan) -> int:
                         )
                     )
                     continue
+                if announce is not None:
+                    await announce(Hook.BEFORE_UPDATE, existing)
                 await adapter.update(existing, row.values)
+                if announce is not None:
+                    await announce(Hook.AFTER_UPDATE, existing)
         except (ValidationError, AdapterError) as exc:
             plan.errors.append(RowError(row.line, admin.title, str(exc)))
             continue
