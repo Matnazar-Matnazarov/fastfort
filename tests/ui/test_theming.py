@@ -188,7 +188,7 @@ def _gzipped(*blobs: bytes) -> int:
 
 
 def test_the_everyday_page_stays_within_budget(css: str) -> None:
-    """What every page downloads is budgeted at 72 KB gzipped: the stylesheet,
+    """What every page downloads is budgeted at 75 KB gzipped: the stylesheet,
     `boot.js` and `fastfort.js`.
 
     Both halves are weighed, not just the stylesheet. The budget exists to keep
@@ -258,6 +258,32 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
     not have been a feature. It would have been the same attribute name,
     `data-ff-density`, meaning two different things depending on which
     element carried it.
+
+    Raised again, to 75 KB, for the form growing two things it never had.
+
+    `fieldsets` puts a long form into named sections -- a model with
+    twenty-five columns was a wall of twenty-five controls in spec order, with
+    no headings and nothing collapsed. `inlines` puts a model's children on
+    its own page: an order and its lines were two unrelated list views, and
+    adding three lines meant three round trips through a separate page,
+    choosing the parent from a dropdown each time.
+
+    Most of this raise is CSS and markup rather than behaviour. The only
+    script either feature needed is the twenty lines that clone an inline row
+    -- everything else, including a collapsed section, works with JavaScript
+    off, because a `<details>` opens on its own and the server renders
+    `extra` blank rows for adding a child.
+
+    The density control that landed beside them cost almost nothing: the
+    stylesheet, the storage key and the pre-paint application all already
+    existed, and only the buttons that set it were missing.
+
+    Keyboard navigation over the list -- j/k to move, Enter to open, x to
+    tick -- is the last of the four and the cheapest: every row was already a
+    link carrying its own URL, so this is a roving `tabIndex` and one handler
+    rather than any new state. It deliberately reuses the browser's own focus
+    ring instead of drawing a second notion of "current" that could drift
+    from the first.
     """
     js = CSS_DIR.parent / "js"
     scripts = [js / name for name in ALWAYS_LOADED]
@@ -265,11 +291,11 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
     assert not missing, f"the budget cannot pass by measuring nothing: {missing}"
 
     compressed = _gzipped(css.encode("utf-8"), *(path.read_bytes() for path in scripts))
-    assert compressed < 72_000, f"{compressed} bytes gzipped"
+    assert compressed < 75_000, f"{compressed} bytes gzipped"
 
 
 def test_the_whole_front_end_stays_within_budget(css: str) -> None:
-    """Everything that ships, on-demand bundles included, is budgeted at 94,000 bytes.
+    """Everything that ships, on-demand bundles included, is budgeted at 97,000 bytes.
 
     The per-page budget above is the one that protects the common case, but on
     its own it would be a budget with a hole in it: anything could be moved into
@@ -301,7 +327,13 @@ def test_the_whole_front_end_stays_within_budget(css: str) -> None:
     alternative was a sidebar that marked "you are here" below the fold on every
     navigation.
 
-    Raised again, to 94,000, for column visibility and saved views on the
+    Raised again, to 97,000, for `fieldsets`, `inlines`, the density control
+    and list keyboard navigation -- see the matching note on the everyday
+    budget above, which is the one this raise actually costs: a form and a
+    list are the two pages every admin has, so none of it could live in an
+    on-demand bundle.
+
+    Before them, to 94,000, for column visibility and saved views on the
     list page -- see the matching note on the everyday budget above, which is
     the one this raise actually costs: nothing here lives in an on-demand
     bundle, because a list view is the page every admin has.
@@ -312,7 +344,7 @@ def test_the_whole_front_end_stays_within_budget(css: str) -> None:
     assert scripts, "the budget cannot pass by measuring nothing"
 
     compressed = _gzipped(css.encode("utf-8"), *(script.read_bytes() for script in scripts))
-    assert compressed < 94_000, f"{compressed} bytes gzipped"
+    assert compressed < 97_000, f"{compressed} bytes gzipped"
 
 
 # ---------------------------------------------------------------------------

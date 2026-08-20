@@ -56,8 +56,8 @@ and soft delete. It has nothing for this.
 ```python
 class OrderLineInline(admin.TabularInline):
     model = OrderLine
-    fk_name = "order"          # inferred when unambiguous
-    extra = 1                  # blank rows offered
+    fk_name = "order"  # inferred when unambiguous
+    extra = 1  # blank rows offered
     fields = ("sku", "quantity", "unit_price")
     can_delete = True
 

@@ -159,6 +159,20 @@ async def test_the_list_carries_column_visibility_controls(client: httpx.AsyncCl
     assert 'data-ff-col="name" aria-pressed="true"' in body
 
 
+async def test_every_row_carries_the_url_the_keyboard_opens(client: httpx.AsyncClient) -> None:
+    """j/k move the focus and Enter follows it, which needs nothing from the
+    server beyond the URL each row already carries for the pointer -- the
+    roving `tabIndex` is set by `fastfort.js` over exactly these nodes.
+    """
+    body = (await client.get("/admin/shop.product/")).text
+
+    assert body.count("data-ff-row-url=") >= 2
+    # The table is the one the keyboard handler looks for, and the checkbox is
+    # what `x` toggles.
+    assert 'data-ff-columns="shop.product"' in body
+    assert "data-ff-select-row" in body
+
+
 async def test_the_list_offers_a_way_to_save_the_current_view(client: httpx.AsyncClient) -> None:
     """Shareable already, through the query string; this adds a name for it."""
     body = (await client.get("/admin/shop.product/")).text

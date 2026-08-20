@@ -312,7 +312,37 @@
 
   applyTheme(mode);
 
+  /* Density, the same shape as the theme above and for the same reason: the
+   * stylesheet and boot.js have both understood `data-ff-density` since long
+   * before this control existed, so this only writes the choice and marks the
+   * pressed option. Two states rather than three -- there is no system
+   * preference for spacing to follow. */
+  const DENSITIES = new Set(["comfortable", "compact"]);
+
+  const syncDensityControls = () => {
+    // Whatever is on the root right now, which boot.js set from storage or
+    // the server rendered from `UISettings.density`.
+    const current = DENSITIES.has(root.dataset.ffDensity)
+      ? root.dataset.ffDensity
+      : "comfortable";
+    for (const button of document.querySelectorAll("[data-ff-density-set]")) {
+      button.setAttribute("aria-pressed", String(button.dataset.ffDensitySet === current));
+    }
+  };
+
+  syncDensityControls();
+
   document.addEventListener("click", (event) => {
+    const density = event.target.closest("[data-ff-density-set]");
+    if (density) {
+      const next = density.dataset.ffDensitySet;
+      if (!DENSITIES.has(next)) return;
+      root.dataset.ffDensity = next;
+      write("ff:density", next);
+      syncDensityControls();
+      return;
+    }
+
     const option = event.target.closest("[data-ff-theme-set]");
     if (option) {
       applyTheme(option.dataset.ffThemeSet);
@@ -2753,6 +2783,64 @@
   });
 
   // =========================================================================
+  // Form: inline rows
+  // =========================================================================
+
+  /* "Add another" clones the last row and renumbers its controls.
+   *
+   * Cloning rather than building: the row's controls came from the server,
+   * which is the only side that knows a column is a select and what belongs
+   * in it. A row assembled here would be a second renderer to keep in step
+   * with `form.html`, and the first divergence would be silent.
+   *
+   * Without script the server's `extra` blank rows are how a child is added,
+   * which is why `InlineAdmin.extra` defaults to one. */
+  enhancers.push((scope) => {
+    for (const section of scope.querySelectorAll("[data-ff-inline]")) {
+      if (!once(section, "ffInlineReady")) continue;
+      const body = section.querySelector("[data-ff-inline-rows]");
+      const add = section.querySelector("[data-ff-inline-add]");
+      if (!body || !add) continue;
+
+      const prefix = section.dataset.ffInline;
+
+      add.addEventListener("click", () => {
+        const last = body.lastElementChild;
+        if (!last) return;
+
+        const row = last.cloneNode(true);
+        // The clone's index continues from however many rows exist, so it
+        // cannot collide with one already submitted under the same number.
+        const index = body.children.length;
+
+        for (const control of row.querySelectorAll("[name]")) {
+          control.name = control.name.replace(
+            new RegExp(`^${prefix}-\\d+-`),
+            `${prefix}-${index}-`,
+          );
+          // A clone of a saved row would otherwise carry that row's primary
+          // key, and saving would edit the original instead of adding a
+          // sibling.
+          if (control.name.endsWith("-_pk")) {
+            control.remove();
+            continue;
+          }
+          if (control.type === "checkbox") control.checked = false;
+          else if (control.tagName === "SELECT") control.selectedIndex = 0;
+          else control.value = "";
+        }
+
+        row.removeAttribute("data-invalid");
+        for (const message of row.querySelectorAll(".ff-error")) message.remove();
+
+        body.append(row);
+        enhance(row);
+        row.querySelector("input, select")?.focus();
+      });
+    }
+  });
+
+  // =========================================================================
   // Listing: column visibility
   // =========================================================================
 
@@ -2898,6 +2986,68 @@
           add();
         }
       });
+    }
+  });
+
+  // =========================================================================
+  // Listing: keyboard navigation
+  // =========================================================================
+
+  /* j/k and the arrows move down and up the rows, Enter opens the focused one,
+   * x ticks it for a bulk action. What a dense table is measured against now,
+   * and cheap here because every row is already a link with a URL on it.
+   *
+   * A roving focus rather than a highlight of its own: the row that has the
+   * keyboard is the row the browser has focused, so the focus ring already
+   * draws it, screen readers already announce it, and there is no second
+   * notion of "current" to drift from the first. */
+  const rowsOf = (table) => [...table.querySelectorAll("tbody tr[data-ff-row-url]")];
+
+  enhancers.push((scope) => {
+    for (const table of scope.querySelectorAll("[data-ff-columns]")) {
+      if (!once(table, "ffKeysReady")) continue;
+      for (const row of rowsOf(table)) row.tabIndex = -1;
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    // Never while someone is typing into the search box or a filter.
+    if (isTyping(document.activeElement)) return;
+
+    const table = document.querySelector("[data-ff-columns]");
+    if (!table) return;
+    const rows = rowsOf(table);
+    if (!rows.length) return;
+
+    const here = rows.indexOf(document.activeElement?.closest("tr"));
+    const step = { j: 1, ArrowDown: 1, k: -1, ArrowUp: -1 }[event.key];
+
+    if (step !== undefined) {
+      event.preventDefault();
+      // From nothing, the first press lands on the first row rather than
+      // wherever an index of -1 would have put it.
+      const next = here < 0 ? (step > 0 ? 0 : rows.length - 1) : here + step;
+      rows[clamp(next, 0, rows.length - 1)].focus();
+      return;
+    }
+
+    if (here < 0) return;
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      window.location.assign(rows[here].dataset.ffRowUrl);
+      return;
+    }
+
+    // The same box the pointer ticks, so the bulk bar counts it exactly as if
+    // it had been clicked.
+    if (event.key === "x") {
+      const box = rows[here].querySelector("[data-ff-select-row]");
+      if (!box) return;
+      event.preventDefault();
+      box.checked = !box.checked;
+      box.dispatchEvent(new Event("change", { bubbles: true }));
     }
   });
 
