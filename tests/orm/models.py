@@ -16,7 +16,7 @@ from decimal import Decimal
 import sqlalchemy as sa
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from fastfort.orm.sqlalchemy import SignInRecordMixin
+from fastfort.orm.sqlalchemy import ApiTokenMixin, SignInRecordMixin
 
 
 class Base(DeclarativeBase):
@@ -185,3 +185,14 @@ class SignInRecord(SignInRecordMixin, Base):
     """
 
     __tablename__ = "sign_in_record"
+
+
+class ApiToken(ApiTokenMixin, Base):
+    """Where `fort.enable_api_tokens(...)` writes.
+
+    From the shipped mixin for the same reason `SignInRecord` is: a
+    hand-written copy of the columns here would keep passing while the mixin a
+    project actually inherits was broken.
+    """
+
+    __tablename__ = "api_token"
