@@ -270,6 +270,20 @@ async def test_the_theme_control_offers_all_three_modes(client: httpx.AsyncClien
         assert f'data-ff-theme-set="{mode}"' in body, mode
 
 
+async def test_the_density_control_offers_both_spacings(client: httpx.AsyncClient) -> None:
+    """`UISettings.density` drove every `--ff-space-*` token, and `boot.js` read
+    `ff:density` before the first paint, long before anything on screen could
+    set it -- the stylesheet, the storage key and the pre-paint application all
+    existed and the control did not.
+
+    Two states, not three: there is no system preference for spacing to follow,
+    so "comfortable" and "compact" are the whole choice.
+    """
+    body = await page(client, "/admin/")
+    for spacing in ("comfortable", "compact"):
+        assert f'data-ff-density-set="{spacing}"' in body, spacing
+
+
 async def test_the_stored_theme_is_applied_before_the_first_paint(
     client: httpx.AsyncClient,
 ) -> None:

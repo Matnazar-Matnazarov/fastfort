@@ -38,6 +38,24 @@
           {{ ff_icon("monitor", size=14) }}<span>{{ _("System") }}</span>
         </button>
       </div>
+
+      {# `UISettings.density` has driven every `--ff-space-*` token through one
+         multiplier since before 0.4.0, and boot.js has read `ff:density`
+         pre-paint for just as long -- there was simply never a control that
+         set it, so a deployment could only change it in Python and the person
+         reading the table could not change it at all.
+
+         Two states, not three: unlike the theme there is no "system" to
+         follow, and the project's configured value is what an untouched
+         browser already gets. #}
+      <div class="ff-segment ff-js-only ff-mt-2" role="group" aria-label="{{ _("Density") }}">
+        <button class="ff-segment__option" type="button" data-ff-density-set="comfortable" aria-pressed="false">
+          <span>{{ _("Comfortable") }}</span>
+        </button>
+        <button class="ff-segment__option" type="button" data-ff-density-set="compact" aria-pressed="false">
+          <span>{{ _("Compact") }}</span>
+        </button>
+      </div>
     </div>
 
     {% if languages|length > 1 %}
