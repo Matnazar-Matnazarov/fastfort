@@ -25,6 +25,23 @@ class Hook(StrEnum):
 
     Listeners receive keyword arguments only, so adding context to an event later
     never breaks an existing listener.
+
+    **When the CRUD pairs fire.** `BEFORE_*` runs inside the transaction,
+    immediately before the write, so a listener that raises aborts it -- that
+    is what makes a veto possible. `AFTER_*` runs once the transaction has
+    committed, so `AFTER_CREATE` means the row is durable rather than merely
+    flushed, and a listener that sends mail or pushes to a queue never fires
+    for a change that then rolled back.
+
+    A bulk path -- a bulk delete, an in-place edit of a table, an import --
+    writes many rows in one transaction, so every `BEFORE_*` in a batch
+    precedes every `AFTER_*` in it rather than interleaving. The alternative
+    would announce one row durable while a later row could still take it back.
+
+    `BEFORE_CREATE` carries the cleaned values rather than an instance,
+    because there is not one yet; every other CRUD event carries the row.
+    Custom `@admin.action` methods write through the adapter themselves and
+    are not instrumented -- an action knows what it did and can emit its own.
     """
 
     #: kwargs: request, model_key, obj
