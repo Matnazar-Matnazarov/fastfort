@@ -6,6 +6,16 @@
   context. A separate "partial" template is how the two quietly drift apart.
 #}
   {% if page.items %}
+    {# Editing in place makes the whole table one form with one Save button.
+       A control per row posting on its own would be one request per cell and
+       nothing to submit it with when scripting is off -- Django's
+       `list_editable` is the same shape for the same reason. Inside
+       `#ff-results`, so a live update replaces the form along with the rows
+       it wraps. #}
+    {% if list_edit_url %}
+      <form method="post" action="{{ list_edit_url }}">
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+    {% endif %}
     <div class="ff-table-wrap ff-scroll">
       {# `data-ff-columns` is this list's identity for the column-visibility and
          row-density preferences in fastfort.js -- read fresh on every render of
@@ -73,7 +83,43 @@
               {% endif %}
               {% for cell in row.cells %}
                 <td data-ff-col="{{ columns[loop.index0].name }}" {% if cell.numeric %}class="ff-numeric"{% endif %}>
-                  {% if cell.boolean %}
+                  {# Editable first, before any type branch. A boolean cell
+                     reached `ff_bool` and returned a tick, so `is_active`
+                     rendered no control at all -- an editable cell draws its
+                     control whatever the column's type is. #}
+                  {% if cell.editable %}
+                    {% if cell.input_widget == "checkbox" %}
+                      <input
+                        class="ff-check"
+                        type="checkbox"
+                        name="{{ cell.input_name }}"
+                        aria-label="{{ _("Edit") }}"
+                        {% if cell.value %}checked {% endif %}
+                      />
+                    {% elif cell.input_widget in ("select", "relation", "nullboolean") %}
+                      <select
+                        class="ff-select ff-select--sm"
+                        name="{{ cell.input_name }}"
+                        aria-label="{{ _("Edit") }}"
+                      >
+                        <option value="">—</option>
+                        {% for choice in cell.choices %}
+                          <option
+                            value="{{ choice.value }}"
+                            {% if cell.input_value == choice.value|string %}selected {% endif %}
+                          >{{ choice.label }}</option>
+                        {% endfor %}
+                      </select>
+                    {% else %}
+                      <input
+                        class="ff-input ff-input--sm ff-cell-input"
+                        type="{{ input_types.get(cell.input_widget, "text") }}"
+                        name="{{ cell.input_name }}"
+                        value="{{ cell.input_value }}"
+                        aria-label="{{ _("Edit") }}"
+                      />
+                    {% endif %}
+                  {% elif cell.boolean %}
                     {{ cell.value|ff_bool }}
                   {% elif cell.image %}
                     {# A picture answers "which of these is the right one" faster
@@ -145,6 +191,15 @@
         </tbody>
       </table>
     </div>
+    {% if list_edit_url %}
+        <div class="ff-cell-save">
+          <button class="ff-btn ff-btn--primary ff-btn--sm" type="submit">
+            {{ ff_icon("check", size=15) }}
+            {{ _("Save changes") }}
+          </button>
+        </div>
+      </form>
+    {% endif %}
 
     <nav class="ff-pagination ff-no-print" aria-label="{{ _("Pagination") }}">
       {# One line, so the rendered text is a contiguous "1–25 of 400" rather

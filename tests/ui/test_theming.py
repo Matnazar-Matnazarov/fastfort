@@ -176,6 +176,26 @@ def test_motion_is_disabled_when_the_viewer_asks(css: str) -> None:
     assert "prefers-reduced-motion" in css
 
 
+def test_a_live_update_dims_the_old_rows_instead_of_removing_them(css: str) -> None:
+    """The stale answer stays on screen until the new one replaces it.
+
+    Emptying `#ff-results` first would collapse the table to nothing and drop
+    the page's whole scroll position for the length of a request -- which is
+    the "flickering" a skeleton is usually reached for, and which not
+    emptying avoids without needing one.
+
+    `fastfort.js` sets `data-ff-loading` and `aria-busy` around the fetch;
+    this is the half that makes either visible, and it had no test until the
+    roadmap round went looking for one and found the behaviour already built.
+    """
+    assert '[data-ff-loading="true"]' in css
+    # Dimmed and inert -- clicking a row that is about to be replaced would
+    # navigate to whatever was underneath the pointer a moment ago.
+    block = css.split('[data-ff-loading="true"]')[1].split("}")[0]
+    assert "opacity" in block
+    assert "pointer-events: none" in block
+
+
 #: Scripts every single page downloads. Anything not named here is asked for
 #: only by a page whose fields need it -- see `_extra_scripts` in `admin/site.py`.
 ALWAYS_LOADED = ("boot.js", "fastfort.js")
