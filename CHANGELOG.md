@@ -10,6 +10,58 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-19
+
+The form and the list both grew what they had been missing: sections and
+children on one, editing without leaving on the other.
+
+### Added
+
+- **`ModelAdmin.inlines` — a model's children on its own page.** A project
+  that modelled an order and its lines registered both and got two unrelated
+  list views; adding three lines meant three round trips through a separate
+  page, choosing the parent from a dropdown each time.
+
+  No new adapter method: children are written through `create`/`update`/
+  `delete` and read back through a `ListQuery` with one equality filter on
+  the foreign key, all of which both backends already implement. Saved in the
+  parent's transaction, so a child that fails to parse leaves the parent
+  unwritten too. A tabular inline takes a deliberately narrow set of
+  controls — named explicitly, a map or an upload card is a start-up error;
+  left to the default, it is skipped.
+
+- **`ModelAdmin.fieldsets` — the form in named sections.** Every field
+  landed in one grid in spec order, so a twenty-five-column model was a wall
+  of twenty-five controls. A titled section is a `<details>`, so a collapsed
+  group still opens with scripting off. Naming a field twice is an error, and
+  so is omitting one the database requires; omitting an optional one is how a
+  section list narrows a form.
+
+- **`ModelAdmin.list_editable` — cells edited in place.** The whole table
+  becomes one form with one Save button, which is what makes it work without
+  script. All the rows or none: one bad value rolls the submission back.
+
+- **`ModelAdmin.bulk_editable` — one field across the selected rows.**
+  Opt-in, unlike delete, and answered on its own page rather than in a
+  popover, so it too works with scripting off.
+
+- **Keyboard navigation on the list.** `j`/`k` and the arrows move, Enter
+  opens, `x` ticks a row for a bulk action. A roving `tabIndex` rather than a
+  highlight of its own, so the browser's focus ring stays the only notion of
+  "current".
+
+- **A control for the display density.** `UISettings.density` had driven
+  every `--ff-space-*` token since before 0.4.0 and `boot.js` had read
+  `ff:density` before the first paint for just as long — all ten catalogues
+  already carried the strings. Only the buttons were missing.
+
+### Changed
+
+- **The front-end budget moves to 75 KB / 97,000 bytes**, once, for all of
+  the above. Most of it is CSS and markup: the only script any of these
+  features needed is the twenty lines that clone an inline row.
+
+
 ## [0.5.0] - 2026-08-19
 
 Three ways to touch fewer rows by hand: hide the columns you are not
