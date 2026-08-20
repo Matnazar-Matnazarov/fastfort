@@ -6,6 +6,7 @@
   "Accounts cannot be deleted in this deployment.": "この環境ではアカウントを削除できません。",
   "Actions": "操作",
   "Add": "追加",
+  "Add another": "さらに追加",
   "Add the first {name}": "最初の{name}を追加",
   "Add {name}": "{name}を追加",
   "Administration for {project}": "{project}の管理画面",
