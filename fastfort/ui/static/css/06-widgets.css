@@ -2969,3 +2969,26 @@ a.ff-upload__name {
   flex: none;
   display: flex;
 }
+
+/* ===========================================================================
+ * Audit history
+ *
+ * A card per event, because each carries its own number of changed fields.
+ * The header wraps rather than truncates: who and when are the half of an
+ * entry somebody reading a log came for.
+ * ======================================================================== */
+
+.ff-audit + .ff-audit {
+  margin-block-start: var(--ff-space-4);
+}
+
+.ff-audit__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ff-space-2) var(--ff-space-3);
+}
+
+.ff-audit__who {
+  margin-inline-start: auto;
+}

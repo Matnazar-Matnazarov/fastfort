@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 from types import TracebackType
-from typing import Any
+from typing import Any, cast
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -275,6 +275,14 @@ class SQLAlchemyBackend:
 
     def unit_of_work(self) -> SQLAlchemyUnitOfWork:
         return SQLAlchemyUnitOfWork(self._session_factory)
+
+    def snapshot(self, model: type, obj: Any, *, key: str) -> dict[str, Any]:
+        # An adapter with no session. `snapshot` reads the instance and the
+        # mapper and nothing else, so there is no session for it to reach --
+        # and a real one is exactly what the protocol says this must not open.
+        spec = self.introspect(model, key=key)
+        detached = SQLAlchemyAdapter(model, spec, cast("Any", None), self.profile)
+        return detached.snapshot(obj)
 
     # -- diagnostics --------------------------------------------------------
 

@@ -121,6 +121,12 @@
           </button>
         </form>
       {% endif %}
+      {% if history_url %}
+        <a class="ff-btn ff-btn--ghost" href="{{ history_url }}">
+          {{ ff_icon("clock", size=15) }}
+          {{ _("History") }}
+        </a>
+      {% endif %}
       <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">
         {{ ff_icon("arrow-left", size=15) }}
         {{ _("Back to {name}", name=model_title|lower) }}

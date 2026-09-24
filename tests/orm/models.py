@@ -16,7 +16,12 @@ from decimal import Decimal
 import sqlalchemy as sa
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from fastfort.orm.sqlalchemy import ApiTokenMixin, FavoriteMixin, SignInRecordMixin
+from fastfort.orm.sqlalchemy import (
+    ApiTokenMixin,
+    AuditEntryMixin,
+    FavoriteMixin,
+    SignInRecordMixin,
+)
 
 
 class Base(DeclarativeBase):
@@ -207,3 +212,10 @@ class Favorite(FavoriteMixin, Base):
     """
 
     __tablename__ = "favorite"
+
+
+class AuditEntry(AuditEntryMixin, Base):
+    """Where `fort.enable_audit_log(...)` writes. From the shipped mixin, so its
+    indexes are created on every engine the suite runs against."""
+
+    __tablename__ = "audit_entry"

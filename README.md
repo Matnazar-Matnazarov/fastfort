@@ -152,6 +152,10 @@ the token expired.
 |---|---|
 | 📊 **A dashboard you arrange** | `fort.set_dashboard(Metric(Order), Trend(Order), Breakdown(Order, on="status"), Recent(Invoice), Counts())`. Area charts, bar charts, sparklines with a signed delta, meters per value of a column — every one of them drawn by the server as SVG and boxes with a height. No charting library, no canvas, no new JavaScript, and each widget's docstring states how many queries it costs. Write your own by subclassing `Widget` |
 | 🕵 **Sign-in records** | `fort.record_sign_ins(SignInRecord)` writes who signed in, from which address, on which browser and platform — failures included, because a log of successes says nothing about the night somebody tried four hundred passwords. Client hints first, user-agent second, raw string always kept. No foreign key to the user, so the row outlives the account it describes |
+| 📜 **An audit log with a diff** | `fort.enable_audit_log(AuditEntry)` records every create, change and delete the admin makes — who, when, from which address, and which fields went from what to what. Diffed before-against-after, so a twenty-field form with one edit logs one change; sensitive columns never reach the table. Every record gets a *History* page, the sidebar an *Activity* feed |
+| ⭐ **Favourites** | `fort.enable_favorites(Favorite)` puts a star on every row. What somebody starred collects on one page, grouped by model — the warehouse they run, the three customers in escalation |
+| 🔑 **Personal access tokens** | `fort.enable_api_tokens(ApiToken)` — named, scoped, expiring, individually revocable tokens for the cron job and the integration with no password to type. Minted from the admin, shown exactly once, stored only as a digest |
+| ✏️ **Editing where you are** | `inlines` edit an order's lines on the order's own page, `list_editable` edits cells in the list, `bulk_editable` sets one field across the selected rows — all in one transaction, all working with JavaScript off |
 | 🛡 **Accounts a demo cannot break** | Four settings for what the admin may do to an account — change a password, change a *superuser's* password, delete an account, delete a superuser. All default to what the admin has always done. A protected password field is read-only *and* dropped from the write, because a read-only control that still accepts a posted value is a label rather than a protection |
 | 🎛 **Django-style admin** | `@admin.register`, `list_display`, `list_filter`, `search_fields`, `fieldsets`, `actions` |
 | 🗑 **Deletes you can trust** | The confirmation counts what actually goes: rows that cascade, rows kept with the link cleared, and rows that block the delete outright — refused with a sentence instead of a constraint violation |
@@ -194,19 +198,16 @@ place; it never owns them.
 
 ### Not in the box yet
 
-`fastfort/contrib/` is a placeholder. **Roles and permissions beyond
-`is_staff`/`is_superuser` and soft delete are not implemented** — the spec layer
-carries the `ChangeSet` an audit log would store and the field-masking it would
-need, but nothing writes one. Earlier versions of this README listed them as
-features. They were a plan.
+**Roles and permissions beyond `is_staff`/`is_superuser`** — object- and
+field-level permissions are the largest gap, and on the roadmap with the one
+rule they must follow: `FieldSpec.editable` becoming role-aware, never a second
+flag beside it. **Two-factor sign-in** and **impersonation** are next after the
+audit log they depend on. See [ROADMAP.md](ROADMAP.md) for the order and the
+reasoning.
 
-Sign-in records are the one half of an audit log that now exists:
-`fort.record_sign_ins(...)` writes every attempt against a table your project
-owns. What it does *not* record is data changes — who edited which row.
-
-**Inline editing of related rows** is the other gap worth naming — Django's
-`InlineModelAdmin`, editing an invoice's lines on the invoice's own page. A
-related model is reachable, and editable, on its own page.
+The audit log records what the *admin* writes. A change your application makes
+through its own session emits no admin hook, so it is not in the log — emit
+`Hook.AFTER_UPDATE` yourself where that matters.
 
 ---
 

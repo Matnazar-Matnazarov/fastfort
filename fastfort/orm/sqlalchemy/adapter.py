@@ -234,6 +234,14 @@ class SQLAlchemyAdapter:
                 continue
             if field.is_relation:
                 state[field.name] = self._relation_identity(obj, field.name, unloaded)
+            elif field.name in unloaded:
+                # Expired, or never loaded. A flush expires every column the
+                # database computes -- `onupdate=func.now()` is the common one
+                # -- and reading it back is a SELECT: past the commit, outside
+                # the async bridge, that is `MissingGreenlet` from inside an
+                # `AFTER_UPDATE` listener. Omitted, like a sensitive value: a
+                # snapshot states what it knows rather than guessing.
+                continue
             else:
                 state[field.name] = getattr(obj, field.name, None)
         return state

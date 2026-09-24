@@ -10,6 +10,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Breaking
+
+- The `Backend` protocol gained `snapshot(model, obj, *, key)`. Both shipped
+  backends implement it; a project's own backend must add it to keep
+  satisfying the protocol.
+
 ### Added
 
 - **Favourites** — `FavoriteMixin` and `fort.enable_favorites(Favorite)`. A
@@ -25,8 +31,25 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   button and works with JavaScript off; the script answers the press in
   place. 200 stars per account.
 
+- **Audit log** — `AuditEntryMixin` and `fort.enable_audit_log(AuditEntry)`,
+  in `fastfort/contrib/audit.py`. Every create, change and delete the admin
+  makes is recorded with who, when, the address, and a before/after diff of
+  the fields that actually changed. Each record gains a *History* page, and
+  the sidebar an *Activity* feed. Nothing is written for a save that changed
+  nothing, a sensitive column is never written, and a failed write to the log
+  is logged rather than raised — the change it describes has already
+  committed. Roadmap item 3.2 is complete.
+- **`Backend.snapshot(model, obj, key=...)`** — `ModelAdapter.snapshot`
+  without a unit of work, for a hook listener that has a row but no
+  transaction.
+
 ### Fixed
 
+- `SQLAlchemyAdapter.snapshot` read expired columns, which is a lazy SELECT:
+  after a flush expired an `onupdate` column, a snapshot taken past the commit
+  raised `MissingGreenlet`. Unloaded columns are now omitted.
+- The README still listed soft delete and inlines as missing, three releases
+  after both shipped.
 - A `t()` call whose key was never declared in `FALLBACK_TEXT` rendered its
   argument verbatim, in English, in every language — and the existing parity
   tests could not see it, because they only matched keys without spaces.

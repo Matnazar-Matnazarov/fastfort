@@ -220,6 +220,19 @@ class Backend(Protocol):
         """Open a new transactional scope."""
         ...
 
+    def snapshot(self, model: type, obj: Any, *, key: str) -> dict[str, Any]:
+        """`ModelAdapter.snapshot` without a unit of work.
+
+        For a hook listener, which is handed a row but no transaction -- and
+        whose `AFTER_*` half runs once the request's transaction has closed.
+        Opening a unit of work just to build an adapter would, on a backend
+        that begins its transaction on entry, take a second connection while
+        the request still holds the first: a pool of one waits forever.
+        Issues no queries and omits sensitive fields, exactly like the
+        adapter's own.
+        """
+        ...
+
     async def check_connection(self) -> None:
         """Verify the database is reachable, raising `AdapterError` if not.
 
