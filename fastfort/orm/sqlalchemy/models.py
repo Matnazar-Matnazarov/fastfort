@@ -25,7 +25,7 @@ from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
 from fastfort.auth.devices import DEVICE_KINDS
 
-__all__ = ["ApiTokenMixin", "FavoriteMixin", "SignInRecordMixin"]
+__all__ = ["ApiTokenMixin", "AuditEntryMixin", "FavoriteMixin", "SignInRecordMixin"]
 
 
 class SignInRecordMixin:
@@ -229,4 +229,52 @@ class FavoriteMixin:
                 "user_key", "model_key", "object_key", name=f"uq_{cls.__tablename__}_target"
             ),
             sa.Index(f"ix_{cls.__tablename__}_owner", "user_key", "model_key"),
+        )
+
+
+class AuditEntryMixin:
+    """Every column `fastfort.contrib.audit.AuditLog` writes.
+
+        class AuditEntry(AuditEntryMixin, Base):
+            __tablename__ = "admin_audit"
+
+        fort.enable_audit_log(AuditEntry)
+
+    No foreign keys, for the reason `SignInRecordMixin` has none: a log that
+    cascades away with the row or the account it describes cannot answer who
+    deleted either of them. The target is the registry key and the "~"-joined
+    primary key -- the pair an admin URL carries -- and the actor is text.
+    """
+
+    id: Mapped[int] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    at: Mapped[dt.datetime] = mapped_column(
+        sa.DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC)
+    )
+    #: `create`, `update` or `delete`.
+    action: Mapped[str] = mapped_column(sa.String(16), default="")
+    model_key: Mapped[str] = mapped_column(sa.String(120), default="")
+    object_key: Mapped[str] = mapped_column(sa.String(255), default="")
+    #: What the row was called when this happened. Stored rather than looked up,
+    #: because a deleted row has nothing left to look up.
+    object_label: Mapped[str] = mapped_column(sa.String(255), default="")
+    user_key: Mapped[str] = mapped_column(sa.String(64), default="")
+    user_label: Mapped[str] = mapped_column(sa.String(255), default="")
+    #: IPv6 at its longest is 45 characters.
+    address: Mapped[str] = mapped_column(sa.String(45), default="")
+    #: JSON, `{"field": [before, after]}`. Text rather than a JSON column so the
+    #: one mixin works on SQLite, PostgreSQL and MySQL without a dialect branch.
+    changes: Mapped[str] = mapped_column(sa.Text, default="")
+
+    __tablename__: str
+
+    @declared_attr.directive
+    def __table_args__(cls) -> tuple[Any, ...]:  # noqa: N805
+        # The two questions this table is asked: "what happened to this row",
+        # which the history page asks, and "what happened lately", which the
+        # activity page asks. Each index leads with what its question filters on.
+        return (
+            sa.Index(f"ix_{cls.__tablename__}_target", "model_key", "object_key", "at"),
+            sa.Index(f"ix_{cls.__tablename__}_at", "at"),
         )

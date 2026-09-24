@@ -294,6 +294,8 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             # admin to render a number nobody navigates by.
             "favorites_url": f"{admin_url}/favorites" if fort.favorites is not None else None,
             "favorites_current": request.url.path.rstrip("/") == f"{admin_url}/favorites",
+            "activity_url": f"{admin_url}/activity" if fort.audit_log is not None else None,
+            "activity_current": request.url.path.rstrip("/") == f"{admin_url}/activity",
             "nav": _navigation(fort, list_url),
             # What Ctrl+K searches. Sent with the page rather than fetched on
             # open: it is the sidebar's own contents, a few hundred bytes, and a
@@ -717,6 +719,99 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         if quiet:
             return JSONResponse({"starred": starred, "message": note})
         return redirect(back, Message(MessageLevel.SUCCESS, note))
+
+    # -- audit log ----------------------------------------------------------
+
+    #: Beside `/favorites`, and for the same reason: a page about the whole
+    #: admin rather than about one model.
+    @router.get("/activity", response_class=HTMLResponse, name="fastfort:activity")
+    async def activity_view(request: Request) -> HTMLResponse:
+        """Everything the admin wrote, newest first, fifty to a page."""
+        audit = fort.audit_log
+        if audit is None:
+            raise HTTPException(status_code=404, detail="The audit log is not enabled.")
+
+        translate = translator_for(request)
+        page_number = _positive_int(request.query_params.get("p"), default=1)
+        # Only a registered key filters. Anything else is a stale link, and
+        # answering it with every entry is better than an empty page that
+        # looks like nothing ever happened.
+        wanted = request.query_params.get("model", "")
+        model_key = wanted if fort.registry.get_by_key(wanted) is not None else ""
+
+        events, older = await audit.recent(model_key=model_key, page=page_number)
+
+        def page_link(number: int) -> str:
+            params = {"model": model_key} if model_key else {}
+            return _with_params(f"{admin_url}/activity", params, {"p": str(number)})
+
+        context = base_context(request, None) | {
+            "page_title": translate("Activity"),
+            "breadcrumbs": ({"label": translate("Activity"), "url": None},),
+            "heading": translate("Activity"),
+            "events": _audit_events(
+                events,
+                admin_for=admin_for,
+                translate=translate,
+                object_url=lambda key, raw: f"{admin_url}/{key}/{quote(raw, safe='')}/",
+                named=True,
+            ),
+            "back_url": None,
+            "newer_url": page_link(page_number - 1) if page_number > 1 else None,
+            "older_url": page_link(page_number + 1) if older else None,
+        }
+        return page(request, "history.html", context)
+
+    @router.get(
+        "/{model_key}/{object_key}/history",
+        response_class=HTMLResponse,
+        name="fastfort:history",
+    )
+    async def history_view(request: Request, model_key: str, object_key: str) -> HTMLResponse:
+        """One row's history.
+
+        The row has to exist: a history page for a key that resolves to nothing
+        would confirm, to anyone guessing keys, which ones used to. What a
+        deleted row was is on the activity page, filtered to its model.
+        """
+        audit = fort.audit_log
+        if audit is None:
+            raise HTTPException(status_code=404, detail="The audit log is not enabled.")
+
+        model_admin = _require_admin(admin_for, model_key)
+        entry = fort.registry.entry_for_key(model_key)
+        key = parse_key(model_admin.spec, object_key)
+        async with fort.backend.unit_of_work() as uow:
+            adapter = fort.backend.adapter(entry.model, uow, key=model_key)
+            instance = await _require_object(adapter, key)
+            label = adapter.label_for(instance)
+            key = adapter.primary_key_of(instance)
+
+        stored = key_separator.join(str(part) for part in key)
+        events = await audit.history(model_key=model_key, object_key=stored)
+
+        translate = translator_for(request)
+        title = _title_of(model_admin, model_key)
+        context = base_context(request, model_key) | {
+            "page_title": translate("History of {name}", name=label),
+            "breadcrumbs": (
+                {"label": title, "url": list_url(model_key)},
+                {"label": label, "url": object_url(model_key, key)},
+                {"label": translate("History"), "url": None},
+            ),
+            "heading": translate("History of {name}", name=label),
+            "events": _audit_events(
+                events,
+                admin_for=admin_for,
+                translate=translate,
+                object_url=None,
+                named=False,
+            ),
+            "back_url": object_url(model_key, key),
+            "newer_url": None,
+            "older_url": None,
+        }
+        return page(request, "history.html", context)
 
     # -- list ---------------------------------------------------------------
 
@@ -1518,6 +1613,11 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 else None
             ),
             "starred": starred,
+            "history_url": (
+                f"{object_url(model_key, pk)}history"
+                if editing and not popup and fort.audit_log is not None
+                else None
+            ),
             # Unquoted -- this goes into a form field rather than a URL, and
             # quoting it here would have the endpoint look up a key escaped
             # twice. Same reasoning as `row.key` in `_rows`.
@@ -2617,6 +2717,81 @@ def _instantiate(admin: Any, spec: ModelSpec) -> ModelAdmin:
     # A registration that predates ModelAdmin still gets a working list view
     # rather than an error, using the spec's own defaults.
     return ModelAdmin(spec)
+
+
+def _positive_int(raw: str | None, *, default: int) -> int:
+    """A page number from the query string, or `default` for anything else."""
+    try:
+        number = int(raw or "")
+    except ValueError:
+        return default
+    return number if number > 0 else default
+
+
+#: The badge each kind of entry wears. Colour carries the kind and the word
+#: beside it says it, so the page reads the same to somebody who cannot tell
+#: the colours apart.
+_AUDIT_TONES = {"create": "success", "update": "info", "delete": "danger"}
+
+
+def _audit_events(
+    events: Sequence[Any],
+    *,
+    admin_for: Any,
+    translate: Translator,
+    object_url: Any,
+    named: bool,
+) -> list[dict[str, Any]]:
+    """Stored audit entries, shaped for `history.html`.
+
+    Field names become the labels the form uses for them, from the model's
+    admin as it is now. A model unregistered since the entry was written keeps
+    its raw column names rather than failing the page: the entry still says
+    what happened, in slightly plainer words.
+    """
+    verbs = {
+        "create": translate("Created"),
+        "update": translate("Changed"),
+        "delete": translate("Deleted"),
+    }
+    shaped: list[dict[str, Any]] = []
+    for event in events:
+        try:
+            model_admin: ModelAdmin | None = admin_for(event.model_key)
+        except RegistrationError:
+            model_admin = None
+
+        def label_of(name: str, model_admin: ModelAdmin | None = model_admin) -> str:
+            if model_admin is None:
+                return name
+            field = model_admin.spec.get(name)
+            return model_admin.field_label(name, field.label if field is not None else name)
+
+        action = str(event.action)
+        shaped.append(
+            {
+                "tone": _AUDIT_TONES.get(action, "info"),
+                "verb": verbs.get(action, action),
+                "label": event.object_label or event.object_key,
+                # No link to a deleted row: its page would be a 404.
+                "url": (
+                    object_url(event.model_key, event.object_key)
+                    if named and object_url is not None and action != "delete"
+                    else None
+                ),
+                "model_title": (
+                    _title_of(model_admin, event.model_key) if named and model_admin else ""
+                ),
+                "user": event.user_label or translate("System"),
+                "address": event.address,
+                "at": event.at,
+                "changes": [
+                    {"label": label_of(change.field), "before": change.old, "after": change.new}
+                    for change in event.changes
+                ],
+            }
+        )
+    return shaped
 
 
 async def _starred_keys(fort: FastFort, request: Request, model_key: str) -> frozenset[str]:

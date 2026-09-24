@@ -395,6 +395,22 @@ async def test_snapshot_reduces_relations_to_identities(
     assert products.snapshot(created)["category"] == phones.id
 
 
+async def test_snapshot_omits_an_expired_column_rather_than_loading_it(
+    products: SQLAlchemyAdapter,
+) -> None:
+    """A flush expires every column the database computes -- `onupdate` is the
+    usual one -- and reading one back is a SELECT. From an `AFTER_UPDATE`
+    listener, past the commit and outside the async bridge, that SELECT is a
+    `MissingGreenlet` on a save that had already succeeded."""
+    created = await products.create({"name": "Expiring"})
+    products.session.expire(created, ["name"])
+
+    state = products.snapshot(created)
+
+    assert "name" not in state
+    assert "id" in state
+
+
 async def test_label_uses_the_models_own_str(products: SQLAlchemyAdapter) -> None:
     created = await products.create({"name": "Readable"})
     assert products.label_for(created) == "Readable"

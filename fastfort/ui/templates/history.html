@@ -1,0 +1,102 @@
+{#
+  One row's history, or the whole admin's activity -- the same page, because
+  an entry reads the same either way. The activity page names the row each
+  entry is about; a row's own history does not repeat its name forty times.
+
+  No table of entries: each one has a variable number of changed fields, and a
+  table with a nested table in every row is harder to read than a card per
+  event with the fields inside it.
+#}
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="ff-page-header">
+    <div class="ff-page-header__text">
+      <h1 class="ff-h1">{{ heading }}</h1>
+    </div>
+    {% if back_url %}
+      <div class="ff-page-header__actions">
+        <a class="ff-btn ff-btn--ghost" href="{{ back_url }}">
+          {{ ff_icon("arrow-left", size=15) }}
+          {{ _("Back") }}
+        </a>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if events %}
+    {% for event in events %}
+      <section class="ff-card ff-audit">
+        <div class="ff-card__header ff-audit__head">
+          <span class="ff-badge ff-badge--{{ event.tone }}">{{ event.verb }}</span>
+          {% if event.label and (event.url or event.model_title) %}
+            <span class="ff-audit__what">
+              {% if event.url %}
+                <a class="ff-link" href="{{ event.url }}">{{ event.label }}</a>
+              {% else %}
+                {{ event.label }}
+              {% endif %}
+              {% if event.model_title %}
+                <span class="ff-muted">· {{ event.model_title }}</span>
+              {% endif %}
+            </span>
+          {% endif %}
+          {# Joined with a filter rather than with inline `{% if %}`s: the renderer
+             trims the newline after a block tag, which glues the pieces
+             together with no space between them. #}
+          <span class="ff-muted ff-audit__who">
+            {{ [event.user, event.address]|select|join(" · ") }}
+            {% if event.at %}
+              · <time datetime="{{ event.at.isoformat() }}">{{ event.at|ff_display }}</time>
+            {% endif %}
+          </span>
+        </div>
+        {% if event.changes %}
+          <div class="ff-table-wrap">
+            <table class="ff-table">
+              <thead>
+                <tr>
+                  <th scope="col">{{ _("Field") }}</th>
+                  <th scope="col">{{ _("Before") }}</th>
+                  <th scope="col">{{ _("After") }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for change in event.changes %}
+                  <tr>
+                    <td>{{ change.label }}</td>
+                    <td>{{ change.before|ff_display }}</td>
+                    <td>{{ change.after|ff_display }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </section>
+    {% endfor %}
+
+    {% if newer_url or older_url %}
+      <nav class="ff-pagination ff-no-print" aria-label="{{ _("Pagination") }}">
+        {% if newer_url %}
+          <a class="ff-btn ff-btn--ghost" href="{{ newer_url }}" rel="prev">
+            {{ ff_icon("chevron-left", size=15) }} {{ _("Newer") }}
+          </a>
+        {% endif %}
+        {% if older_url %}
+          <a class="ff-btn ff-btn--ghost" href="{{ older_url }}" rel="next">
+            {{ _("Older") }} {{ ff_icon("chevron-right", size=15) }}
+          </a>
+        {% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <div class="ff-empty">
+      <div class="ff-empty__icon" aria-hidden="true">{{ ff_icon("clock", size=22) }}</div>
+      <div class="ff-empty__title">{{ _("Nothing recorded yet") }}</div>
+      <p class="ff-empty__body">
+        {{ _("Changes made through the admin will appear here.") }}
+      </p>
+    </div>
+  {% endif %}
+{% endblock %}

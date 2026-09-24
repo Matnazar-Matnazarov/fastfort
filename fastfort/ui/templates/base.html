@@ -117,6 +117,17 @@
             </a>
           {% endif %}
 
+          {% if activity_url %}
+            <a
+              class="ff-nav-item"
+              href="{{ activity_url }}"
+              {% if activity_current %}aria-current="page" {% endif %}
+            >
+              <span class="ff-nav-item__icon">{{ ff_icon("clock") }}</span>
+              <span class="ff-collapsible">{{ _("Activity") }}</span>
+            </a>
+          {% endif %}
+
           {% for group in nav %}
             <div class="ff-nav-group">
               {# Not `ff-collapsible`: collapsed it becomes the rule between the

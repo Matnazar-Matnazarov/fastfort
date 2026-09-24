@@ -63,6 +63,9 @@ class FastFort:
         self._api_tokens: Any = None
         #: Set by `enable_favorites`. `None` means no star is drawn anywhere.
         self._favorites: Any = None
+        #: Set by `enable_audit_log`. `None` means no History link and no
+        #: Activity page.
+        self._audit_log: Any = None
 
     def __repr__(self) -> str:
         state = "mounted" if self._mounted_on is not None else "not mounted"
@@ -329,6 +332,39 @@ class FastFort:
     def favorites(self) -> Any:
         """The favorites service, or `None` until `enable_favorites` is called."""
         return self._favorites
+
+    def enable_audit_log(self, model: type) -> Any:
+        """Record every create, change and delete the admin makes::
+
+            from fastfort.orm.sqlalchemy import AuditEntryMixin
+
+            class AuditEntry(AuditEntryMixin, Base):
+                __tablename__ = "admin_audit"
+
+            fort.enable_audit_log(AuditEntry)
+
+        Each entry names who, when, from which address, and for a change which
+        fields went from what to what -- diffed before-against-after, so a form
+        with twenty fields and one edit logs one change. Sensitive columns are
+        never written. Every record gains a *History* page and the sidebar an
+        *Activity* page.
+
+        A listener on the CRUD hooks and nothing more -- see
+        `contrib/audit.py` for what that means for writes made outside the
+        admin, and why a failed write is logged rather than raised.
+        """
+        from fastfort.contrib.audit import AuditLog
+
+        audit = AuditLog(self, model)
+        audit.check()
+        audit.attach()
+        self._audit_log = audit
+        return audit
+
+    @property
+    def audit_log(self) -> Any:
+        """The audit log, or `None` until `enable_audit_log` is called."""
+        return self._audit_log
 
     # -- dashboard ----------------------------------------------------------
 
