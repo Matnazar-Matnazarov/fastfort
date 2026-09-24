@@ -16,7 +16,7 @@ from decimal import Decimal
 import sqlalchemy as sa
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from fastfort.orm.sqlalchemy import ApiTokenMixin, SignInRecordMixin
+from fastfort.orm.sqlalchemy import ApiTokenMixin, FavoriteMixin, SignInRecordMixin
 
 
 class Base(DeclarativeBase):
@@ -196,3 +196,14 @@ class ApiToken(ApiTokenMixin, Base):
     """
 
     __tablename__ = "api_token"
+
+
+class Favorite(FavoriteMixin, Base):
+    """Where `fort.enable_favorites(...)` writes.
+
+    From the shipped mixin for the same reason the two above are -- and here it
+    also proves the `__table_args__` the mixin declares survive being inherited,
+    which a hand-written copy of the columns would not exercise at all.
+    """
+
+    __tablename__ = "favorite"

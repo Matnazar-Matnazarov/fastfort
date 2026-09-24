@@ -61,6 +61,8 @@ class FastFort:
         #: again -- an API that signs people in writes its own rows through it.
         self._sign_in_recorder: Any = None
         self._api_tokens: Any = None
+        #: Set by `enable_favorites`. `None` means no star is drawn anywhere.
+        self._favorites: Any = None
 
     def __repr__(self) -> str:
         state = "mounted" if self._mounted_on is not None else "not mounted"
@@ -293,6 +295,40 @@ class FastFort:
     def api_tokens(self) -> Any:
         """The token service, or `None` until `enable_api_tokens` is called."""
         return self._api_tokens
+
+    def enable_favorites(self, model: type) -> Any:
+        """Let people star rows, against a table the project owns::
+
+            from fastfort.orm.sqlalchemy import FavoriteMixin
+
+            class Favorite(FavoriteMixin, Base):
+                __tablename__ = "admin_favorite"
+
+            fort.enable_favorites(Favorite)
+
+        A star appears on every list row and every change form, and the stars
+        of every model collect on one page. It is per-account: what somebody
+        stars is where they left off, not a property of the row.
+
+        One table serves every registered model, which is why the target is
+        named by a registry key and a primary key rather than by a foreign key
+        -- see `auth/favorites.py` for why, and for what that costs.
+
+        The columns are checked here rather than on the first click, so a
+        mistyped schema names itself at start-up.
+        """
+        from fastfort.auth.favorites import Favorites
+
+        favorites = Favorites(self, model)
+        favorites.check()
+        favorites.attach()
+        self._favorites = favorites
+        return favorites
+
+    @property
+    def favorites(self) -> Any:
+        """The favorites service, or `None` until `enable_favorites` is called."""
+        return self._favorites
 
     # -- dashboard ----------------------------------------------------------
 

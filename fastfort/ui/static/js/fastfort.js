@@ -144,6 +144,9 @@
     To: "To",
     Bounds: "Bounds",
     InvalidAddress: "Invalid address",
+    AddFavourite: "Add to favourites",
+    RemoveFavourite: "Remove from favourites",
+    Failed: "Something went wrong",
   };
 
   /* Every widget registers here. Called once on load and again on any fragment
@@ -3238,6 +3241,69 @@
       load(new URLSearchParams(window.location.search), { push: false });
     });
   };
+
+  // =========================================================================
+  // Starring a row without leaving the page
+  //
+  // The button is a real submit for a real form, so with scripting off a star
+  // posts and the page comes back with the row starred. That round trip is the
+  // whole page for one bit, and on a list somebody is scanning it loses their
+  // scroll position -- so this posts the same form in the background and swaps
+  // the icon in place.
+  //
+  // Delegated from the document rather than bound per button: the list is
+  // re-rendered by live updates, and a listener attached to a button that gets
+  // replaced stops working with nothing to show for it.
+  // =========================================================================
+
+  const setStar = (button, on) => {
+    button.dataset.ffStarred = on ? "1" : "0";
+    button.classList.toggle("is-on", on);
+    button.setAttribute("aria-pressed", on ? "true" : "false");
+    button.dataset.ffTip = on ? t("RemoveFavourite") : t("AddFavourite");
+    const svg = button.querySelector("svg");
+    if (svg) svg.replaceWith(icon(on ? "star-filled" : "star", 15));
+  };
+
+  document.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-ff-star]");
+    if (!button) return;
+    const form = button.form;
+    if (!form) return;
+
+    event.preventDefault();
+    const body = new FormData(form);
+    // A submit button's own name/value are not in `FormData(form)` -- the
+    // browser adds them only for a real submission, which this is replacing.
+    body.set("object_key", button.value);
+
+    button.disabled = true;
+    try {
+      const response = await fetch(form.action, {
+        method: "POST",
+        body,
+        headers: { "X-FastFort-Partial": "favorite" },
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        // A refusal is the server's to explain: the ceiling on how many rows
+        // one account may star is the expected one, and inventing a sentence
+        // here would be a second copy of it in a language nobody chose.
+        const detail = await response.json().catch(() => ({}));
+        toast(detail.error || t("Failed"), "danger");
+        return;
+      }
+      const answer = await response.json();
+      setStar(button, answer.starred);
+    } catch {
+      // Offline or blocked. Fall back to the thing that always works rather
+      // than leaving a button that silently does nothing.
+      form.submit();
+      return;
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   // =========================================================================
   // Start

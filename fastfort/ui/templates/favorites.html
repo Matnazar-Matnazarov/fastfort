@@ -1,0 +1,69 @@
+{#
+  Everything the signed-in account has starred, grouped by model.
+
+  Not a list view: there is no query behind it to sort, filter or paginate --
+  the rows come from several tables and were resolved one at a time. So it
+  renders as grouped links rather than as a table with controls that could not
+  work.
+#}
+{% extends "base.html" %}
+
+{% block content %}
+  <div class="ff-page-header">
+    <div class="ff-page-header__text">
+      <h1 class="ff-h1">{{ _("Favourites") }}</h1>
+      <p class="ff-muted ff-mt-2">
+        {% if total %}
+          {{ _("{n} starred", n=total) }}
+        {% else %}
+          {{ _("Nothing starred yet") }}
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  {% if groups %}
+    {% for group in groups %}
+      <section class="ff-card ff-fav-group">
+        <div class="ff-card__header">
+          <h2 class="ff-card__title">
+            {% if group.icon %}{{ ff_icon(group.icon, size=16) }}{% endif %}
+            <a class="ff-link" href="{{ group.url }}">{{ group.title }}</a>
+          </h2>
+        </div>
+        <ul class="ff-fav-list">
+          {% for row in group.rows %}
+            <li class="ff-fav-item">
+              <a class="ff-fav-item__link" href="{{ row.url }}">{{ row.label }}</a>
+              {# Its own form per row here, unlike the list view: this page has
+                 no table wrapped in a form, so there is nothing to nest inside
+                 and one form per row keeps each button's target obvious. #}
+              <form method="post" action="{{ row.favorite_url }}" class="ff-fav-item__off">
+                <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+                <input type="hidden" name="next" value="{{ current_path }}" />
+                <input type="hidden" name="object_key" value="{{ row.object_key }}" />
+                <button
+                  class="ff-action ff-action--star is-on"
+                  type="submit"
+                  data-ff-tip="{{ _("Remove from favourites") }}"
+                  data-ff-tip-align="end"
+                >
+                  {{ ff_icon("star-filled", size=15) }}
+                  <span class="ff-sr-only">{{ _("Remove {name} from favourites", name=row.label) }}</span>
+                </button>
+              </form>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endfor %}
+  {% else %}
+    <div class="ff-empty">
+      <div class="ff-empty__icon" aria-hidden="true">{{ ff_icon("star", size=22) }}</div>
+      <div class="ff-empty__title">{{ _("Nothing starred yet") }}</div>
+      <p class="ff-empty__body">
+        {{ _("Star a row from any list and it will wait for you here.") }}
+      </p>
+    </div>
+  {% endif %}
+{% endblock %}

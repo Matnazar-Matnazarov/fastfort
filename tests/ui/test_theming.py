@@ -208,7 +208,7 @@ def _gzipped(*blobs: bytes) -> int:
 
 
 def test_the_everyday_page_stays_within_budget(css: str) -> None:
-    """What every page downloads is budgeted at 75 KB gzipped: the stylesheet,
+    """What every page downloads is budgeted at 76.5 KB gzipped: the stylesheet,
     `boot.js` and `fastfort.js`.
 
     Both halves are weighed, not just the stylesheet. The budget exists to keep
@@ -304,6 +304,13 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
     rather than any new state. It deliberately reuses the browser's own focus
     ring instead of drawing a second notion of "current" that could drift
     from the first.
+
+    Raised again, to 76,500 bytes, for favourites: a star on every list row
+    and change form, and a page collecting what one account starred. The star
+    is a real submit button, so it works with scripting off; the sixty lines of
+    script only answer the press in place, because a round trip that reloads a
+    list to flip one bit loses the scroll position somebody was scanning with.
+    It has to be on the everyday path -- a list view is where rows get starred.
     """
     js = CSS_DIR.parent / "js"
     scripts = [js / name for name in ALWAYS_LOADED]
@@ -311,11 +318,11 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
     assert not missing, f"the budget cannot pass by measuring nothing: {missing}"
 
     compressed = _gzipped(css.encode("utf-8"), *(path.read_bytes() for path in scripts))
-    assert compressed < 75_000, f"{compressed} bytes gzipped"
+    assert compressed < 76_500, f"{compressed} bytes gzipped"
 
 
 def test_the_whole_front_end_stays_within_budget(css: str) -> None:
-    """Everything that ships, on-demand bundles included, is budgeted at 97,000 bytes.
+    """Everything that ships, on-demand bundles included, is budgeted at 98,500 bytes.
 
     The per-page budget above is the one that protects the common case, but on
     its own it would be a budget with a hole in it: anything could be moved into
@@ -347,7 +354,10 @@ def test_the_whole_front_end_stays_within_budget(css: str) -> None:
     alternative was a sidebar that marked "you are here" below the fold on every
     navigation.
 
-    Raised again, to 97,000, for `fieldsets`, `inlines`, the density control
+    Raised again, to 98,500, for favourites -- see the matching note on the
+    everyday budget above; none of it lives in an on-demand bundle.
+
+    Before it, to 97,000, for `fieldsets`, `inlines`, the density control
     and list keyboard navigation -- see the matching note on the everyday
     budget above, which is the one this raise actually costs: a form and a
     list are the two pages every admin has, so none of it could live in an
@@ -364,7 +374,7 @@ def test_the_whole_front_end_stays_within_budget(css: str) -> None:
     assert scripts, "the budget cannot pass by measuring nothing"
 
     compressed = _gzipped(css.encode("utf-8"), *(script.read_bytes() for script in scripts))
-    assert compressed < 97_000, f"{compressed} bytes gzipped"
+    assert compressed < 98_500, f"{compressed} bytes gzipped"
 
 
 # ---------------------------------------------------------------------------

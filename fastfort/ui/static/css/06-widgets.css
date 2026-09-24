@@ -1227,6 +1227,18 @@
   color: var(--ff-danger);
 }
 
+/* A star that is on keeps its colour without a hover, because it is reporting
+ * state rather than offering an action -- every other row action is the second
+ * thing and recedes until pointed at. The hue is the accent the whole palette
+ * derives from, so a rebrand carries it. */
+.ff-action--star.is-on {
+  color: var(--ff-accent);
+}
+
+.ff-action--star:hover {
+  color: var(--ff-accent);
+}
+
 /* ===========================================================================
  * Tooltip
  *
@@ -2901,4 +2913,59 @@ a.ff-upload__name {
 .ff-import__list dd {
   margin: 0;
   min-width: 0;
+}
+
+/* ===========================================================================
+ * Favourites
+ *
+ * Grouped links rather than a table: the rows come from several models and
+ * were resolved one at a time, so there is no query behind them to sort or
+ * paginate and no honest way to draw the controls that would imply there is.
+ * ======================================================================== */
+
+.ff-fav-group + .ff-fav-group {
+  margin-block-start: var(--ff-space-5);
+}
+
+.ff-fav-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ff-fav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ff-space-3);
+  padding-inline: var(--ff-space-6);
+  padding-block: var(--ff-space-3);
+}
+
+.ff-fav-item + .ff-fav-item {
+  border-block-start: 1px solid var(--ff-border);
+}
+
+.ff-fav-item:hover {
+  background: var(--ff-surface-hover);
+}
+
+/* The link takes the whole row so the target is the row, not the words in it
+ * -- the same reason a list row is clickable anywhere. */
+.ff-fav-item__link {
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ff-fav-item__link:hover {
+  color: var(--ff-accent);
+}
+
+.ff-fav-item__off {
+  flex: none;
+  display: flex;
 }

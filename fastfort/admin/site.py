@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
+    JSONResponse,
     RedirectResponse,
     Response,
     StreamingResponse,
@@ -288,6 +289,11 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             "admin_url": admin_url,
             "version": __version__,
             "current_key": current_key,
+            # `None` when the feature is off, which is all the sidebar checks.
+            # No count beside it: that would be one query on every page of the
+            # admin to render a number nobody navigates by.
+            "favorites_url": f"{admin_url}/favorites" if fort.favorites is not None else None,
+            "favorites_current": request.url.path.rstrip("/") == f"{admin_url}/favorites",
             "nav": _navigation(fort, list_url),
             # What Ctrl+K searches. Sent with the page rather than fetched on
             # open: it is the sidebar's own contents, a few hundred bytes, and a
@@ -601,6 +607,117 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         }
         return page(request, "dashboard.html", context)
 
+    # -- favorites ----------------------------------------------------------
+
+    #: Declared before `/{model_key}/`, which would otherwise match "favorites"
+    #: as a registry key and answer 404 for a page that exists.
+    @router.get("/favorites", response_class=HTMLResponse, name="fastfort:favorites")
+    async def favorites_view(request: Request) -> HTMLResponse:
+        if fort.favorites is None:
+            raise HTTPException(status_code=404, detail="Favorites are not enabled.")
+
+        user = request.scope.get("fastfort_user")
+        entries = await fort.favorites.list_for_user(user=user)
+
+        translate = translator_for(request)
+        # Grouped by model, because a flat list of forty rows drawn from six
+        # tables reads as noise -- the model is what tells you what you are
+        # looking at when the label alone is "1042".
+        groups: dict[str, dict[str, Any]] = {}
+        for entry in entries:
+            group = groups.setdefault(
+                entry.model_key,
+                {
+                    "model_key": entry.model_key,
+                    "title": _title_of(
+                        getattr(fort.registry.get_by_key(entry.model_key), "admin", None),
+                        entry.model_key,
+                    ),
+                    "url": list_url(entry.model_key),
+                    "icon": getattr(
+                        getattr(fort.registry.get_by_key(entry.model_key), "admin", None),
+                        "icon",
+                        None,
+                    ),
+                    "rows": [],
+                },
+            )
+            group["rows"].append(
+                {
+                    "label": entry.label,
+                    "url": f"{admin_url}/{entry.model_key}/{quote(entry.object_key, safe='')}/",
+                    "object_key": entry.object_key,
+                    "favorite_url": f"{admin_url}/{entry.model_key}/favorite",
+                }
+            )
+
+        context = base_context(request, None) | {
+            "page_title": translate("Favourites"),
+            "breadcrumbs": ({"label": translate("Favourites"), "url": None},),
+            "groups": list(groups.values()),
+            "total": len(entries),
+        }
+        return page(request, "favorites.html", context)
+
+    @router.post("/{model_key}/favorite", name="fastfort:favorite")
+    async def favorite_toggle(request: Request, model_key: str) -> Any:
+        """Star or unstar one row, and return to where the press came from.
+
+        A redirect rather than a rendered page: this is a POST that changes one
+        bit, and answering it with HTML would leave a resubmittable form in the
+        history of every list anybody stars from. `fastfort.js` intercepts it
+        and swaps the button in place, so the redirect is the no-script path.
+        """
+        if fort.favorites is None:
+            raise HTTPException(status_code=404, detail="Favorites are not enabled.")
+
+        try:
+            await verify_csrf(request)
+        except SecurityError as exc:
+            # Handled rather than raised, the same way `add_submit` handles it:
+            # a stale tab is the common cause, and a traceback is a worse
+            # answer to it than a sentence and the page back.
+            return redirect(list_url(model_key), notices.danger(exc.message))
+
+        model_admin = _require_admin(admin_for, model_key)
+        form = await request.form()
+        raw = str(form.get("object_key") or "")
+        entry = fort.registry.entry_for_key(model_key)
+
+        async with fort.backend.unit_of_work() as uow:
+            adapter = fort.backend.adapter(entry.model, uow, key=model_key)
+            obj = await _require_object(adapter, parse_key(model_admin.spec, raw))
+            # Read the label now: `toggle` opens work of its own, and past this
+            # block the instance is detached.
+            label = adapter.label_for(obj)
+
+        # `next` comes from a hidden field in a form on some page of this
+        # admin, which is exactly the shape `?next=//evil.com` exploits.
+        back = safe_next_url(str(form.get("next") or ""), fallback=list_url(model_key))
+
+        # `fastfort.js` asks for the answer rather than the page, the same way
+        # a live list update does. Without this the script's fetch would follow
+        # the 303 and pull a whole list page down to learn one bit.
+        quiet = request.headers.get("x-fastfort-partial") == "favorite"
+
+        user = request.scope.get("fastfort_user")
+        try:
+            starred = await fort.favorites.toggle(user=user, model_key=model_key, obj=obj)
+        except ValidationError as exc:
+            if quiet:
+                return JSONResponse({"error": str(exc)}, status_code=409)
+            return redirect(back, Message(MessageLevel.WARNING, str(exc)))
+
+        translate = translator_for(request)
+        note = (
+            translate("{name} added to favourites", name=label)
+            if starred
+            else translate("{name} removed from favourites", name=label)
+        )
+        if quiet:
+            return JSONResponse({"starred": starred, "message": note})
+        return redirect(back, Message(MessageLevel.SUCCESS, note))
+
     # -- list ---------------------------------------------------------------
 
     @router.get("/{model_key}/", response_class=HTMLResponse, name="fastfort:list")
@@ -680,6 +797,12 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         columns = tuple(model_admin.columns())
         context_translator = translator_for(request)
 
+        # One query for the whole page, outside the unit of work above because
+        # the favorites table is not this model's. `frozenset()` when the
+        # feature is off, which is what makes the template's star disappear
+        # without a second condition anywhere.
+        starred = await _starred_keys(fort, request, model_key)
+
         def page_url(number: int) -> str:
             return _with_params(list_url(model_key), params, {"p": str(number)})
 
@@ -736,6 +859,12 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 columns,
                 f"{admin_url}/{model_key}",
                 media_url=f"{admin_url}/media",
+                starred=starred,
+            ),
+            # `None` when the feature is off, which is the only thing the
+            # template checks before drawing a star at all.
+            "favorite_url": (
+                f"{admin_url}/{model_key}/favorite" if fort.favorites is not None else None
             ),
             "filters": filter_controls,
             # Named in the delete confirmation, so it says what else goes. Not
@@ -1317,6 +1446,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         label: str = "",
         pk: tuple[Any, ...] | None = None,
         inlines: list[InlineSet] | None = None,
+        starred: bool = False,
     ) -> dict[str, Any]:
         # A popup is the same form without the shell: it is opened from a field
         # on another form, so a sidebar full of other models is noise, and there
@@ -1379,6 +1509,19 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             "popup": popup,
             "cascades": () if model_admin.soft_delete_field is not None else _cascades(model_admin),
             "delete_url": f"{object_url(model_key, pk)}delete" if editing else None,
+            # Nothing to star until the row exists, and nothing to star *from*
+            # inside a popup: that window belongs to the field that opened it
+            # and closes as soon as it has answered.
+            "favorite_url": (
+                f"{admin_url}/{model_key}/favorite"
+                if editing and not popup and fort.favorites is not None
+                else None
+            ),
+            "starred": starred,
+            # Unquoted -- this goes into a form field rather than a URL, and
+            # quoting it here would have the endpoint look up a key escaped
+            # twice. Same reasoning as `row.key` in `_rows`.
+            "object_key": "~".join(str(part) for part in pk),
             "object_label": label if editing else "",
             "submit_label": (
                 translate("Save changes") if editing else translate("Create {name}", name=singular)
@@ -1547,6 +1690,11 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             )
             label = adapter.label_for(instance)
             sets = await inline_sets(model_key, model_admin, uow, adapter.primary_key_of(instance))
+            row_key = "~".join(str(part) for part in adapter.primary_key_of(instance))
+
+        # One membership test against the set the list view already knows how
+        # to fetch, rather than a second query shaped only for this page.
+        starred = row_key in await _starred_keys(fort, request, model_key)
 
         return page(
             request,
@@ -1559,6 +1707,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 instance=instance,
                 label=label,
                 inlines=sets,
+                starred=starred,
             ),
         )
 
@@ -2470,6 +2619,21 @@ def _instantiate(admin: Any, spec: ModelSpec) -> ModelAdmin:
     return ModelAdmin(spec)
 
 
+async def _starred_keys(fort: FastFort, request: Request, model_key: str) -> frozenset[str]:
+    """Which rows of this model the signed-in account has starred.
+
+    Empty whenever the feature is off or nobody is signed in, so every caller
+    can pass the result straight through without asking which of the two it is.
+    """
+    if fort.favorites is None:
+        return frozenset()
+    user = request.scope.get("fastfort_user")
+    if user is None:
+        return frozenset()
+    keys: frozenset[str] = await fort.favorites.starred_keys(user=user, model_key=model_key)
+    return keys
+
+
 def _navigation(fort: FastFort, list_url: Any) -> list[dict[str, Any]]:
     """The sidebar, grouped by the namespace half of each registry key."""
     return [
@@ -2576,6 +2740,12 @@ def _ui_text(translate: Translator) -> dict[str, str]:
         "to": translate("To"),
         "bounds": translate("Bounds"),
         "invalid-address": translate("Invalid address"),
+        # The star on a list row, relabelled in place when a press is answered
+        # without reloading the page -- so the new tooltip has to come from
+        # here, not from the template that drew the old one.
+        "add-favourite": translate("Add to favourites"),
+        "remove-favourite": translate("Remove from favourites"),
+        "failed": translate("Something went wrong"),
     }
 
 
@@ -2680,6 +2850,7 @@ def _rows(
     columns: tuple[str, ...],
     base: str,
     media_url: str = "",
+    starred: frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
     links = admin.link_columns()
     # An image column in `list_display` used to print its stored path, which is
@@ -2749,6 +2920,9 @@ def _rows(
                 "label": str(obj),
                 "edit_url": change_url,
                 "delete_url": f"{change_url}delete",
+                # Resolved from one set fetched for the whole page. Asking per
+                # row would be a query per row to draw a table.
+                "starred": raw_key in starred,
             }
         )
 
