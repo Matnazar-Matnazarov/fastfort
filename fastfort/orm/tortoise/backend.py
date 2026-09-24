@@ -239,6 +239,12 @@ class TortoiseBackend:
         self._specs[model] = spec
         return spec
 
+    def snapshot(self, model: type, obj: Any, *, key: str) -> dict[str, Any]:
+        # No unit of work: `in_transaction` would take a connection the
+        # request may still be holding. `snapshot` never touches one anyway.
+        spec = self.introspect(model, key=key)
+        return TortoiseAdapter(model, spec, None, self.profile).snapshot(obj)
+
     def adapter(
         self,
         model: type,

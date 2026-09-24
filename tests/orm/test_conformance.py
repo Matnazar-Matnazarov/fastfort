@@ -523,6 +523,23 @@ async def test_a_snapshot_omits_sensitive_values_entirely(orm: Harness) -> None:
     assert state["name"] == "Pixel Phone"
 
 
+async def test_the_backend_snapshots_a_row_without_a_unit_of_work(orm: Harness) -> None:
+    """What a hook listener is handed is a row and no transaction -- and past
+    the commit, none is open. The backend answers the same as an adapter
+    would, sensitive values still omitted, and after the unit of work that
+    loaded the row has closed."""
+    async with orm.backend.unit_of_work() as uow:
+        adapter = orm.adapter(uow, "Product")
+        product = await adapter.get((1,))
+        expected = adapter.snapshot(product)
+
+    state = orm.backend.snapshot(orm.models.Product, product, key="shop.product")
+
+    assert state == expected
+    assert "api_secret" not in state
+    assert state["name"] == "Pixel Phone"
+
+
 async def test_a_deletion_plan_names_what_else_would_change(orm: Harness) -> None:
     """Read before anything is written, so the confirmation page can say what
     else goes -- and honest about the effect: `Product.category` is nullable

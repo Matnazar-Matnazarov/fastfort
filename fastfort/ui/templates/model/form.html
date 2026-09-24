@@ -103,6 +103,30 @@
       {% endif %}
     </div>
     <div class="ff-page-header__actions">
+      {% if favorite_url %}
+        {# Its own form, outside the one below: the change form posts field
+           values and a star is not one of them -- submitting it through that
+           form would save the record as a side effect of pressing a star. #}
+        <form method="post" action="{{ favorite_url }}">
+          <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+          <input type="hidden" name="next" value="{{ current_path }}" />
+          <input type="hidden" name="object_key" value="{{ object_key }}" />
+          <button
+            class="ff-btn ff-btn--ghost{% if starred %} is-on{% endif %}"
+            type="submit"
+            aria-pressed="{{ "true" if starred else "false" }}"
+          >
+            {{ ff_icon("star-filled" if starred else "star", size=15) }}
+            {{ _("Starred") if starred else _("Star") }}
+          </button>
+        </form>
+      {% endif %}
+      {% if history_url %}
+        <a class="ff-btn ff-btn--ghost" href="{{ history_url }}">
+          {{ ff_icon("clock", size=15) }}
+          {{ _("History") }}
+        </a>
+      {% endif %}
       <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">
         {{ ff_icon("arrow-left", size=15) }}
         {{ _("Back to {name}", name=model_title|lower) }}

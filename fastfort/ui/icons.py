@@ -172,6 +172,14 @@ ICONS: dict[str, str] = {
         '<path d="M18 9a6 6 0 1 0-12 0c0 6-2 7-2 7h16s-2-1-2-7"/><path d="M10.5 20a2 2 0 0 0 3 0"/>'
     ),
     "star": '<path d="m12 3 2.7 5.7 6.3.9-4.5 4.4 1 6.3-5.5-3-5.5 3 1-6.3L3 9.6l6.3-.9Z"/>',
+    # The one filled icon in the set. A star means "starred" only by contrast
+    # with the hollow one beside it, and outline-versus-outline is a difference
+    # nobody sees at 15px -- the sprite's `fill="none"` is overridden here for
+    # exactly that reason.
+    "star-filled": (
+        '<path fill="currentColor" '
+        'd="m12 3 2.7 5.7 6.3.9-4.5 4.4 1 6.3-5.5-3-5.5 3 1-6.3L3 9.6l6.3-.9Z"/>'
+    ),
     "clock": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     "image": (
         '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/>'

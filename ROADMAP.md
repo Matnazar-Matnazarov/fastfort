@@ -193,7 +193,7 @@ last-used column and a write-once secret shown exactly once. This is close to a
 `ModelAdmin` over a token table plus the hashing `auth/` already does, and it is
 the piece a project needs before anything outside the browser can talk to it.
 
-### 3.2 Audit log, and the per-record activity timeline — *hooks shipped*
+### ~~3.2 Audit log, and the per-record activity timeline~~ — **shipped**
 
 ~~`core/hooks.py` already declares `BEFORE_CREATE`, `AFTER_UPDATE`,
 `BEFORE_DELETE` and the rest, with documented kwargs — and **nothing in
@@ -201,8 +201,11 @@ the piece a project needs before anything outside the browser can talk to it.
 now emits, with `BEFORE_*` inside the transaction so a listener can veto and
 `AFTER_*` after the commit so nothing fires for a change that rolled back.
 
-What remains is the listener: an audit log in `contrib/` with its own table,
-and the per-record timeline that renders it.
+~~What remains is the listener: an audit log in `contrib/` with its own table,
+and the per-record timeline that renders it.~~ **Shipped** —
+`fort.enable_audit_log(...)`, a *History* page per record and an *Activity*
+feed. Values come from a new `Backend.snapshot`, which reads no database and
+omits sensitive columns, so the listener is safe past the commit on both ORMs.
 
 ### 3.3 TOTP two-factor authentication
 

@@ -61,6 +61,11 @@ class FastFort:
         #: again -- an API that signs people in writes its own rows through it.
         self._sign_in_recorder: Any = None
         self._api_tokens: Any = None
+        #: Set by `enable_favorites`. `None` means no star is drawn anywhere.
+        self._favorites: Any = None
+        #: Set by `enable_audit_log`. `None` means no History link and no
+        #: Activity page.
+        self._audit_log: Any = None
 
     def __repr__(self) -> str:
         state = "mounted" if self._mounted_on is not None else "not mounted"
@@ -293,6 +298,73 @@ class FastFort:
     def api_tokens(self) -> Any:
         """The token service, or `None` until `enable_api_tokens` is called."""
         return self._api_tokens
+
+    def enable_favorites(self, model: type) -> Any:
+        """Let people star rows, against a table the project owns::
+
+            from fastfort.orm.sqlalchemy import FavoriteMixin
+
+            class Favorite(FavoriteMixin, Base):
+                __tablename__ = "admin_favorite"
+
+            fort.enable_favorites(Favorite)
+
+        A star appears on every list row and every change form, and the stars
+        of every model collect on one page. It is per-account: what somebody
+        stars is where they left off, not a property of the row.
+
+        One table serves every registered model, which is why the target is
+        named by a registry key and a primary key rather than by a foreign key
+        -- see `auth/favorites.py` for why, and for what that costs.
+
+        The columns are checked here rather than on the first click, so a
+        mistyped schema names itself at start-up.
+        """
+        from fastfort.auth.favorites import Favorites
+
+        favorites = Favorites(self, model)
+        favorites.check()
+        favorites.attach()
+        self._favorites = favorites
+        return favorites
+
+    @property
+    def favorites(self) -> Any:
+        """The favorites service, or `None` until `enable_favorites` is called."""
+        return self._favorites
+
+    def enable_audit_log(self, model: type) -> Any:
+        """Record every create, change and delete the admin makes::
+
+            from fastfort.orm.sqlalchemy import AuditEntryMixin
+
+            class AuditEntry(AuditEntryMixin, Base):
+                __tablename__ = "admin_audit"
+
+            fort.enable_audit_log(AuditEntry)
+
+        Each entry names who, when, from which address, and for a change which
+        fields went from what to what -- diffed before-against-after, so a form
+        with twenty fields and one edit logs one change. Sensitive columns are
+        never written. Every record gains a *History* page and the sidebar an
+        *Activity* page.
+
+        A listener on the CRUD hooks and nothing more -- see
+        `contrib/audit.py` for what that means for writes made outside the
+        admin, and why a failed write is logged rather than raised.
+        """
+        from fastfort.contrib.audit import AuditLog
+
+        audit = AuditLog(self, model)
+        audit.check()
+        audit.attach()
+        self._audit_log = audit
+        return audit
+
+    @property
+    def audit_log(self) -> Any:
+        """The audit log, or `None` until `enable_audit_log` is called."""
+        return self._audit_log
 
     # -- dashboard ----------------------------------------------------------
 

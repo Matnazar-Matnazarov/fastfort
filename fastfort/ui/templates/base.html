@@ -101,6 +101,33 @@
             <span class="ff-collapsible">{{ _("Dashboard") }}</span>
           </a>
 
+          {% if favorites_url %}
+            {# Above the model groups, beside Dashboard: it is a view of the
+               whole admin rather than of one model, and putting it under a
+               group would file it beneath whichever namespace sorts first. #}
+            <a
+              class="ff-nav-item"
+              href="{{ favorites_url }}"
+              {% if favorites_current %}aria-current="page" {% endif %}
+            >
+              {# No count badge. It would be one query on every page of the
+                 admin to render a number nobody navigates by. #}
+              <span class="ff-nav-item__icon">{{ ff_icon("star") }}</span>
+              <span class="ff-collapsible">{{ _("Favourites") }}</span>
+            </a>
+          {% endif %}
+
+          {% if activity_url %}
+            <a
+              class="ff-nav-item"
+              href="{{ activity_url }}"
+              {% if activity_current %}aria-current="page" {% endif %}
+            >
+              <span class="ff-nav-item__icon">{{ ff_icon("clock") }}</span>
+              <span class="ff-collapsible">{{ _("Activity") }}</span>
+            </a>
+          {% endif %}
+
           {% for group in nav %}
             <div class="ff-nav-group">
               {# Not `ff-collapsible`: collapsed it becomes the rule between the

@@ -515,6 +515,31 @@ def test_every_string_the_script_asks_for_is_one_the_server_sends() -> None:
     assert not missing, f"the script asks for strings the server never sends: {missing}"
 
 
+def test_every_call_in_the_main_script_names_a_declared_key() -> None:
+    """The check above starts from `FALLBACK_TEXT`, so it cannot see a call
+    whose key was never declared there.
+
+    The favourites star shipped exactly that: `t("Add to favourites")`, a
+    sentence where a key belongs. `t()` found no `data-ff-t-*` attribute and no
+    fallback for it, returned its argument, and the tooltip read English in all
+    eleven languages -- while every test above passed, because the pattern they
+    read calls with (`\\w+`) does not match a string with a space in it. So this
+    reads every call, whatever is between the quotes.
+    """
+    script = (
+        Path(__file__).resolve().parents[2] / "fastfort" / "ui" / "static" / "js" / "fastfort.js"
+    ).read_text(encoding="utf-8")
+    block = re.search(r"const FALLBACK_TEXT = \{(.*?)\n  \};", script, re.S)
+    assert block, "the script should declare its fallbacks in one place"
+    declared = set(re.findall(r"^\s{4}(\w+):", block.group(1), re.M))
+
+    called = set(re.findall(r'\bt\("([^"]*)"\)', script))
+    assert called, "no t() calls found -- has the helper been renamed?"
+
+    undeclared = sorted(called - declared)
+    assert not undeclared, f"t() is called with keys FALLBACK_TEXT never declares: {undeclared}"
+
+
 def test_the_on_demand_bundles_only_ask_for_strings_that_exist() -> None:
     """`fastfort-geo.js` and `fastfort-data.js` call the same `t()`.
 

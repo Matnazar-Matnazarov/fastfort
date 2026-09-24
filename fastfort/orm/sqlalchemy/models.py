@@ -18,13 +18,14 @@ row, and "who deleted this account, from where" is exactly what these are for.
 from __future__ import annotations
 
 import datetime as dt
+from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
 from fastfort.auth.devices import DEVICE_KINDS
 
-__all__ = ["ApiTokenMixin", "SignInRecordMixin"]
+__all__ = ["ApiTokenMixin", "AuditEntryMixin", "FavoriteMixin", "SignInRecordMixin"]
 
 
 class SignInRecordMixin:
@@ -159,3 +160,121 @@ class ApiTokenMixin:
     revoked_at: Mapped[dt.datetime | None] = mapped_column(
         sa.DateTime(timezone=True), default=None, nullable=True
     )
+
+
+class FavoriteMixin:
+    """Every column `fastfort.auth.Favorites` needs.
+
+        class Favorite(FavoriteMixin, Base):
+            __tablename__ = "admin_favorite"
+
+        fort.enable_favorites(Favorite)
+
+    One table holds the starred rows of every registered model, which is why
+    the target is named by two strings rather than by a foreign key. A column
+    that points at one table cannot point at forty, and the alternative --
+    forty join tables, one per model, created as models are registered -- is a
+    schema that changes when a decorator moves.
+
+    So the target is spelled the way the admin already spells it everywhere
+    else: the registry key for *which model*, and the primary key joined on
+    "~" for *which row*. That is the same pair a URL carries, which means a
+    favorite can be turned back into a link without a lookup.
+
+    The cost of no foreign key is that nothing cascades, and a starred row that
+    is deleted would leave this one behind pointing at nothing. `Favorites`
+    pays that off by listening for `AFTER_DELETE` and clearing the rows itself,
+    and by skipping targets it cannot resolve when it reads -- a row deleted by
+    a migration, outside the admin entirely, still cannot show up as a broken
+    entry on somebody's list.
+    """
+
+    id: Mapped[int] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+
+    #: The registry key of the starred model, `shop.product`. Indexed together
+    #: with `object_key` below rather than on its own.
+    model_key: Mapped[str] = mapped_column(sa.String(120), default="")
+
+    #: The starred row's primary key as text, "~"-joined for a composite one --
+    #: the same spelling `object_key` has in an admin URL.
+    object_key: Mapped[str] = mapped_column(sa.String(255), default="")
+
+    #: Whose star this is. Text rather than a foreign key for the same reason
+    #: as `ApiTokenMixin.user_key`: a mixin cannot know the user table's name.
+    user_key: Mapped[str] = mapped_column(sa.String(64), default="")
+
+    created_at: Mapped[dt.datetime] = mapped_column(
+        sa.DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC)
+    )
+
+    #: Declared by the subclass. Named here so the constraint names below can
+    #: be built from it -- two models inheriting this mixin need two differently
+    #: named constraints, and a fixed name would collide on the second.
+    __tablename__: str
+
+    @declared_attr.directive
+    def __table_args__(cls) -> tuple[Any, ...]:  # noqa: N805
+        # Unique because starring twice is the same statement made twice, and
+        # without this a double-submitted form grows the table forever. The
+        # service still deletes every match when unstarring, so a row that
+        # predates this constraint cannot strand a star that will not turn off.
+        #
+        # The composite index leads with `user_key`: every read is "what has
+        # *this person* starred", either across all models or narrowed to one,
+        # and an index that leads with `model_key` cannot serve the first.
+        return (
+            sa.UniqueConstraint(
+                "user_key", "model_key", "object_key", name=f"uq_{cls.__tablename__}_target"
+            ),
+            sa.Index(f"ix_{cls.__tablename__}_owner", "user_key", "model_key"),
+        )
+
+
+class AuditEntryMixin:
+    """Every column `fastfort.contrib.audit.AuditLog` writes.
+
+        class AuditEntry(AuditEntryMixin, Base):
+            __tablename__ = "admin_audit"
+
+        fort.enable_audit_log(AuditEntry)
+
+    No foreign keys, for the reason `SignInRecordMixin` has none: a log that
+    cascades away with the row or the account it describes cannot answer who
+    deleted either of them. The target is the registry key and the "~"-joined
+    primary key -- the pair an admin URL carries -- and the actor is text.
+    """
+
+    id: Mapped[int] = mapped_column(
+        sa.BigInteger().with_variant(sa.Integer, "sqlite"), primary_key=True, autoincrement=True
+    )
+    at: Mapped[dt.datetime] = mapped_column(
+        sa.DateTime(timezone=True), default=lambda: dt.datetime.now(dt.UTC)
+    )
+    #: `create`, `update` or `delete`.
+    action: Mapped[str] = mapped_column(sa.String(16), default="")
+    model_key: Mapped[str] = mapped_column(sa.String(120), default="")
+    object_key: Mapped[str] = mapped_column(sa.String(255), default="")
+    #: What the row was called when this happened. Stored rather than looked up,
+    #: because a deleted row has nothing left to look up.
+    object_label: Mapped[str] = mapped_column(sa.String(255), default="")
+    user_key: Mapped[str] = mapped_column(sa.String(64), default="")
+    user_label: Mapped[str] = mapped_column(sa.String(255), default="")
+    #: IPv6 at its longest is 45 characters.
+    address: Mapped[str] = mapped_column(sa.String(45), default="")
+    #: JSON, `{"field": [before, after]}`. Text rather than a JSON column so the
+    #: one mixin works on SQLite, PostgreSQL and MySQL without a dialect branch.
+    changes: Mapped[str] = mapped_column(sa.Text, default="")
+
+    __tablename__: str
+
+    @declared_attr.directive
+    def __table_args__(cls) -> tuple[Any, ...]:  # noqa: N805
+        # The two questions this table is asked: "what happened to this row",
+        # which the history page asks, and "what happened lately", which the
+        # activity page asks. Each index leads with what its question filters on.
+        return (
+            sa.Index(f"ix_{cls.__tablename__}_target", "model_key", "object_key", "at"),
+            sa.Index(f"ix_{cls.__tablename__}_at", "at"),
+        )

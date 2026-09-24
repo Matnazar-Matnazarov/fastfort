@@ -153,6 +153,27 @@
                    the actions were invisible until the mouse found them, and
                    invisible altogether on a touch screen. #}
                 <div class="ff-row-actions">
+                  {% if favorite_url %}
+                    {# Owned by the single form below the table, not by one form
+                       per row: `list_editable` already wraps the table in a
+                       form and a nested one is invalid markup the browser
+                       silently drops. A submit button carries its own
+                       name/value, so one form serves every row. #}
+                    <button
+                      class="ff-action ff-action--star{% if row.starred %} is-on{% endif %}"
+                      type="submit"
+                      form="ff-star"
+                      name="object_key"
+                      value="{{ row.key }}"
+                      data-ff-star
+                      data-ff-starred="{{ "1" if row.starred else "0" }}"
+                      data-ff-tip="{{ _("Remove from favourites") if row.starred else _("Add to favourites") }}"
+                      aria-pressed="{{ "true" if row.starred else "false" }}"
+                    >
+                      {{ ff_icon("star-filled" if row.starred else "star", size=15) }}
+                      <span class="ff-sr-only">{{ _("Remove {name} from favourites", name=row.label) if row.starred else _("Add {name} to favourites", name=row.label) }}</span>
+                    </button>
+                  {% endif %}
                   <a
                     class="ff-action"
                     href="{{ row.edit_url }}"
@@ -198,6 +219,18 @@
             {{ _("Save changes") }}
           </button>
         </div>
+      </form>
+    {% endif %}
+
+    {% if favorite_url %}
+      {# One form for every star on the page, referenced by `form="ff-star"`
+         from each button. Outside the `list_editable` form on purpose -- a
+         form inside a form is markup no browser keeps. `next` returns to this
+         list with its filters and page intact; it is validated server-side
+         against the open-redirect it otherwise would be. #}
+      <form id="ff-star" method="post" action="{{ favorite_url }}" class="ff-sr-only">
+        <input type="hidden" name="{{ csrf_field }}" value="{{ csrf_token }}" />
+        <input type="hidden" name="next" value="{{ current_path }}" />
       </form>
     {% endif %}
 
