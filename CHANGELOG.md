@@ -45,6 +45,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The map beside a geometry field showed OpenStreetMap's 403 "Access blocked"
+  picture on every tile. The admin's `Referrer-Policy: same-origin` meant a
+  tile request carried no Referer, which OpenStreetMap's usage policy refuses.
+  Tiles now set `referrerPolicy="origin"`: the tile server learns which
+  deployment is asking, never the admin URL naming the row being viewed.
 - `SQLAlchemyAdapter.snapshot` read expired columns, which is a lazy SELECT:
   after a flush expired an `onupdate` column, a snapshot taken past the commit
   raised `MissingGreenlet`. Unloaded columns are now omitted.
