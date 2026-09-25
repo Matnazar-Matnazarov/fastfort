@@ -1077,6 +1077,13 @@
           // Called when the tile is discarded before it settled. Removing an
           // <img> mid-request does not reliably fire either event.
           image.ffRetire = () => done(false);
+          // The page-wide policy is `same-origin`, so without this a tile request
+          // carries no Referer at all -- and OpenStreetMap answers a refererless
+          // request with a 403 "Access blocked" picture, tiled across the whole
+          // map. `origin` sends the scheme and host only: the tile server learns
+          // which deployment asks (what its usage policy requires) and never the
+          // admin URL, which names the model and the row being viewed.
+          image.referrerPolicy = "origin";
           image.src = source;
 
           layer.element.append(image);

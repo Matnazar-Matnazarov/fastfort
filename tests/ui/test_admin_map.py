@@ -468,3 +468,16 @@ async def test_the_size_of_the_canvas_is_not_measured_every_frame(
 
     observer = script[script.index("new ResizeObserver(") :].split("observe(", 1)[0]
     assert "this.box = null" in observer, "a resize has to invalidate what it invalidated"
+
+
+def test_tiles_are_requested_with_the_origin_as_referer() -> None:
+    """The page policy is `same-origin`, so an <img> that does not override it
+    sends no Referer, and OpenStreetMap answers that with a 403 picture."""
+    from pathlib import Path
+
+    import fastfort
+
+    script = Path(fastfort.__file__).parent / "ui/static/js/fastfort-geo.js"
+    text = script.read_text(encoding="utf-8")
+
+    assert text.index('image.referrerPolicy = "origin"') < text.index("image.src = source;")
