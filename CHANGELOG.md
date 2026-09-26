@@ -10,6 +10,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-26
+
+Favourites and an audit log: the admin now remembers what each account keeps
+coming back to, and what every account changed.
+
 ### Breaking
 
 - The `Backend` protocol gained `snapshot(model, obj, *, key)`. Both shipped
@@ -1538,7 +1543,11 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.4.4...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.4.1...v0.4.2
