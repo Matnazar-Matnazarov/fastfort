@@ -1760,6 +1760,25 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             ),
         )
 
+    # `/add/` and friends would otherwise fall through to the change route below,
+    # be read as the row whose key is "add", and answer 404. That is the URL a
+    # Django hand types first and the one a browser offers from history, so a
+    # working page looked missing. Registered before the change route because
+    # FastAPI matches in order; 307 keeps the method and the query string.
+    async def model_page_slash(request: Request, model_key: str) -> RedirectResponse:
+        target = request.url.path.rstrip("/")
+        if request.url.query:
+            target = f"{target}?{request.url.query}"
+        return RedirectResponse(target, status_code=307)
+
+    for slashless in ("add", "export", "import"):
+        router.add_api_route(
+            f"/{{model_key}}/{slashless}/",
+            model_page_slash,
+            methods=["GET"],
+            include_in_schema=False,
+        )
+
     @router.get("/{model_key}/{object_key}/", response_class=HTMLResponse, name="fastfort:change")
     async def change_form(request: Request, model_key: str, object_key: str) -> Any:
         model_admin = _require_admin(admin_for, model_key)

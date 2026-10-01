@@ -133,6 +133,19 @@ async def test_the_list_offers_a_way_to_add(client: httpx.AsyncClient) -> None:
     assert 'href="/admin/shop.product/add"' in body
 
 
+@pytest.mark.parametrize("page", ["add", "export"])
+async def test_a_trailing_slash_on_a_model_page_redirects(
+    client: httpx.AsyncClient, page: str
+) -> None:
+    """`/add/` used to be read as the change page of a row whose key is "add",
+    and answered 404 -- the URL a Django hand types first, and the one a
+    browser autocompletes from history."""
+    response = await client.get(f"/admin/shop.product/{page}/?format=csv")
+
+    assert response.status_code == 307
+    assert response.headers["location"] == f"/admin/shop.product/{page}?format=csv"
+
+
 async def test_each_row_links_to_itself(client: httpx.AsyncClient) -> None:
     body = (await client.get("/admin/shop.product/")).text
     assert re.search(r'href="/admin/shop\.product/\d+/"', body)

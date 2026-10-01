@@ -10,6 +10,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `/admin/<model>/add/`, `/export/` and `/import/` -- the trailing-slash form a
+  Django hand types first and a browser offers from history -- answered 404:
+  the change route read them as the row whose key is "add". They now redirect
+  (307, query string kept) to the page they name.
+
 ## [0.8.0] - 2026-09-26
 
 Favourites and an audit log: the admin now remembers what each account keeps
