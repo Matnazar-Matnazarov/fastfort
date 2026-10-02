@@ -12,6 +12,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A sentence that opens on the model name -- Uzbek's "{name} ro'yxatiga
+  qaytish", among others -- started in lower case ("routes ro'yxatiga
+  qaytish"), because the name is lower-cased to sit mid-sentence in English.
+  The rendered sentence now gets an upper-case first letter, and nothing else
+  in it changes.
 - `/admin/<model>/add/`, `/export/` and `/import/` -- the trailing-slash form a
   Django hand types first and a browser offers from history -- answered 404:
   the change route read them as the row whose key is "add". They now redirect

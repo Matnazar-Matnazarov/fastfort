@@ -572,3 +572,27 @@ def test_the_on_demand_bundles_only_ask_for_strings_that_exist() -> None:
                 problems.append(f"{bundle.name}: t({key!r}) is never sent as {attribute(key)!r}")
 
     assert not problems, problems
+
+
+async def test_a_sentence_that_opens_on_the_model_name_is_capitalised(
+    client: httpx.AsyncClient,
+) -> None:
+    """Uzbek puts the name first; lower-casing it for English left the page
+    reading "products ro'yxatiga qaytish"."""
+    await sign_in(client)
+    await client.post("/admin/language", data={"language": "uz", "next": "/admin/"})
+
+    form = await page(client, "/admin/shop.product/add")
+
+    assert "Products ro'yxatiga qaytish" in form
+    assert "products ro'yxatiga qaytish" not in form
+
+
+def test_sentence_case_leaves_the_rest_of_the_text_alone() -> None:
+    from markupsafe import Markup
+
+    from fastfort.ui.renderer import sentence_case
+
+    assert sentence_case("aPI tokens") == "API tokens"
+    assert sentence_case("") == ""
+    assert isinstance(sentence_case(Markup("x &amp; y")), Markup)
