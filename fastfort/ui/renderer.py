@@ -70,6 +70,7 @@ class Renderer:
         self.environment.filters["ff_display"] = display_value
         self.environment.filters["ff_bool"] = boolean_mark
         self.environment.filters["step"] = decimal_step
+        self.environment.filters["ff_sentence"] = sentence_case
         self.environment.globals["EMPTY"] = EMPTY
         self.environment.globals["ff_icon"] = icon
         self.environment.globals["ff_sprite"] = sprite
@@ -78,6 +79,21 @@ class Renderer:
         # A translator is always present, so a template never has to guard for it.
         context.setdefault("_", Translator())
         return self.environment.get_template(template).render(**context)
+
+
+def sentence_case(text: Any) -> Any:
+    """Upper-case the first letter and leave the rest alone.
+
+    Model names are lower-cased so English reads "Back to routes", but Uzbek,
+    Korean and others put the name first -- and the page said "routes
+    ro'yxatiga qaytish", a sentence opening in lower case. Jinja's `capitalize`
+    would also lower-case every later letter, which flattens a name like "API
+    tokens". Slicing and `upper()` on Markup return Markup, so an escaped
+    string stays escaped once rather than twice.
+    """
+    if not isinstance(text, str) or not text:
+        return text
+    return text[:1].upper() + text[1:]
 
 
 def display_value(value: Any) -> Any:

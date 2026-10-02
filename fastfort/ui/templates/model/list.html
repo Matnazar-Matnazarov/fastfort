@@ -65,7 +65,7 @@
             type="search"
             name="q"
             value="{{ query.search }}"
-            placeholder="{{ _("Search {name}…", name=model_title|lower) }}"
+            placeholder="{{ _("Search {name}…", name=model_title|lower)|ff_sentence }}"
             aria-label="{{ _("Search") }}"
           />
         </div>
