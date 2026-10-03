@@ -10,6 +10,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-03
+
+Two fixes found by using the demo: a trailing slash no longer hides the add
+page, and Uzbek sentences that open on a model name start with a capital.
+
 ### Fixed
 
 - A sentence that opens on the model name -- Uzbek's "{name} ro'yxatiga
@@ -1555,7 +1560,8 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.5.0...v0.6.0
