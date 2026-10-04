@@ -250,6 +250,41 @@ fort.set_user_model(User)
 fort.mount(app)
 ```
 
+### The map beside a geometry field
+
+Off until you name a tile server, because turning it on means the browser
+fetches images from somebody else's host — which learns roughly where your
+rows are, and has terms you are agreeing to:
+
+```python
+FastFortSettings(
+    ui={
+        "map_tile_url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "map_attribution": "© OpenStreetMap contributors",
+        "map_max_zoom": 19,
+        "map_center": "41.31, 69.28",
+    },
+)
+```
+
+The host is added to the CSP `img-src`, and only that one host, so pick a
+template with a single hostname rather than `{s}` subdomains. Tiles are
+requested with `Referrer-Policy: origin`: the server sees your domain, never the
+admin URL. `{z}`, `{x}` and `{y}` may appear in any order.
+
+| Source | `map_tile_url` | `map_max_zoom` |
+|---|---|---|
+| OpenStreetMap | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | 19 |
+| CARTO Voyager | `https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png` | 20 |
+| OpenTopoMap | `https://tile.opentopomap.org/{z}/{x}/{y}.png` | 17 |
+| Esri World Imagery | `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}` | 19 |
+| Your own server | `/tiles/{z}/{x}/{y}.png` (same origin, no CSP change) | yours |
+
+OpenStreetMap's own servers are volunteer-run and meant for light use: a busy
+or public deployment — a demo with a login prefilled, above all — should use a
+commercial layer or its own tiles. Each provider requires its credit line in
+`map_attribution`, and has usage terms worth reading before you ship.
+
 ---
 
 ## Development

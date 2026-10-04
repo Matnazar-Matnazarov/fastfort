@@ -356,6 +356,10 @@ class UISettings(BaseModel):
     #: are, and most tile services have terms about it. Naming a URL is a project
     #: saying it has read them. The host is added to the admin's CSP `img-src`,
     #: which is why it cannot come from a template.
+    #:
+    #: OpenStreetMap's own servers are volunteer-run and refuse heavy or public
+    #: use with a 403 picture on every tile; the README's map section lists
+    #: single-host alternatives that fit the one-origin CSP.
     map_tile_url: str = ""
 
     #: Credit line under the map. Tile services generally require one, and the
