@@ -287,6 +287,27 @@ commercial layer or its own tiles. Each provider requires its credit line in
 
 ---
 
+## Versioning
+
+FastFort follows [Semantic Versioning](https://semver.org/). From 1.0:
+
+- **The public API** is every name in the `__all__` of `fastfort`,
+  `fastfort.admin`, `fastfort.orm.sqlalchemy` and `fastfort.orm.tortoise`, the
+  settings fields, the `ModelAdmin` options, the `Backend`/`ModelAdapter`
+  protocols, and the `fastfort` command. Removing or changing any of it needs a
+  major version; `tests/unit/test_public_api.py` fails when a name disappears.
+- **Deprecation comes first.** A name that is going away keeps working for at
+  least one minor release and raises a `DeprecationWarning` that says what to
+  use instead.
+- **Not covered:** anything with a leading underscore, template markup, CSS
+  class names and the HTML structure of a page. Override templates knowing they
+  can change in a minor release; the changelog says when one did.
+- **The tables FastFort's mixins define** (sign-ins, tokens, favourites, the
+  audit log) are versioned by `SCHEMA_VERSION`. A change to them is never in a
+  patch release, and the changelog gives the migration.
+
+---
+
 ## Development
 
 The only prerequisite is [uv](https://docs.astral.sh/uv/). No Node.js, ever.
