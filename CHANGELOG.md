@@ -10,6 +10,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- The minimum `pyjwt` is now 2.15.1 and the `compression` extra's `brotli`
+  1.2.1. Every older `pyjwt` in the allowed range carries published advisories
+  against the token parsing that personal access tokens rely on, and a floor
+  below them let a fresh install resolve one. The lockfile also moves
+  `certifi`, `dnspython` and `urllib3` past their advisories; `pip-audit` in
+  CI is clean again.
+
 ## [0.8.1] - 2026-10-03
 
 Two fixes found by using the demo: a trailing slash no longer hides the add
