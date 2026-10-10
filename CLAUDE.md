@@ -13,7 +13,7 @@ The defining constraint: **no Node.js, no build step, no CDN**. The admin's CSS,
 icons and templates are hand-written files served straight out of the package. A
 project installs one wheel and gets a working admin.
 
-Status: pre-1.0. The public API is not frozen yet; `fastfort/_version.py` holds
+Status: stable since 1.0 (semver; see README "Versioning"); `fastfort/_version.py` holds
 the current number and `CHANGELOG.md` is the record.
 
 ```python
