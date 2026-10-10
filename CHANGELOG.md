@@ -5,17 +5,32 @@ All notable changes to this project are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-> Before 1.0, minor releases may contain breaking changes. Each one is listed under
-> a **Breaking** heading.
+> Before 1.0, minor releases could contain breaking changes, each listed under a
+> **Breaking** heading. From 1.0, only a major release does.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-10-10
+
+The first stable release. Nothing in the API changed from 0.8.1: what changed is
+the promise. From here a name in the public API is removed only in a major
+version, after a minor release that warns -- see *Versioning* in the README.
+
+### Changed
+
+- Classified *Production/Stable* on PyPI. The README's pre-1.0 warning is
+  replaced by a **Versioning** section stating what the public API is, and
+  `tests/unit/test_public_names.py` fails when a name in it disappears.
+- Security fixes now go to the latest 1.x minor release; 0.x is no longer
+  supported (`SECURITY.md`).
+- The trailing-slash fix, the sentence-case fix and the map Referer fix from
+  0.8.x, and README guidance on choosing a tile server.
 
 ### Security
 
 - The minimum `pyjwt` is now 2.15.1 and the `compression` extra's `brotli`
-  1.2.1. Every older `pyjwt` in the allowed range carries published advisories
-  against the token parsing that personal access tokens rely on, and a floor
-  below them let a fresh install resolve one. The lockfile also moves
+  1.2.1. Older versions in the allowed range carry published advisories, and
+  a floor below them let a fresh install resolve one. The lockfile also moves
   `certifi`, `dnspython` and `urllib3` past their advisories; `pip-audit` in
   CI is clean again.
 
@@ -1569,7 +1584,8 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.8.1...v1.0.0
 [0.8.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.6.0...v0.7.0

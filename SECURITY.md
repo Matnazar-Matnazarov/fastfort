@@ -31,7 +31,10 @@ available. Reporters are credited unless they prefer otherwise.
 
 ## Supported versions
 
-Until 1.0, only the latest minor release is supported.
+| Version | Security fixes |
+|---|---|
+| 1.x | yes — the latest minor release |
+| 0.x | no — upgrade to 1.x |
 
 ## Hardening a deployment
 

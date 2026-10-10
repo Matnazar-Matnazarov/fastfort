@@ -18,13 +18,10 @@ PostGIS & pgvector · SQLAlchemy & Tortoise · **No Node.js required**
 
 </div>
 
-> [!WARNING]
-> **Pre-1.0.** The public API is not stable yet: before 1.0 a minor release may
-> contain breaking changes, each one listed under a **Breaking** heading in
-> [the changelog](CHANGELOG.md). Pin a version.
->
-> The badge above is the released one. This README describes `main`, which may
-> be ahead of it.
+> [!NOTE]
+> **Stable since 1.0.** The public API follows Semantic Versioning — see
+> [Versioning](#versioning). The badge above is the released version; this
+> README describes `main`, which may be ahead of it.
 
 ---
 

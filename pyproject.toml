@@ -30,7 +30,7 @@ keywords = [
     "i18n",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Web Environment",
     "Framework :: AsyncIO",
     "Framework :: FastAPI",
