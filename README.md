@@ -295,7 +295,7 @@ FastFort follows [Semantic Versioning](https://semver.org/). From 1.0:
   `fastfort.admin`, `fastfort.orm.sqlalchemy` and `fastfort.orm.tortoise`, the
   settings fields, the `ModelAdmin` options, the `Backend`/`ModelAdapter`
   protocols, and the `fastfort` command. Removing or changing any of it needs a
-  major version; `tests/unit/test_public_api.py` fails when a name disappears.
+  major version; `tests/unit/test_public_names.py` fails when a name disappears.
 - **Deprecation comes first.** A name that is going away keeps working for at
   least one minor release and raises a `DeprecationWarning` that says what to
   use instead.
