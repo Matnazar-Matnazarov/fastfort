@@ -94,6 +94,32 @@
   </div>
 {% endmacro %}
 
+{% macro save_buttons() %}
+  {# Every button posts the same name with a different value; the server reads
+     that one field to decide where the save goes next. The primary button comes
+     first in the markup as well as on screen, because Enter in a text box
+     submits with the *first* submit button -- and that has to be the plain
+     save, never "Save as new". #}
+  <button class="ff-btn ff-btn--primary" type="submit" name="_save" value="">
+    {{ ff_icon("check", size=15) }}
+    {{ submit_label }}
+  </button>
+  {% if not popup %}
+    <button class="ff-btn" type="submit" name="_save" value="addanother">
+      {{ _("Save and add another") }}
+    </button>
+    <button class="ff-btn" type="submit" name="_save" value="list">
+      {{ _("Save and return to list") }}
+    </button>
+    {% if delete_url and admin.save_as %}
+      <button class="ff-btn" type="submit" name="_save" value="asnew">
+        {{ ff_icon("copy", size=15) }}
+        {{ _("Save as new {name}", name=model_singular|lower) }}
+      </button>
+    {% endif %}
+  {% endif %}
+{% endmacro %}
+
 {% block content %}
   <div class="ff-page-header">
     <div class="ff-page-header__text">
@@ -185,6 +211,9 @@
       {# Carries the row's state at load time, so a save that would silently
          overwrite someone else's edit can be detected instead. #}
       <input type="hidden" name="_version" value="{{ version_token }}" />
+    {% endif %}
+    {% if admin.save_on_top %}
+      <div class="ff-form-actions ff-form-actions--top">{{ save_buttons() }}</div>
     {% endif %}
 
     {# One loop for both shapes. A form with no `fieldsets` produces exactly
@@ -335,10 +364,7 @@
     {% endfor %}
 
     <div class="ff-form-actions">
-      <button class="ff-btn ff-btn--primary" type="submit">
-        {{ ff_icon("check", size=15) }}
-        {{ submit_label }}
-      </button>
+      {{ save_buttons() }}
       <a
         class="ff-btn ff-btn--ghost"
         href="{{ list_url }}"

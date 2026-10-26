@@ -300,6 +300,22 @@ class ModelAdmin:
     #: of it. See `admin/inlines.py`.
     inlines: ClassVar[Sequence[type[Any]]] = ()
 
+    #: Offer "Save as new" on the change form: the edited values become a new
+    #: row and the one they were loaded from is left as it was. Django's
+    #: `save_as`, for the record that is mostly a copy of an existing one -- a
+    #: product in a second colour, next month's route.
+    #:
+    #: Not allowed together with `inlines`. A child row posted from the change
+    #: form carries the key of the child it already is, so copying the parent
+    #: would either move those children onto the copy or silently drop what was
+    #: typed into them -- both worse than a start-up error that says so.
+    save_as: ClassVar[bool] = False
+
+    #: Repeat the save buttons above the form as well as below it, for a form
+    #: long enough that the bottom is several screens away. Django's
+    #: `save_on_top`.
+    save_on_top: ClassVar[bool] = False
+
     #: Bulk actions offered once rows are selected. `"delete"` is built in and
     #: enabled by default; anything else is the name of a method carrying
     #: `@admin.action`. Set to `()` to offer none, which is how a model whose rows
@@ -410,6 +426,13 @@ class ModelAdmin:
                     f"A bulk edit sets one value for every selected row, which these can "
                     f"express: {offered}"
                 )
+
+        if self.save_as and self.inlines:
+            problems.append(
+                "save_as cannot be combined with inlines: the posted child rows belong to "
+                "the record being copied, so a copy would move them or drop them. Remove "
+                "one of the two, or copy the children in a custom action."
+            )
 
         if self.fieldsets:
             seen: set[str] = set()
