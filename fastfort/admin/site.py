@@ -1750,7 +1750,12 @@ def build_admin_router(fort: FastFort) -> APIRouter:
 
         translate = translator_for(request)
         return redirect(
-            object_url(model_key, key),
+            _after_save(
+                submitted.get(SAVE_PARAM),
+                record=object_url(model_key, key),
+                add=f"{admin_url}/{model_key}/add",
+                listing=list_url(model_key),
+            ),
             notices.success(
                 translate(
                     "{model} “{name}” was created.",
@@ -1905,20 +1910,35 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 await uow.rollback()
                 return response
 
+            # Honoured only where the admin offers it. The value is whatever the
+            # browser posted, and a create reached by adding `_save=asnew` to a
+            # form that never showed the button is a write the project did not
+            # agree to expose.
+            as_new = model_admin.save_as and submitted.get(SAVE_PARAM) == SAVE_AS_NEW
+            written: Any = instance
+
             try:
-                await emit_write(request, Hook.BEFORE_UPDATE, model_key, instance, cleaned)
-                await adapter.update(instance, cleaned)
-                for plan in inline_plans:
-                    await apply_inline_set(
-                        plan,
-                        adapter=fort.backend.adapter(
-                            plan.inline.model, uow, key=plan.inline.spec.key
-                        ),
-                        parent=instance,
-                        spec=plan.inline.spec,
-                    )
-                label = adapter.label_for(instance)
-                key = adapter.primary_key_of(instance)
+                if as_new:
+                    # The edited values become a new row; the one they were
+                    # loaded from is not written at all. No inline plans: the
+                    # options refuse `save_as` beside `inlines`, because the
+                    # posted children belong to the original.
+                    await emit_write(request, Hook.BEFORE_CREATE, model_key, cleaned)
+                    written = await adapter.create(cleaned)
+                else:
+                    await emit_write(request, Hook.BEFORE_UPDATE, model_key, instance, cleaned)
+                    await adapter.update(instance, cleaned)
+                    for plan in inline_plans:
+                        await apply_inline_set(
+                            plan,
+                            adapter=fort.backend.adapter(
+                                plan.inline.model, uow, key=plan.inline.spec.key
+                            ),
+                            parent=instance,
+                            spec=plan.inline.spec,
+                        )
+                label = adapter.label_for(written)
+                key = adapter.primary_key_of(written)
                 # Explicit rather than left to the context manager: a constraint
                 # the database checks at commit has to be catchable here, or it
                 # surfaces as a 500 on a save that looked like any other. It
@@ -1936,21 +1956,32 @@ def build_admin_router(fort: FastFort) -> APIRouter:
             # back, which is a stored path pointing at nothing.
             form.commit_files()
 
-        await emit_write(request, Hook.AFTER_UPDATE, model_key, instance, cleaned)
+        if as_new:
+            await emit_write(request, Hook.AFTER_CREATE, model_key, written)
+        else:
+            await emit_write(request, Hook.AFTER_UPDATE, model_key, instance, cleaned)
 
         if request.query_params.get(POPUP_PARAM) == "1":
             return _popup_result(request, renderer, base_context, model_key, key, label)
 
         translate = translator_for(request)
+        # Two literal calls rather than one over a chosen string: the catalogue
+        # test finds a sentence by reading the literal passed to translate,
+        # and a variable would hide both from it.
+        names = {"model": translate(model_admin.singular), "name": label}
+        message = (
+            translate("{model} “{name}” was created.", **names)
+            if as_new
+            else translate("{model} “{name}” was saved.", **names)
+        )
         return redirect(
-            object_url(model_key, key),
-            notices.success(
-                translate(
-                    "{model} “{name}” was saved.",
-                    model=translate(model_admin.singular),
-                    name=label,
-                )
+            _after_save(
+                None if as_new else submitted.get(SAVE_PARAM),
+                record=object_url(model_key, key),
+                add=f"{admin_url}/{model_key}/add",
+                listing=list_url(model_key),
             ),
+            notices.success(translate(message, model=translate(model_admin.singular), name=label)),
         )
 
     @router.get(
@@ -3398,6 +3429,30 @@ def _active_filters(
 
 #: Marks a form as opened from a relation field on another form.
 POPUP_PARAM = "_popup"
+
+#: The name every save button on a form posts, with what to do after the write
+#: as its value. One name rather than Django's `_continue`/`_addanother`/
+#: `_saveasnew`, so there is one place that reads it and no combination of
+#: several that could disagree. Absent -- Enter pressed in a text box submits
+#: without a button -- means the default: stay on the record just written.
+SAVE_PARAM = "_save"
+SAVE_ADD_ANOTHER = "addanother"
+SAVE_TO_LIST = "list"
+SAVE_AS_NEW = "asnew"
+
+
+def _after_save(choice: Any, *, record: str, add: str, listing: str) -> str:
+    """Where a successful save goes next, from the button that was pressed.
+
+    Anything unrecognised is the default rather than an error: the value is
+    whatever the browser posted, and a stale tab or a hand-written request
+    deserves to land on the record it just wrote, not on a 400 after the write.
+    """
+    if choice == SAVE_ADD_ANOTHER:
+        return add
+    if choice == SAVE_TO_LIST:
+        return listing
+    return record
 
 
 def _relation_links(

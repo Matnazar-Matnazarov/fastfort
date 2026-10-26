@@ -325,6 +325,16 @@
   background: linear-gradient(to top, var(--ff-bg) 65%, transparent);
 }
 
+/* The copy above the form (`save_on_top`) scrolls away with the page: two sticky
+   bars would pin a fifth of a laptop screen and cover the field being typed in. */
+.ff-form-actions--top {
+  position: static;
+  margin-top: 0;
+  margin-bottom: var(--ff-space-4);
+  padding-block: 0;
+  background: none;
+}
+
 /* --- Dark mode adjustments -----------------------------------------------
  * An inline SVG data URI cannot read a custom property, so the two that carry a
  * stroke colour are swapped here rather than being left as a white tick on a
