@@ -10,6 +10,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Save buttons, the Django set.** Every form now offers *Save and add
+  another* and *Save and return to list* beside the plain save, which still
+  stays on the record. One posted field, `_save`, carries the choice; an
+  unknown value falls back to the plain save rather than failing after the
+  write. A popup keeps only the plain save.
+- **`ModelAdmin.save_as`** — *Save as new* on the change form: the edited
+  values become a new row and the original is not written. Refused at start-up
+  beside `inlines`, whose posted children belong to the original; and a
+  hand-posted `_save=asnew` to an admin without it is an ordinary save.
+- **`ModelAdmin.save_on_top`** — the same buttons above a long form as well.
+
 ## [1.0.0] - 2026-10-10
 
 The first stable release. Nothing in the API changed from 0.8.1: what changed is
