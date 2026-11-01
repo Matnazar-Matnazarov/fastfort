@@ -17,6 +17,7 @@ from fastfort.core.exceptions import ConfigurationError
 from fastfort.spec import FieldType, Filter, FilterOperator, SortSpec
 from fastfort.ui.icons import icon_names, is_icon
 
+from .hierarchy import DATE_TYPES
 from .widgets import WIDGET_NAMES, widget_for
 
 if TYPE_CHECKING:
@@ -145,6 +146,13 @@ class ModelAdmin:
     ordering: ClassVar[Sequence[str]] = ()
 
     list_per_page: ClassVar[int | None] = None
+
+    #: A date or datetime column to drill the list down by -- years, then the
+    #: months of one, then its days -- in a bar above the table. Django's
+    #: `date_hierarchy`. Each level is an ordinary `__gte`/`__lt` filter pair,
+    #: so it works without script and survives export; see `admin/hierarchy.py`
+    #: for why it costs two queries and no more.
+    date_hierarchy: ClassVar[str | None] = None
 
     #: Relations to preload. Without these a list showing a related name costs
     #: one extra query per row.
@@ -427,6 +435,18 @@ class ModelAdmin:
                     f"express: {offered}"
                 )
 
+        if self.date_hierarchy is not None:
+            if self.date_hierarchy not in known:
+                problems.append(
+                    f"date_hierarchy names {self.date_hierarchy!r}, which {self.spec.key} has no"
+                )
+            elif self.spec.field(self.date_hierarchy).type not in DATE_TYPES:
+                kind = self.spec.field(self.date_hierarchy).type.value
+                problems.append(
+                    f"date_hierarchy names {self.date_hierarchy!r}, which is a {kind} column. "
+                    "It drills down by year, month and day, so it needs a date or datetime."
+                )
+
         if self.save_as and self.inlines:
             problems.append(
                 "save_as cannot be combined with inlines: the posted child rows belong to "
@@ -580,6 +600,21 @@ class ModelAdmin:
         # Newest first is the useful default for an admin, and the primary key is
         # the only column guaranteed to exist.
         return tuple(SortSpec(name, descending=True) for name in self.spec.primary_key)
+
+    def filter_field_names(self) -> tuple[str, ...]:
+        """The fields a list URL may filter on, for `ListQuery.from_params`.
+
+        `list_filter` narrows it when set -- a field nobody offered should not
+        become filterable by typing its name -- but `date_hierarchy` is always
+        allowed, because its links *are* filters on that column, and a bar whose
+        every link is rejected by the allow-list is a bar that does nothing.
+        """
+        if not self.list_filter:
+            return tuple(self.spec.filterable_fields)
+        names = tuple(self.list_filter)
+        if self.date_hierarchy is not None and self.date_hierarchy not in names:
+            names = (*names, self.date_hierarchy)
+        return names
 
     def page_size(self, fallback: int) -> int:
         return self.list_per_page or fallback

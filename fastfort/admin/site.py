@@ -44,6 +44,7 @@ from fastfort.ui.compression import compress_asset
 from fastfort.ui.renderer import Renderer
 from fastfort.ui.theming import Theme
 
+from . import hierarchy
 from .api_tokens import REVOKE_ACTION
 from .auth_views import build_auth_router
 from .dashboard import Context as DashboardContext
@@ -832,7 +833,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         query = ListQuery.from_params(
             params,
             sortable_fields=spec.sortable_fields,
-            filterable_fields=model_admin.list_filter or spec.filterable_fields,
+            filterable_fields=model_admin.filter_field_names(),
             spatial_fields=spec.spatial_fields,
             vector_fields=spec.vector_fields,
             searchable=bool(model_admin.searchable()),
@@ -888,6 +889,17 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                     if spec.get(name) is not None and spec.field(name).is_relation
                 },
             )
+
+            drilldown = None
+            if model_admin.date_hierarchy is not None:
+                drilldown = await hierarchy.build(
+                    adapter,
+                    query,
+                    model_admin.date_hierarchy,
+                    params,
+                    url=lambda changes: _with_params(list_url(model_key), params, changes),
+                    translate=translator_for(request),
+                )
 
         columns = tuple(model_admin.columns())
         context_translator = translator_for(request)
@@ -962,6 +974,8 @@ def build_admin_router(fort: FastFort) -> APIRouter:
                 f"{admin_url}/{model_key}/favorite" if fort.favorites is not None else None
             ),
             "filters": filter_controls,
+            "drilldown": drilldown,
+            "drill_params": _drill_params(model_admin.date_hierarchy, params, filter_controls),
             # Named in the delete confirmation, so it says what else goes. Not
             # asked for a soft-delete model: the row does not leave the
             # table, so nothing pointing at it needs to cascade, and naming
@@ -1046,7 +1060,7 @@ def build_admin_router(fort: FastFort) -> APIRouter:
         query = ListQuery.from_params(
             params,
             sortable_fields=spec.sortable_fields,
-            filterable_fields=model_admin.list_filter or spec.filterable_fields,
+            filterable_fields=model_admin.filter_field_names(),
             spatial_fields=spec.spatial_fields,
             vector_fields=spec.vector_fields,
             searchable=bool(model_admin.searchable()),
@@ -3012,6 +3026,25 @@ def _group_of(admin: Any, name: str) -> str:
     if isinstance(declared, str) and declared:
         return declared
     return name.replace("_", " ").title()
+
+
+def _drill_params(
+    field: str | None, params: dict[str, str], controls: list[dict[str, Any]]
+) -> list[tuple[str, str]]:
+    """The drilled span as hidden inputs for the toolbar form.
+
+    Without them a search typed while looking at October searched every year:
+    the form submits only its own inputs. A bound the filter panel already
+    renders as a control of its own is left out, or the form would post the
+    name twice and the query layer would keep whichever came last.
+    """
+    if field is None:
+        return []
+    shown = {control.get("from_name") for control in controls} | {
+        control.get("to_name") for control in controls
+    }
+    names = (f"{field}__gte", f"{field}__lt")
+    return [(name, params[name]) for name in names if params.get(name) and name not in shown]
 
 
 def _with_params(base: str, existing: dict[str, str], changes: dict[str, str | None]) -> str:

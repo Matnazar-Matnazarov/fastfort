@@ -15,6 +15,7 @@ from tests.conftest import sign_in
 from tests.orm.models import Product, StaffUser
 
 from fastfort import FastFort, FastFortSettings, admin
+from fastfort.admin.hierarchy import MONTHS
 from fastfort.admin.security import LANGUAGE_COOKIE
 from fastfort.i18n import (
     DEFAULT_LANGUAGE,
@@ -116,7 +117,8 @@ def _translated_literals() -> set[str]:
     import pathlib
 
     package = pathlib.Path(__file__).resolve().parents[2] / "fastfort"
-    found: set[str] = set(_INDIRECT)
+    # The month names reach the translator through a tuple, not a literal call.
+    found: set[str] = set(_INDIRECT) | set(MONTHS)
 
     for path in (package / "ui" / "templates").rglob("*.html"):
         text = path.read_text(encoding="utf-8")
