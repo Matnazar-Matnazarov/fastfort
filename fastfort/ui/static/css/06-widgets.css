@@ -530,6 +530,65 @@
   background: color-mix(in oklch, var(--ff-accent) 20%, transparent);
 }
 
+/* --- date_hierarchy ------------------------------------------------------
+ * A trail (All dates › 2026 › October) and the next level's links beside it.
+ * Links, not buttons: each one is a filtered list URL, so it opens in a new
+ * tab, bookmarks and works with scripting off like any other. */
+.ff-drilldown {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ff-space-2) var(--ff-space-4);
+  margin-block-end: var(--ff-space-3);
+  font-size: var(--ff-text-sm);
+}
+
+.ff-drilldown__trail,
+.ff-drilldown__links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ff-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ff-drilldown__trail li + li::before {
+  content: "›";
+  margin-inline-end: var(--ff-space-1);
+  color: var(--ff-text-subtle);
+}
+
+.ff-drilldown__trail a {
+  color: var(--ff-text-muted);
+  text-decoration: none;
+}
+
+.ff-drilldown__trail a:hover {
+  color: var(--ff-accent);
+}
+
+.ff-drilldown__trail li:last-child > * {
+  color: var(--ff-text);
+  font-weight: var(--ff-weight-medium);
+}
+
+.ff-drilldown__link {
+  display: inline-block;
+  padding: 2px var(--ff-space-2);
+  border: 1px solid var(--ff-border);
+  border-radius: var(--ff-radius-full);
+  color: var(--ff-text);
+  text-decoration: none;
+}
+
+.ff-drilldown__link:hover {
+  border-color: var(--ff-accent-border);
+  background: var(--ff-accent-subtle);
+  color: var(--ff-accent);
+}
+
 /* ===========================================================================
  * Toolbar
  *

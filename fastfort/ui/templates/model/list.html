@@ -249,6 +249,11 @@
       {% if ordering_param %}
         <input type="hidden" name="o" value="{{ ordering_param }}" />
       {% endif %}
+      {# The drilled span rides along the same way, so searching inside October
+         searches October rather than every year. #}
+      {% for name, value in drill_params %}
+        <input type="hidden" name="{{ name }}" value="{{ value }}" />
+      {% endfor %}
 
       <div class="ff-toolbar__end">
         <span class="ff-busy ff-spinner" aria-hidden="true"></span>

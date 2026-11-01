@@ -5,6 +5,31 @@
   otherwise, so both paths render exactly the same markup from exactly the same
   context. A separate "partial" template is how the two quietly drift apart.
 #}
+  {% if drilldown %}
+    {# Above the table and inside the fragment, so a live search redraws the
+       links with the new term in them -- a bar drawn once at page load would
+       carry the old one and undo the search on the next click. #}
+    <nav class="ff-drilldown" aria-label="{{ _("Dates") }}">
+      <ol class="ff-drilldown__trail">
+        {% for step in drilldown.trail %}
+          <li>
+            {% if step.current %}
+              <span aria-current="page">{{ step.label }}</span>
+            {% else %}
+              <a href="{{ step.url }}">{{ step.label }}</a>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ol>
+      {% if drilldown.links %}
+        <ul class="ff-drilldown__links">
+          {% for step in drilldown.links %}
+            <li><a class="ff-drilldown__link" href="{{ step.url }}">{{ step.label }}</a></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </nav>
+  {% endif %}
   {% if page.items %}
     {# Editing in place makes the whole table one form with one Save button.
        A control per row posting on its own would be one request per cell and
