@@ -22,6 +22,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   beside `inlines`, whose posted children belong to the original; and a
   hand-posted `_save=asnew` to an admin without it is an ordinary save.
 - **`ModelAdmin.save_on_top`** — the same buttons above a long form as well.
+- **`ModelAdmin.date_hierarchy`** — Django's drill-down bar above the list:
+  the years the column spans, then a year's months, then a month's days. Each
+  level is a `__gte`/`__lt` filter pair that `ListQuery.from_params` already
+  validates, so there is no new query-string surface, the drill survives a
+  search, a live update and an export, and it works with scripting off. Costs
+  two queries (the earliest and latest value); buckets are not counted. Month
+  names are translated in every catalogue.
 
 ## [1.0.0] - 2026-10-10
 
