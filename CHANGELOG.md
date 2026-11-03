@@ -10,6 +10,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-03
+
+Django's form and list conveniences: the save buttons, save_as and
+save_on_top, date_hierarchy, prepopulated_fields and empty_value_display.
+Every one is a new option defaulting to what the admin already did, so no
+existing project changes by upgrading.
+
 ### Added
 
 - **Save buttons, the Django set.** Every form now offers *Save and add
@@ -1617,7 +1624,8 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.8.1...v1.0.0
 [0.8.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.7.0...v0.8.0
