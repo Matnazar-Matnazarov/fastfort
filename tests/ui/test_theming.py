@@ -208,7 +208,7 @@ def _gzipped(*blobs: bytes) -> int:
 
 
 def test_the_everyday_page_stays_within_budget(css: str) -> None:
-    """What every page downloads is budgeted at 76.5 KB gzipped: the stylesheet,
+    """What every page downloads is budgeted at 78 KB gzipped: the stylesheet,
     `boot.js` and `fastfort.js`.
 
     Both halves are weighed, not just the stylesheet. The budget exists to keep
@@ -311,6 +311,16 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
     script only answer the press in place, because a round trip that reloads a
     list to flip one bit loses the scroll position somebody was scanning with.
     It has to be on the everyday path -- a list view is where rows get starred.
+
+    Raised again, to 78,000 bytes, for two Django conveniences landing in the
+    same round. `date_hierarchy` is a bar of links above the list -- a trail and
+    one level of years, months or days -- and all of it is stylesheet: the
+    links are filtered list URLs the server writes, so there is no script.
+    `prepopulated_fields` is the one piece that has to be script, because a
+    slug filling itself in as the title is typed is by definition something
+    that happens between key presses; it is thirty lines on the add form and
+    the box stays a plain text input without them. The save buttons that
+    shipped beside them cost nothing measurable: they are markup.
     """
     js = CSS_DIR.parent / "js"
     scripts = [js / name for name in ALWAYS_LOADED]
@@ -318,11 +328,11 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
     assert not missing, f"the budget cannot pass by measuring nothing: {missing}"
 
     compressed = _gzipped(css.encode("utf-8"), *(path.read_bytes() for path in scripts))
-    assert compressed < 76_500, f"{compressed} bytes gzipped"
+    assert compressed < 78_000, f"{compressed} bytes gzipped"
 
 
 def test_the_whole_front_end_stays_within_budget(css: str) -> None:
-    """Everything that ships, on-demand bundles included, is budgeted at 98,500 bytes.
+    """Everything that ships, on-demand bundles included, is budgeted at 100,000 bytes.
 
     The per-page budget above is the one that protects the common case, but on
     its own it would be a budget with a hole in it: anything could be moved into
@@ -354,7 +364,11 @@ def test_the_whole_front_end_stays_within_budget(css: str) -> None:
     alternative was a sidebar that marked "you are here" below the fold on every
     navigation.
 
-    Raised again, to 98,500, for favourites -- see the matching note on the
+    Raised again, to 100,000, for the date bar and the self-filling slug --
+    see the matching note on the everyday budget above; both are on the list
+    and form pages every admin has, so neither could be an on-demand bundle.
+
+    Before it, to 98,500, for favourites -- see the matching note on the
     everyday budget above; none of it lives in an on-demand bundle.
 
     Before it, to 97,000, for `fieldsets`, `inlines`, the density control
@@ -374,7 +388,7 @@ def test_the_whole_front_end_stays_within_budget(css: str) -> None:
     assert scripts, "the budget cannot pass by measuring nothing"
 
     compressed = _gzipped(css.encode("utf-8"), *(script.read_bytes() for script in scripts))
-    assert compressed < 98_500, f"{compressed} bytes gzipped"
+    assert compressed < 100_000, f"{compressed} bytes gzipped"
 
 
 # ---------------------------------------------------------------------------
