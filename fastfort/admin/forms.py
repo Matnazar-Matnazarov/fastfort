@@ -84,6 +84,13 @@ class FormField:
     range_upper: str = ""
     range_bounds: str = "[)"
 
+    #: Names the browser copies into this box, slugified, as they are typed.
+    #: Set on the add form only -- see `ModelAdmin.prepopulated_fields`.
+    prepopulate_from: tuple[str, ...] = ()
+    #: What a read-only control prints for an empty value, when the admin chose
+    #: something other than the dash.
+    empty_display: str | None = None
+
     @property
     def name(self) -> str:
         return self.spec.name
@@ -311,6 +318,12 @@ class Form:
             range_lower=range_lower,
             range_upper=range_upper,
             range_bounds=range_bounds,
+            prepopulate_from=(
+                tuple(self.admin.prepopulated_fields.get(spec.name, ()))
+                if writable and self.instance is None
+                else ()
+            ),
+            empty_display=self.admin.empty_value_display,
         )
 
     def _help_for(self, spec: FieldSpec, widget: str, writable: bool) -> str | None:

@@ -167,9 +167,9 @@
                       <span class="ff-thumb ff-thumb--empty" aria-hidden="true"></span>
                     {% endif %}
                   {% elif cell.url %}
-                    <a class="ff-link" href="{{ cell.url }}">{{ cell.value|ff_display }}</a>
+                    <a class="ff-link" href="{{ cell.url }}">{{ cell.value|ff_display(admin.empty_value_display) }}</a>
                   {% else %}
-                    {{ cell.value|ff_display }}
+                    {{ cell.value|ff_display(admin.empty_value_display) }}
                   {% endif %}
                 </td>
               {% endfor %}
