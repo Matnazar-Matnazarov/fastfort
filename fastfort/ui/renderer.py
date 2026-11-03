@@ -96,15 +96,16 @@ def sentence_case(text: Any) -> Any:
     return text[:1].upper() + text[1:]
 
 
-def display_value(value: Any) -> Any:
+def display_value(value: Any, empty: str | None = None) -> Any:
     """Format a cell value for a list or detail view.
 
     Returns plain text, never markup: whatever comes back is escaped by the
     template. Rendering HTML from data is an opt-in that goes through an explicit
     helper, not through this filter.
     """
+    blank = EMPTY if empty is None else empty
     if value is None or value == "":
-        return EMPTY
+        return blank
     if isinstance(value, bool):
         return "Yes" if value else "No"
     if isinstance(value, Decimal):
@@ -118,14 +119,14 @@ def display_value(value: Any) -> Any:
     if isinstance(value, int | float):
         return f"{value:,}"
     if isinstance(value, list | tuple):
-        return ", ".join(str(item) for item in value) or EMPTY
+        return ", ".join(str(item) for item in value) or blank
     if isinstance(value, dict):
         # An hstore or a JSON object. `str(dict)` is Python's own repr, so a
         # settings column read "{'theme': 'dark'}" in the table -- quotes,
         # braces and all -- which is source code leaking into an interface.
         # The same `key: value` shape the field's own control uses, joined for
         # one line.
-        return ", ".join(f"{key}: {item}" for key, item in value.items()) or EMPTY
+        return ", ".join(f"{key}: {item}" for key, item in value.items()) or blank
     return str(value)
 
 

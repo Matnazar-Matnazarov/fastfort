@@ -204,6 +204,22 @@ class ModelAdmin:
     #: expects someone to paste an Argon2 hash is not a usable control.
     password_fields: ClassVar[Sequence[str]] = ()
 
+    #: Fields that fill themselves from others as you type, on the add form::
+    #:
+    #:     prepopulated_fields = {"slug": ("title",)}
+    #:
+    #: Django's option, for the slug that is nearly always the title. The add
+    #: form only: a change form leaves the box alone, because rewriting the slug
+    #: of a row that is already published breaks every link to it. Typing into
+    #: the target stops the filling, and without script it is a plain text box.
+    #: The target must be a writable text field.
+    prepopulated_fields: ClassVar[Mapping[str, Sequence[str]]] = {}
+
+    #: What an empty value reads as in the list and in read-only fields, in
+    #: place of the default dash. Django's `empty_value_display`, for a model
+    #: where "nothing" has a name -- "Unassigned", "Never", "Not shipped".
+    empty_value_display: ClassVar[str | None] = None
+
     #: Overrides for the sidebar. Derived from the model name when unset.
     #:
     #: Not translated. A model's name is the project's word for its own domain,
@@ -446,6 +462,33 @@ class ModelAdmin:
                     f"date_hierarchy names {self.date_hierarchy!r}, which is a {kind} column. "
                     "It drills down by year, month and day, so it needs a date or datetime."
                 )
+
+        for target, sources in self.prepopulated_fields.items():
+            if target not in known:
+                problems.append(
+                    f"prepopulated_fields names {target!r}, which {self.spec.key} has no"
+                )
+                continue
+            writable = target in self.editable_field_names()
+            # One-line text only: a slug is a string column, and the long-text
+            # control is a textarea the browser side never fills.
+            if not writable or self.spec.field(target).type is not FieldType.STRING:
+                problems.append(
+                    f"prepopulated_fields fills {target!r}, which is not a writable text field. "
+                    "Only a one-line text box can be filled in as someone types."
+                )
+            if isinstance(sources, str):
+                problems.append(
+                    f"prepopulated_fields[{target!r}] is the string {sources!r}; it should be a "
+                    f"tuple of field names, such as ({sources!r},)"
+                )
+                continue
+            for source in sources:
+                if source not in known:
+                    problems.append(
+                        f"prepopulated_fields[{target!r}] reads {source!r}, "
+                        f"which {self.spec.key} has no"
+                    )
 
         if self.save_as and self.inlines:
             problems.append(

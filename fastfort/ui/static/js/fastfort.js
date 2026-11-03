@@ -2012,6 +2012,59 @@
   });
 
   // =========================================================================
+  // prepopulated_fields
+  //
+  // A slug box that fills itself from the title as you type, on the add form
+  // only -- the server never marks a change form, because rewriting the slug of
+  // a published row would break every link to it. Typing into the slug yourself
+  // stops it: from then on the box is yours, and a later edit to the title must
+  // not overwrite what was chosen by hand. Without script the box is the plain
+  // text input it always was.
+  // =========================================================================
+
+  const slugify = (text, limit) => {
+    const slug = text
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      // Apostrophes vanish rather than becoming a dash: "o'zbek" is one word in
+      // Uzbek, and "o-zbek" reads as two.
+      .replace(/['\u2018\u2019\u02bb\u02bc`]/g, "")
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, "-")
+      .replace(/^-+|-+$/g, "");
+    return limit > 0 ? slug.slice(0, limit).replace(/-+$/, "") : slug;
+  };
+
+  enhancers.push((scope) => {
+    for (const target of scope.querySelectorAll("input[data-ff-prepopulate]")) {
+      if (!once(target, "ffPrepopulateReady")) continue;
+      const form = target.form;
+      if (!form) continue;
+      const sources = target.dataset.ffPrepopulate
+        .split(" ")
+        .map((name) => form.elements.namedItem(name))
+        .filter(
+          (element) =>
+            element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement,
+        );
+      if (!sources.length) continue;
+
+      // A value already there -- a form re-rendered after a failed save --
+      // counts as chosen, or fixing a typo elsewhere would wipe it.
+      let touched = target.value !== "";
+      target.addEventListener("input", () => {
+        touched = target.value !== "";
+      });
+      const limit = Number(target.getAttribute("maxlength")) || 0;
+      const fill = () => {
+        if (touched) return;
+        target.value = slugify(sources.map((source) => source.value).join(" "), limit);
+      };
+      for (const source of sources) source.addEventListener("input", fill);
+    }
+  });
+
+  // =========================================================================
   // File and image fields
   //
   // `<input type="file">` is the worst control the platform ships. It is a grey

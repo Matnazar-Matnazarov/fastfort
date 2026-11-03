@@ -29,6 +29,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   search, a live update and an export, and it works with scripting off. Costs
   two queries (the earliest and latest value); buckets are not counted. Month
   names are translated in every catalogue.
+- **`ModelAdmin.prepopulated_fields`** — `{"slug": ("title",)}` fills the
+  slug as the title is typed, on the add form only (rewriting a published
+  slug breaks every link to it). Typing into the slug stops the filling;
+  apostrophes vanish rather than becoming a dash, so "O'zbekiston" becomes
+  `ozbekiston`. A plain text box without script. The target must be a
+  writable one-line string column, checked at start-up.
+- **`ModelAdmin.empty_value_display`** — what an empty value reads as in the
+  list and in read-only fields, in place of the dash.
+
+### Changed
+
+- The front-end budgets rise to 78,000 bytes (everyday page) and 100,000
+  (everything), for the date bar's stylesheet and the slug script.
 
 ## [1.0.0] - 2026-10-10
 
