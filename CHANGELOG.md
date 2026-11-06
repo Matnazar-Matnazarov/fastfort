@@ -10,6 +10,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-06
+
+The map beside a MULTIPOINT field draws its points, and the README stops
+recommending a tile source that now requires a key.
+
 ### Fixed
 
 - A `MULTIPOINT` field's map drew nothing and opened on the whole world. The
@@ -1638,7 +1643,8 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.8.1...v1.0.0
 [0.8.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.8.0...v0.8.1
