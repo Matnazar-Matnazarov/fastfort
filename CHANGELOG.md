@@ -10,6 +10,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A `MULTIPOINT` field's map drew nothing and opened on the whole world. The
+  editor's WKT reader unwrapped only the outer brackets of
+  `MULTIPOINT((1 2), (3 4))` — the form PostGIS writes and the admin renders —
+  and read the rest as one unparseable coordinate. Each member is now
+  unwrapped on its own; the unbracketed `MULTIPOINT(1 2, 3 4)` still reads.
+- Even once read, a `MULTIPOINT` drew no points: it is display-only, and the
+  map drew only outlines, which a set of points does not have. Its members —
+  and any `POINT` inside a `GEOMETRYCOLLECTION` — are now drawn as dots.
+- The README recommended CARTO's basemaps as a tile source; they now answer a
+  request without an API key with an "API KEY REQUIRED" picture. Removed, with
+  a note to check a tile by eye rather than by status code.
+
 ## [1.1.0] - 2026-11-03
 
 Django's form and list conveniences: the save buttons, save_as and
