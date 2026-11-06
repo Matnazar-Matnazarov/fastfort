@@ -1,6 +1,6 @@
 # Roadmap
 
-Where FastFort goes after 0.5.0, and why each thing is on the list.
+Where FastFort goes after 1.1, and why each thing is on the list.
 
 This is a working document, not a promise. It is ordered by what unblocks real
 projects first, and every entry is checked against the five constraints that
@@ -15,7 +15,23 @@ admin UX is measured against.
 
 ---
 
-## Where 0.5.0 actually stands
+## Where 1.1 stands
+
+Since this list was last rewritten: personal access tokens (3.1) and the CRUD
+hooks in 0.7.0; **favourites** and the **audit log** with a per-record History
+page and an Activity feed (3.2) in 0.8.0; the **1.0** stability promise, with
+the public names pinned by `tests/unit/test_public_names.py`; and in 1.1 the
+Django conveniences that were missing from the form and the list — *Save and
+add another*, *Save and return to list*, `save_as`, `save_on_top`,
+`date_hierarchy`, `prepopulated_fields` and `empty_value_display`.
+
+What is left of Tier 3 is TOTP (3.3), impersonation (3.4) and the
+notification centre (3.5). The audit log 3.4 was waiting for now exists.
+
+`fastfort/contrib/` now holds the audit log. Rate limiting lives in `auth/`,
+soft delete in `admin/`.
+
+## Where 0.5.0 stood
 
 Shipped and not to be re-proposed: list views with sorting, search, filters,
 pagination, bulk actions and deletion planning; **column visibility** and
@@ -27,9 +43,8 @@ OKLCH single-hue theme with light/dark/system, 11 languages and RTL; a command
 palette, related-object popups and live list updates; two ORM backends behind
 one adapter contract.
 
-`fastfort/contrib/` is still an empty placeholder. Its docstring promises an
-audit log, soft delete and rate limiting — soft delete landed in 0.5.0 but
-lives in `admin/`, and the other two are unwritten.
+At the time, `fastfort/contrib/` was an empty placeholder; see above for
+where each of its three promises ended up.
 
 ---
 
@@ -258,7 +273,10 @@ Not scheduled. Listed so the reasoning is on record.
 
 ## Suggested sequence
 
-> **Status — 0.6.0.** Tiers 1 and 2 are done. `fieldsets`, `inlines`, the
+> **Status — 1.1.1.** Tiers 1 and 2 are done, and so are 3.1 and 3.2. Next is
+> TOTP (3.3), then impersonation (3.4), which needed the audit log first.
+>
+> **Status at 0.6.0.** Tiers 1 and 2 are done. `fieldsets`, `inlines`, the
 > density control, list keyboard navigation, `list_editable` and
 > `bulk_editable` all shipped.
 >
@@ -277,9 +295,12 @@ Not scheduled. Listed so the reasoning is on record.
 | ~~0.6.0~~ | ~~`fieldsets` (1.2), density control (2.1), row keyboard navigation (2.2)~~ — **shipped**, together with `inlines` |
 | ~~0.7.0~~ | ~~`inlines` (1.1)~~ — **shipped** in the same round |
 | ~~0.9.0~~ | ~~Inline cell editing (2.3), bulk edit (2.4), loading states (2.5)~~ — **shipped** in 0.6.0; 2.5 needed only a test |
-| 0.8.0 | CRUD hook emission (3.2 first half), API tokens (3.1) |
-| 0.9.0 | Inline cell editing (2.3), bulk edit (2.4), loading states (2.5) |
-| 1.0 | Audit log + timeline (3.2), TOTP (3.3), impersonation (3.4) |
+| ~~0.7.0~~ | ~~CRUD hook emission (3.2 first half), API tokens (3.1)~~ — **shipped** |
+| ~~0.8.0~~ | ~~Audit log + timeline (3.2)~~ — **shipped**, with favourites |
+| ~~1.0~~ | ~~Stability promise~~ — **shipped**; TOTP and impersonation moved past it rather than holding it back |
+| ~~1.1~~ | ~~Django's save buttons, `save_as`, `save_on_top`, `date_hierarchy`, `prepopulated_fields`, `empty_value_display`~~ — **shipped** |
+| 1.2 | TOTP two-factor sign-in (3.3) |
+| 1.3 | Impersonation (3.4), notification centre (3.5) |
 
 `fieldsets` leads because `inlines` renders better on top of it, and because it
 is the smallest change that visibly improves every existing form.

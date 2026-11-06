@@ -8,7 +8,7 @@ Django-style model registration · Professional admin UI · Session + JWT auth �
 PostGIS & pgvector · SQLAlchemy & Tortoise · **No Node.js required**
 
 [![CI](https://github.com/Matnazar-Matnazarov/fastfort/actions/workflows/ci.yml/badge.svg)](https://github.com/Matnazar-Matnazarov/fastfort/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/fastfort)](https://pypi.org/project/fastfort/)
+[![PyPI](https://img.shields.io/pypi/v/fastfort?cacheSeconds=3600)](https://pypi.org/project/fastfort/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 
@@ -198,8 +198,8 @@ place; it never owns them.
 **Roles and permissions beyond `is_staff`/`is_superuser`** — object- and
 field-level permissions are the largest gap, and on the roadmap with the one
 rule they must follow: `FieldSpec.editable` becoming role-aware, never a second
-flag beside it. **Two-factor sign-in** and **impersonation** are next after the
-audit log they depend on. See [ROADMAP.md](ROADMAP.md) for the order and the
+flag beside it. **Two-factor sign-in** and **impersonation** are next; the
+audit log impersonation depends on has shipped. See [ROADMAP.md](ROADMAP.md) for the order and the
 reasoning.
 
 The audit log records what the *admin* writes. A change your application makes
