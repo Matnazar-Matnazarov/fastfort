@@ -272,14 +272,15 @@ admin URL. `{z}`, `{x}` and `{y}` may appear in any order.
 | Source | `map_tile_url` | `map_max_zoom` |
 |---|---|---|
 | OpenStreetMap | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | 19 |
-| CARTO Voyager | `https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png` | 20 |
 | OpenTopoMap | `https://tile.opentopomap.org/{z}/{x}/{y}.png` | 17 |
 | Esri World Imagery | `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}` | 19 |
 | Your own server | `/tiles/{z}/{x}/{y}.png` (same origin, no CSP change) | yours |
 
 OpenStreetMap's own servers are volunteer-run and meant for light use: a busy
-or public deployment — a demo with a login prefilled, above all — should use a
-commercial layer or its own tiles. Each provider requires its credit line in
+deployment should use a commercial layer or its own tiles. Check a tile in the
+browser rather than trusting a `200`: a refused request often answers with a
+perfectly valid picture of an error — OpenStreetMap's "Access blocked", or
+CARTO's "API KEY REQUIRED", which is why CARTO is no longer in this table. Each provider requires its credit line in
 `map_attribution`, and has usage terms worth reading before you ship.
 
 ---
