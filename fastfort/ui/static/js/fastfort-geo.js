@@ -198,7 +198,19 @@
       return point && { type: kind, coordinates: point };
     }
     if (kind === "LineString") return { type: kind, coordinates: readRing(body) };
-    if (kind === "MultiPoint") return { type: kind, coordinates: readRing(body) };
+    if (kind === "MultiPoint") {
+      // Each member unwrapped on its own: PostGIS writes `MULTIPOINT((1 2), (3
+      // 4))`, and reading that as one ring unwrapped only the outer brackets,
+      // left `1 2), (3 4` as a single "coordinate", and read nothing -- an
+      // empty map of the whole world beside a field holding four stops. The
+      // unbracketed `MULTIPOINT(1 2, 3 4)` passes through `unwrap` unchanged.
+      return {
+        type: kind,
+        coordinates: splitTop(body)
+          .map((member) => readCoord(unwrap(member)))
+          .filter(Boolean),
+      };
+    }
     if (kind === "Polygon" || kind === "MultiLineString") {
       return { type: kind, coordinates: splitTop(body).map(readRing) };
     }
@@ -268,6 +280,22 @@
       lng: (Math.min(...lngs) + Math.max(...lngs)) / 2,
       lat: (Math.min(...lats) + Math.max(...lats)) / 2,
     };
+  };
+
+  /* The loose points a shape carries -- a MULTIPOINT's members, and any POINT
+   * inside a collection -- which `outlines` has no line for. Without them a
+   * read-only MULTIPOINT centred the map on its stops and then drew none of
+   * them: the right place, with nothing on it. A lone POINT is not here; it
+   * keeps the pin it has always had. */
+  const looseDots = (shape) => {
+    if (!shape) return [];
+    if (shape.type === "MultiPoint") return shape.coordinates;
+    if (shape.type === "GeometryCollection") {
+      return shape.geometries.flatMap((member) =>
+        member.type === "Point" ? [member.coordinates] : looseDots(member)
+      );
+    }
+    return [];
   };
 
   /* Every line the shape draws, flattened, each marked as an open path or a
@@ -848,6 +876,10 @@
               points,
             })
           );
+        }
+        for (const point of looseDots(this.shape)) {
+          const at = this.project(point, originX, width, span);
+          this.overlay.append(svg("circle", { class: "ff-map__dot", cx: at.x, cy: at.y, r: 5 }));
         }
       }
 

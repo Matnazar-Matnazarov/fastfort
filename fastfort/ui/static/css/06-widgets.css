@@ -2784,6 +2784,15 @@ a.ff-upload__name {
   fill-opacity: 0.18;
 }
 
+/* A member of a MULTIPOINT: a filled dot with a pale ring, the same halo the
+ * lines carry, so it reads on a street map and on a photograph alike. */
+.ff-map__dot {
+  fill: var(--ff-accent);
+  stroke: var(--ff-surface);
+  stroke-width: 2;
+  paint-order: stroke;
+}
+
 .ff-map__handle {
   position: absolute;
   /* Centred on its coordinate. The marker is anchored at its tip because a pin
