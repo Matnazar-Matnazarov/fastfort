@@ -139,6 +139,7 @@
                       type="{{ filter.input_type }}"
                       name="{{ filter.from_name }}"
                       value="{{ filter.from_value }}"
+                      {% if filter.input_type in ("date", "datetime-local") %}data-ff-date {% endif %}
                       aria-label="{{ filter.label }} — {{ _("from") }}"
                     />
                   </label>
@@ -149,6 +150,7 @@
                       type="{{ filter.input_type }}"
                       name="{{ filter.to_name }}"
                       value="{{ filter.to_value }}"
+                      {% if filter.input_type in ("date", "datetime-local") %}data-ff-date {% endif %}
                       aria-label="{{ filter.label }} — {{ _("to") }}"
                     />
                   </label>
