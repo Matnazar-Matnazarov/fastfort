@@ -10,6 +10,27 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A rich-text editor started by FastFort.** `UISettings.richtext_editor`
+  (`"ckeditor5"` or `"tinymce"`) names the editor `richtext_url` loads, and
+  FastFort serves the call that starts it on every `richtext` field —
+  `fastfort-richtext.js`, from its own origin, after the editor's script.
+  Before, an editor's script only *defined* the editor, and under a CSP with no
+  inline script a project had to host a second file of its own just to call
+  `create()`. CKEditor 5's UMD build (42+) and its older prebuilt builds are
+  both recognised; `richtext_license_key` passes a commercial key, `"GPL"`
+  otherwise. The textarea stays what submits, so a CDN that does not answer
+  leaves a working form. Set without `richtext_url`, it is a start-up error.
+- CKEditor 5 is drawn in the admin's palette — surface, borders, text, accent,
+  radius — so it follows the theme and dark mode instead of being a white box.
+- README screenshots from the live demo, light and dark.
+
+### Changed
+
+- The whole-front-end budget rises to 103,000 bytes for the editor glue and
+  its palette; the everyday page is unchanged.
+
 ## [1.2.0] - 2026-11-07
 
 A security release. Refresh tokens are now checked against the account they
