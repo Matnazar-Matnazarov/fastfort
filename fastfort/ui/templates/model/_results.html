@@ -142,6 +142,10 @@
                         name="{{ cell.input_name }}"
                         value="{{ cell.input_value }}"
                         aria-label="{{ _("Edit") }}"
+                        {# The same picker the form draws. Without it this cell was
+                           the browser's own calendar, one click away from the
+                           admin's, on the same row of the same page. #}
+                        {% if cell.input_widget in ("date", "datetime", "time") %}data-ff-date {% endif %}
                       />
                     {% endif %}
                   {% elif cell.boolean %}

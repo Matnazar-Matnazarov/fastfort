@@ -123,6 +123,18 @@ async def test_a_date_filter_is_a_pair_of_bounds(client: httpx.AsyncClient) -> N
     assert 'type="date"' in body
 
 
+async def test_a_date_filter_draws_the_admins_calendar(client: httpx.AsyncClient) -> None:
+    """Both bounds carry `data-ff-date`. Without it the filter opened the
+    browser's own calendar while every form on the site opened the admin's --
+    two design systems for the same kind of field."""
+    body = await page(client, "/admin/shop.product/")
+
+    for bound in ("released_on__gte", "released_on__lte"):
+        tag = re.search(rf'<input[^>]*name="{bound}"[^>]*>', body, re.S)
+        assert tag, f"the filter should render {bound}"
+        assert "data-ff-date" in tag.group(0), bound
+
+
 async def test_a_relation_with_too_many_rows_is_searched_not_listed(
     backend: SQLAlchemyBackend, staff_user: StaffUser
 ) -> None:
