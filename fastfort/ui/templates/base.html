@@ -54,6 +54,16 @@
          Deferred like the main script: an editor is an enhancement, and the
          textarea underneath already works. #}
       <script src="{{ theme.richtext_url }}" defer></script>
+      {% if theme.richtext_editor %}
+        {# The call that starts it, which cannot be an inline script under this
+           CSP. After the editor in document order, so its global exists. #}
+        <script
+          src="{{ static_url }}/js/fastfort-richtext.js"
+          data-editor="{{ theme.richtext_editor }}"
+          {% if theme.richtext_license_key %}data-license-key="{{ theme.richtext_license_key }}" {% endif %}
+          defer
+        ></script>
+      {% endif %}
     {% endif %}
   </head>
 

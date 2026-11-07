@@ -332,7 +332,7 @@ def test_the_everyday_page_stays_within_budget(css: str) -> None:
 
 
 def test_the_whole_front_end_stays_within_budget(css: str) -> None:
-    """Everything that ships, on-demand bundles included, is budgeted at 100,000 bytes.
+    """Everything that ships, on-demand bundles included, is budgeted at 103,000 bytes.
 
     The per-page budget above is the one that protects the common case, but on
     its own it would be a budget with a hole in it: anything could be moved into
@@ -364,7 +364,16 @@ def test_the_whole_front_end_stays_within_budget(css: str) -> None:
     alternative was a sidebar that marked "you are here" below the fold on every
     navigation.
 
-    Raised again, to 100,000, for the date bar and the self-filling slug --
+    Raised again, to 103,000, for starting a rich-text editor. Under a CSP with
+    no inline script, an editor loaded from `richtext_url` could not be started
+    by a line in a template, so every project wanting CKEditor hosted a second
+    file of its own to call `create()`. `fastfort-richtext.js` is that call --
+    on-demand, fetched only when `richtext_editor` is set -- and the stylesheet
+    gained the custom properties that put CKEditor in the admin's palette, so
+    it is not a white slab on a dark form. The editor itself stays the
+    project's download, not the wheel's.
+
+    Before it, to 100,000, for the date bar and the self-filling slug --
     see the matching note on the everyday budget above; both are on the list
     and form pages every admin has, so neither could be an on-demand bundle.
 
@@ -388,7 +397,7 @@ def test_the_whole_front_end_stays_within_budget(css: str) -> None:
     assert scripts, "the budget cannot pass by measuring nothing"
 
     compressed = _gzipped(css.encode("utf-8"), *(script.read_bytes() for script in scripts))
-    assert compressed < 100_000, f"{compressed} bytes gzipped"
+    assert compressed < 103_000, f"{compressed} bytes gzipped"
 
 
 # ---------------------------------------------------------------------------

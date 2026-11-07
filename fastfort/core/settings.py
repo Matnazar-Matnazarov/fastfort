@@ -363,6 +363,30 @@ class UISettings(BaseModel):
     #: is added to the admin's CSP -- which is exactly why it is configuration
     #: and not something a project can inject from a template.
     richtext_url: str | None = None
+
+    #: Which editor `richtext_url` loads, so FastFort can start it.
+    #:
+    #: An editor's script only defines the editor; something must then call it
+    #: on each textarea, and under a CSP with no inline script that cannot be a
+    #: line in a template. With this set, FastFort serves that call itself
+    #: (`fastfort-richtext.js`, same origin) right after the editor's script::
+    #:
+    #:     UISettings(
+    #:         richtext_url="https://cdn.jsdelivr.net/npm/ckeditor5@49.0.0/dist/browser/ckeditor5.umd.js",
+    #:         richtext_editor="ckeditor5",
+    #:         custom_css_url="https://cdn.jsdelivr.net/npm/ckeditor5@49.0.0/dist/browser/ckeditor5.css",
+    #:     )
+    #:
+    #: `None` keeps the old contract: the script at `richtext_url` starts
+    #: itself. Set without a `richtext_url` it is a start-up error, because it
+    #: would start an editor nothing loaded.
+    richtext_editor: Literal["ckeditor5", "tinymce"] | None = None
+
+    #: The editor's licence key, when it needs one. CKEditor 5 from 44 on and
+    #: TinyMCE 7 both refuse to start without one; `None` passes "GPL", which
+    #: is what each accepts from a project distributing under the GPL. A
+    #: commercial key goes here instead.
+    richtext_license_key: str | None = None
     #: Extra stylesheet loaded after the built-in one, for per-project overrides.
     custom_css_url: str | None = None
 
@@ -421,6 +445,16 @@ class UISettings(BaseModel):
     #: How loudly to draw that label. "danger" for production, so the difference
     #: between the two windows someone has open is visible without reading.
     environment_tone: Literal["info", "warning", "danger"] = "warning"
+
+    @model_validator(mode="after")
+    def _an_editor_needs_a_script(self) -> UISettings:
+        if self.richtext_editor is not None and not self.richtext_url:
+            raise ValueError(
+                f"ui.richtext_editor is {self.richtext_editor!r} but ui.richtext_url is "
+                "not set, so there is no editor script to start. Set richtext_url to the "
+                "editor's script, or leave richtext_editor unset."
+            )
+        return self
 
 
 class SecuritySettings(BaseModel):

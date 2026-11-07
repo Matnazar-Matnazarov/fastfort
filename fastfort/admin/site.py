@@ -105,7 +105,9 @@ CSS_SHEETS = (
 #: the map editor and the structured-data editors together are about a third of
 #: the front end's weight, and the great majority of admin pages have no
 #: geometry, array or hstore column at all.
-SCRIPTS = frozenset({"boot.js", "fastfort.js", "fastfort-geo.js", "fastfort-data.js"})
+SCRIPTS = frozenset(
+    {"boot.js", "fastfort.js", "fastfort-geo.js", "fastfort-data.js", "fastfort-richtext.js"}
+)
 
 #: The bundle each widget needs, over and above the everyday one.
 _WIDGET_SCRIPTS = {
