@@ -39,9 +39,11 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import Any
 from xml.etree import ElementTree
+from xml.parsers import expat
 
 from fastfort.spec import FieldSpec, FieldType, ModelSpec
 
+from .export import FORMULA_TRIGGERS
 from .values import check_bounds, parse_value
 
 __all__ = [
@@ -232,6 +234,17 @@ def _decode(content: bytes) -> str:
     return content.decode("utf-8", errors="replace")
 
 
+def _undefuse(cell: str) -> str:
+    """Undo `export.defuse`: the apostrophe it puts before a formula trigger.
+
+    Only that exact shape -- `'` followed by one of the triggers -- so a value
+    that merely starts with an apostrophe ("'90s hits") is left alone.
+    """
+    if len(cell) > 1 and cell[0] == "'" and cell[1:].startswith(FORMULA_TRIGGERS):
+        return cell[1:]
+    return cell
+
+
 def _read_csv(content: bytes) -> tuple[list[str], list[list[str]]]:
     text = _decode(content)
     if not text.strip():
@@ -245,7 +258,7 @@ def _read_csv(content: bytes) -> tuple[list[str], list[list[str]]]:
         dialect = csv.excel
 
     reader = csv.reader(io.StringIO(text, newline=""), dialect)
-    rows = [[cell.strip() for cell in row] for row in reader]
+    rows = [[_undefuse(cell.strip()) for cell in row] for row in reader]
     rows = [row for row in rows if any(cell for cell in row)]
     if not rows:
         raise ImportFileError("That file has no rows in it.")
