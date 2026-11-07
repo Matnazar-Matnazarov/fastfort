@@ -316,6 +316,7 @@
                           value="{{ cell.value }}"
                           aria-label="{{ _(cell.label) }}"
                           {% if cell.required %}data-ff-required {% endif %}
+                          {% if cell.widget in ("date", "datetime", "time") %}data-ff-date {% endif %}
                         />
                       {% endif %}
                       {% for message in cell.errors %}

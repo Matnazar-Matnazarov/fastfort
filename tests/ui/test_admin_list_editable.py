@@ -241,3 +241,36 @@ async def test_the_save_needs_a_csrf_token(
 
     async with session_factory() as session:
         assert (await session.get(Product, product.id)).stock == before
+
+
+async def test_a_date_cell_draws_the_admins_calendar(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> None:
+    """A date edited in place gets the picker the form gives it, not the
+    browser's own calendar one click away from the admin's on the same page."""
+
+    class DatedAdmin(admin.ModelAdmin):
+        list_display = ("id", "name", "released_on")
+        list_editable = ("released_on",)
+
+    fort = FastFort(
+        FastFortSettings(  # type: ignore[call-arg]
+            secret_key=SECRET,
+            security={"cookie_secure": False},  # type: ignore[arg-type]
+        ),
+        backend=backend,
+    )
+    fort.set_user_model(StaffUser)
+    fort.register(Product, DatedAdmin, key="shop.product")
+    app = FastAPI()
+    fort.mount(app)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as opened:
+        await sign_in(opened)
+        body = (await opened.get("/admin/shop.product/")).text
+
+    cells = re.findall(r'<input[^>]*class="[^"]*ff-cell-input[^"]*"[^>]*>', body, re.S)
+    assert cells, "the list should render editable cells"
+    assert all("data-ff-date" in cell for cell in cells)

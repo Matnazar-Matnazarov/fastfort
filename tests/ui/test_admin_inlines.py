@@ -342,3 +342,36 @@ async def test_a_child_that_fails_to_parse_writes_nothing_at_all(
 def test_the_inline_base_is_exported() -> None:
     """`admin.TabularInline` is the public name; `InlineAdmin` is its base."""
     assert issubclass(admin.TabularInline, InlineAdmin)
+
+
+async def test_a_date_in_an_inline_row_draws_the_admins_calendar(
+    backend: SQLAlchemyBackend, staff_user: StaffUser
+) -> None:
+    class DatedInline(admin.TabularInline):
+        model = Product
+        fields = ("name", "price", "released_on")
+        extra = 1
+
+    class DatedCategoryAdmin(admin.ModelAdmin):
+        inlines = (DatedInline,)
+
+    fort = FastFort(
+        FastFortSettings(  # type: ignore[call-arg]
+            secret_key=SECRET,
+            security={"cookie_secure": False},  # type: ignore[arg-type]
+        ),
+        backend=backend,
+    )
+    fort.set_user_model(StaffUser)
+    fort.register(Category, DatedCategoryAdmin, key="shop.category")
+    app = FastAPI()
+    fort.mount(app)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://testserver"
+    ) as opened:
+        await sign_in(opened)
+        body = (await opened.get("/admin/shop.category/add")).text
+
+    dates = re.findall(r'<input[^>]*name="[^"]*released_on"[^>]*>', body, re.S)
+    assert dates, "the inline row should render its date cell"
+    assert all("data-ff-date" in tag for tag in dates)
