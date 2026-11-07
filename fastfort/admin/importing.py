@@ -39,9 +39,11 @@ from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from typing import Any
 from xml.etree import ElementTree
+from xml.parsers import expat
 
 from fastfort.spec import FieldSpec, FieldType, ModelSpec
 
+from .export import FORMULA_TRIGGERS
 from .values import check_bounds, parse_value
 
 __all__ = [
@@ -232,6 +234,17 @@ def _decode(content: bytes) -> str:
     return content.decode("utf-8", errors="replace")
 
 
+def _undefuse(cell: str) -> str:
+    """Undo `export.defuse`: the apostrophe it puts before a formula trigger.
+
+    Only that exact shape -- `'` followed by one of the triggers -- so a value
+    that merely starts with an apostrophe ("'90s hits") is left alone.
+    """
+    if len(cell) > 1 and cell[0] == "'" and cell[1:].startswith(FORMULA_TRIGGERS):
+        return cell[1:]
+    return cell
+
+
 def _read_csv(content: bytes) -> tuple[list[str], list[list[str]]]:
     text = _decode(content)
     if not text.strip():
@@ -245,7 +258,7 @@ def _read_csv(content: bytes) -> tuple[list[str], list[list[str]]]:
         dialect = csv.excel
 
     reader = csv.reader(io.StringIO(text, newline=""), dialect)
-    rows = [[cell.strip() for cell in row] for row in reader]
+    rows = [[_undefuse(cell.strip()) for cell in row] for row in reader]
     rows = [row for row in rows if any(cell for cell in row)]
     if not rows:
         raise ImportFileError("That file has no rows in it.")
@@ -316,23 +329,55 @@ def _parse_xml(data: bytes) -> ElementTree.Element:
 
     A DOCTYPE is the only place an entity can be declared, and a spreadsheet has
     no legitimate use for one -- Excel does not write one, and neither does
-    `export.py`. So the declaration itself is the refusal, which is a check on
-    the bytes rather than a hope about the parser.
+    `export.py`. So the declaration itself is the refusal.
 
-    `defusedxml` would also do this. It is a dependency for a check that is one
-    `in` on a byte string, on a file format that cannot contain the thing being
-    checked for, so it stays out of the wheel.
+    The refusal is made by the parser, the moment it meets a DOCTYPE, rather than
+    by searching the bytes first. Up to 1.1.1 it was a search -- for
+    `b"<!DOCTYPE"` in the first 4 KB -- and both halves of that were holes: a
+    long XML comment pushed the declaration past the window, and a part encoded
+    as UTF-16 spelled it in bytes the search never matched. Expat reads every
+    encoding and every offset, so the handler below sees what the parser sees.
+
+    `defusedxml` would also do this. It is a dependency for what is one handler
+    on the parser the standard library already ships, so it stays out of the
+    wheel.
     """
-    head = data[:4096].lstrip()
-    if b"<!DOCTYPE" in head or b"<!ENTITY" in data[:65536]:
-        raise ImportFileError("That workbook declares XML entities, which are not accepted.")
+    _refuse_declarations(data)
     try:
-        # `ElementTree.fromstring` on bytes it has already been shown carries no
-        # DOCTYPE. S314's concern is the entity expansion the guard above makes
-        # unreachable.
+        # S314 is about entity expansion; `_refuse_declarations` has just shown
+        # this document declares no entity to expand.
         return ElementTree.fromstring(data)  # noqa: S314
     except ElementTree.ParseError as exc:
         raise ImportFileError(f"That workbook is not readable ({exc}).") from None
+
+
+def _refuse_declarations(data: bytes) -> None:
+    """A pass with bare expat that stops at the first DOCTYPE or entity.
+
+    A separate pass because the C `XMLParser` behind `ElementTree` does not
+    expose the expat handlers to hook. Expat decodes every encoding the XML
+    declaration names and reads to the end, so neither a UTF-16 part nor a
+    declaration buried after a megabyte of comment gets past it.
+    """
+    probe = expat.ParserCreate()
+
+    def refuse(*_: object) -> None:
+        raise _EntityDeclaredError
+
+    probe.StartDoctypeDeclHandler = refuse
+    probe.EntityDeclHandler = refuse
+    try:
+        probe.Parse(data, True)
+    except _EntityDeclaredError:
+        raise ImportFileError(
+            "That workbook declares XML entities, which are not accepted."
+        ) from None
+    except expat.ExpatError as exc:
+        raise ImportFileError(f"That workbook is not readable ({exc}).") from None
+
+
+class _EntityDeclaredError(Exception):
+    """Raised from inside expat; caught one frame up in `_parse_xml`."""
 
 
 def _read_xlsx(content: bytes) -> tuple[list[str], list[list[str]]]:

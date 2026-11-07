@@ -110,6 +110,28 @@ def json_value(value: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
+#: What a spreadsheet reads as the start of a formula when it opens a CSV.
+#: `=HYPERLINK(...)` or `=cmd|' /C calc'!A0` typed into a product name by anyone
+#: who can write a row became a formula on the machine of whoever exported the
+#: list and opened it -- CSV injection, CWE-1236. The tab and carriage return
+#: are on the list because some spreadsheets strip them and then read on.
+FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def defuse(value: str | int | float) -> str | int | float:
+    """A text cell that cannot start a formula, by OWASP's recipe: a leading `'`.
+
+    Only text is touched. A negative number is an `int` or `float` here and
+    goes out as a number; it is a minus sign typed into a *text* column that a
+    spreadsheet would misread. The apostrophe is what Excel itself writes to
+    mean "this is text", and `importing._read_csv` takes it off again, so an
+    export uploaded back is the data that was exported.
+    """
+    if isinstance(value, str) and value.startswith(FORMULA_TRIGGERS):
+        return "'" + value
+    return value
+
+
 def stream_csv(headers: Sequence[str], rows: Iterable[Sequence[Any]]) -> Iterator[bytes]:
     """The rows as CSV, one chunk per row.
 
@@ -128,7 +150,7 @@ def stream_csv(headers: Sequence[str], rows: Iterable[Sequence[Any]]) -> Iterato
     buffer.truncate(0)
 
     for row in rows:
-        writer.writerow([cell_value(value) for value in row])
+        writer.writerow([defuse(cell_value(value)) for value in row])
         yield buffer.getvalue().encode("utf-8")
         buffer.seek(0)
         buffer.truncate(0)
