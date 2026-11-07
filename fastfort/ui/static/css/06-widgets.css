@@ -3108,3 +3108,258 @@ a.ff-upload__name {
   background: var(--ff-surface-sunken);
   color: var(--ff-text);
 }
+
+/* ===========================================================================
+ * Phones
+ *
+ * Below 40rem a table of eight columns cannot be read: it scrolled sideways,
+ * the identifier and the first two columns filled the screen, and every row
+ * grew a hundred pixels tall wrapping a date into three lines. So each row
+ * becomes a card -- the checkbox, the record's link and its actions across
+ * the top, every other column a "label  value" line beneath -- read top to
+ * bottom like the record it is. The markup is the same table: `data-label`
+ * on each cell is all the server adds, so column visibility, live updates,
+ * list editing and row selection keep working unchanged, and a wider screen
+ * gets the table back. The header row stays, as a strip of sort chips.
+ * ======================================================================== */
+
+@media (max-width: 40rem) {
+  .ff-table-wrap {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+
+  .ff-table,
+  .ff-table tbody {
+    display: block;
+  }
+
+  /* Sorting survives as a row of chips that scrolls sideways on its own,
+   * instead of the whole table doing so. */
+  .ff-table thead {
+    display: block;
+  }
+
+  .ff-table thead tr {
+    display: flex;
+    gap: var(--ff-space-2);
+    overflow-x: auto;
+    padding-block-end: var(--ff-space-3);
+    scrollbar-width: none;
+  }
+
+  .ff-table thead th {
+    position: static;
+    flex: none;
+    padding: var(--ff-space-1) var(--ff-space-3);
+    border: 1px solid var(--ff-border);
+    border-radius: var(--ff-radius-full);
+    background: var(--ff-surface);
+  }
+
+  .ff-table thead th[aria-sort] {
+    border-color: var(--ff-accent-border);
+    background: var(--ff-accent-subtle);
+    color: var(--ff-accent);
+  }
+
+  .ff-table thead th:last-child {
+    display: none;
+  }
+
+  .ff-table thead th.ff-table__select {
+    display: grid;
+    place-items: center;
+    padding: var(--ff-space-1) var(--ff-space-2) !important;
+  }
+
+  .ff-table tbody tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: var(--ff-space-3);
+    row-gap: var(--ff-space-2);
+    margin-block-end: var(--ff-space-3);
+    padding: var(--ff-space-3) var(--ff-space-4);
+    background: var(--ff-surface);
+    border: 1px solid var(--ff-border);
+    border-radius: var(--ff-radius-lg);
+    box-shadow: var(--ff-shadow-xs);
+  }
+
+  .ff-table tbody tr:hover {
+    background: var(--ff-surface);
+  }
+
+  .ff-table tbody td {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--ff-space-4);
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    color: var(--ff-text);
+    font-size: var(--ff-text-sm);
+    text-align: end;
+    overflow-wrap: anywhere;
+  }
+
+  .ff-table tbody td::before {
+    content: attr(data-label);
+    flex: none;
+    max-width: 45%;
+    color: var(--ff-text-muted);
+    text-align: start;
+  }
+
+  .ff-table tbody td:not([data-label])::before {
+    content: none;
+  }
+
+  /* The top line: tick box, the record itself, its actions. */
+  .ff-table tbody td.ff-table__select {
+    grid-column: 1;
+    grid-row: 1;
+    width: auto;
+    padding: 0 !important;
+  }
+
+  .ff-table tbody td:has(> .ff-link) {
+    grid-column: 2;
+    grid-row: 1;
+    justify-content: flex-start;
+    font-size: var(--ff-text-base);
+    text-align: start;
+  }
+
+  /* A little air between the label lines, which are read rather than scanned. */
+  .ff-table tbody tr > td:not(.ff-table__select):not(:has(> .ff-link)):not(:last-child) {
+    padding-block: var(--ff-space-1);
+  }
+
+  .ff-table tbody td:has(> .ff-link)::before {
+    content: none;
+  }
+
+  .ff-table tbody td:last-child {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: start;
+  }
+
+  .ff-table tbody td:last-child::before {
+    content: none;
+  }
+
+  /* Bigger targets: a 30px icon button is fine under a mouse and a miss under
+   * a thumb. */
+  .ff-table .ff-action {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  /* The toolbar: search on its own line, then the controls in equal halves,
+   * instead of two buttons left and two stranded on the right. */
+  .ff-toolbar {
+    position: relative;
+    padding: var(--ff-space-2);
+  }
+
+  /* The live-update spinner is a flex item at desktop width, where there is
+   * room to spare; here it took a slot in the button grid and pushed
+   * "Columns" off the edge. Out of the flow, over the toolbar's corner. */
+  .ff-toolbar__end > .ff-busy {
+    position: absolute;
+    inset-block-start: var(--ff-space-2);
+    inset-inline-end: var(--ff-space-2);
+  }
+
+  .ff-toolbar__search {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .ff-toolbar > .ff-filters-toggle,
+  .ff-toolbar > .ff-dropdown {
+    flex: 1 1 0;
+  }
+
+  .ff-toolbar > .ff-dropdown > .ff-btn,
+  .ff-toolbar__end > .ff-dropdown > .ff-btn,
+  .ff-toolbar__end > .ff-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .ff-toolbar__end {
+    flex: 1 1 100%;
+    margin-inline-start: 0;
+  }
+
+  .ff-toolbar__end > .ff-dropdown,
+  .ff-toolbar__end > .ff-btn {
+    flex: 1 1 0;
+  }
+
+  .ff-toolbar .ff-filters-toggle {
+    justify-content: center;
+  }
+
+  /* "Filters" is a full-size button and the other three are small ones; side
+   * by side in a grid the difference reads as a misalignment. */
+  .ff-toolbar > .ff-filters-toggle,
+  .ff-toolbar > .ff-dropdown > .ff-btn,
+  .ff-toolbar__end > .ff-dropdown > .ff-btn,
+  .ff-toolbar__end > .ff-btn {
+    min-block-size: 2.5rem;
+  }
+
+  /* A dropdown opened from a half-width button would hang off the screen. */
+  .ff-toolbar .ff-dropdown__panel {
+    inset-inline: 0 auto;
+    max-width: calc(100vw - 2 * var(--ff-space-4));
+  }
+}
+
+@media (max-width: 40rem) {
+  /* Page actions stay on one line: "Back to …" keeps its arrow and loses its
+   * words, which the breadcrumb above already says. */
+  .ff-page-header__actions {
+    flex-wrap: nowrap;
+    gap: var(--ff-space-1);
+  }
+
+  .ff-page-header__actions .ff-btn {
+    padding-inline: var(--ff-space-2);
+  }
+
+  .ff-hide-sm {
+    display: none;
+  }
+
+  /* A card's 24px gutter on each side of a 390px screen took an eighth of the
+   * width from every form field for nothing. */
+  .ff-card__body {
+    padding: var(--ff-space-4);
+  }
+
+  /* Four save buttons wrapped into three rows of a sticky bar -- a quarter of
+   * the screen covering the form being saved. One row instead: the primary
+   * save first, the rest a swipe away. */
+  .ff-form-actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin-inline: calc(-1 * var(--ff-space-4));
+    padding-inline: var(--ff-space-4);
+    scrollbar-width: none;
+  }
+
+  .ff-form-actions > .ff-btn {
+    flex: none;
+  }
+}

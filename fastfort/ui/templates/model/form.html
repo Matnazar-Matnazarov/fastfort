@@ -153,9 +153,10 @@
           {{ _("History") }}
         </a>
       {% endif %}
-      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}">
+      {% set back_label = _("Back to {name}", name=model_title|lower)|ff_sentence %}
+      <a class="ff-btn ff-btn--ghost" href="{{ list_url }}" aria-label="{{ back_label }}" title="{{ back_label }}">
         {{ ff_icon("arrow-left", size=15) }}
-        {{ _("Back to {name}", name=model_title|lower)|ff_sentence }}
+        <span class="ff-hide-sm">{{ back_label }}</span>
       </a>
       {% if delete_url %}
         {# Red, because it is the one action on this page that cannot be undone.

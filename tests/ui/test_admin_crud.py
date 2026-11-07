@@ -643,3 +643,28 @@ async def test_a_password_column_is_never_prefilled(client: httpx.AsyncClient) -
     assert "$argon2id$" not in body
     # The control is present but empty, with an explanation of what blank means.
     assert "Leave blank to keep the current password." in body
+
+
+async def test_every_cell_names_its_column_for_the_phone_layout(
+    client: httpx.AsyncClient,
+) -> None:
+    """Below 40rem each row is drawn as a card of "label value" lines, and the
+    label is the cell's own `data-label`. A cell without one would read as a
+    bare value with no idea which column it came from."""
+    body = (await client.get("/admin/shop.product/")).text
+    cells = re.findall(r"<td[^>]*data-ff-col=\"[^\"]+\"[^>]*>", body)
+
+    assert cells, "the list should render data cells"
+    assert all('data-label="' in cell for cell in cells)
+    assert 'data-label="Name"' in body
+
+
+async def test_the_back_link_keeps_its_name_when_its_words_are_hidden(
+    client: httpx.AsyncClient,
+) -> None:
+    """On a phone the words collapse to the arrow; the accessible name stays."""
+    body = (await client.get("/admin/shop.product/1/")).text
+
+    link = re.search(r'<a class="ff-btn ff-btn--ghost" href="/admin/shop\.product/"[^>]*>', body)
+    assert link, "the change form should link back to the list"
+    assert 'aria-label="Back to products"' in link.group(0)
