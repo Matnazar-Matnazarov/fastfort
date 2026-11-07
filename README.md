@@ -16,6 +16,15 @@ PostGIS & pgvector · SQLAlchemy & Tortoise · **No Node.js required**
 [Live demo](https://fastfort.inventrix.uz) ·
 [Changelog](CHANGELOG.md)
 
+<br>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Matnazar-Matnazarov/fastfort/main/docs/screenshots/dashboard-dark.webp">
+  <img alt="The FastFort dashboard: metrics with sparklines, a 30-day trend chart and a breakdown, all drawn by the server" src="https://raw.githubusercontent.com/Matnazar-Matnazarov/fastfort/main/docs/screenshots/dashboard-light.webp" width="100%">
+</picture>
+
+<sub>The live demo, <a href="https://fastfort.inventrix.uz">fastfort.inventrix.uz</a> — the sign-in form is filled in for you.</sub>
+
 </div>
 
 > [!NOTE]
@@ -25,6 +34,7 @@ PostGIS & pgvector · SQLAlchemy & Tortoise · **No Node.js required**
 
 **Contents** —
 [Why FastFort?](#why-fastfort) ·
+[Screenshots](#screenshots) ·
 [Features](#features) ·
 [Coming from Django](#coming-from-django) ·
 [How it is put together](#how-it-is-put-together) ·
@@ -153,6 +163,33 @@ the token expired.
 
 ---
 
+## Screenshots
+
+Every screen below is the [live demo](https://fastfort.inventrix.uz), a freight
+company with seventeen models on PostgreSQL and PostGIS. No screen was mocked
+up; each is what `pip install fastfort` renders.
+
+<table>
+  <tr>
+    <td width="50%"><img alt="A list view with search, a date drill-down bar, sortable columns, row selection and per-row actions" src="https://raw.githubusercontent.com/Matnazar-Matnazarov/fastfort/main/docs/screenshots/list-light.webp"><br><b>Lists</b> — search, sort, a <code>date_hierarchy</code> bar, per-row star, edit and delete</td>
+    <td width="50%"><img alt="The filter drawer: checkboxes for an enum, searchable relation pickers and date ranges with presets" src="https://raw.githubusercontent.com/Matnazar-Matnazarov/fastfort/main/docs/screenshots/filters-light.webp"><br><b>Filters</b> — every <code>list_filter</code> in one drawer; dates get presets and the admin's own calendar</td>
+  </tr>
+  <tr>
+    <td><img alt="A route form with a PostGIS line drawn on an OpenStreetMap slippy map, and the Django save buttons" src="https://raw.githubusercontent.com/Matnazar-Matnazarov/fastfort/main/docs/screenshots/form-map-light.webp"><br><b>PostGIS</b> — a hand-rolled slippy map that writes WKT into the field; <i>Save as new</i> beside Django's save buttons</td>
+    <td><img alt="A form in dark mode with a CKEditor 5 rich-text field matching the admin's palette" src="https://raw.githubusercontent.com/Matnazar-Matnazarov/fastfort/main/docs/screenshots/form-richtext-dark.webp"><br><b>Rich text</b> — CKEditor 5 or TinyMCE from one setting, in the admin's palette and dark mode</td>
+  </tr>
+  <tr>
+    <td><img alt="The command palette opened over a list, filtering models as you type" src="https://raw.githubusercontent.com/Matnazar-Matnazarov/fastfort/main/docs/screenshots/palette-light.webp"><br><b>Command palette</b> — <kbd>Ctrl</kbd> <kbd>K</kbd> to any model</td>
+    <td><img alt="A delete confirmation listing the related records that will be kept without the link" src="https://raw.githubusercontent.com/Matnazar-Matnazarov/fastfort/main/docs/screenshots/delete-light.webp"><br><b>Deletes you can trust</b> — what cascades, what is unlinked, what blocks it</td>
+  </tr>
+  <tr>
+    <td><img alt="The admin in Arabic, laid out right to left in dark mode" src="https://raw.githubusercontent.com/Matnazar-Matnazarov/fastfort/main/docs/screenshots/rtl-arabic-dark.webp"><br><b>Eleven languages</b> — Arabic turns the whole layout around from one attribute</td>
+    <td align="center"><img alt="The shipments list on a phone" src="https://raw.githubusercontent.com/Matnazar-Matnazarov/fastfort/main/docs/screenshots/mobile-list.webp" width="48%"><br><b>Phones</b> — a real mobile layout, not a shrunken desktop</td>
+  </tr>
+</table>
+
+---
+
 ## Features
 
 | | |
@@ -164,7 +201,8 @@ the token expired.
 | 🔑 **Personal access tokens** | `fort.enable_api_tokens(ApiToken)` — named, scoped, expiring, individually revocable tokens for the cron job and the integration with no password to type. Minted from the admin, shown exactly once, stored only as a digest |
 | ✏️ **Editing where you are** | `inlines` edit an order's lines on the order's own page, `list_editable` edits cells in the list, `bulk_editable` sets one field across the selected rows — all in one transaction, all working with JavaScript off |
 | 🛡 **Accounts a demo cannot break** | Four settings for what the admin may do to an account — change a password, change a *superuser's* password, delete an account, delete a superuser. All default to what the admin has always done. A protected password field is read-only *and* dropped from the write, because a read-only control that still accepts a posted value is a label rather than a protection |
-| 🎛 **Django-style admin** | `@admin.register`, `list_display`, `list_filter`, `search_fields`, `fieldsets`, `actions` |
+| 🎛 **Django-style admin** | `@admin.register`, `list_display`, `list_filter`, `search_fields`, `fieldsets`, `actions`, `date_hierarchy`, `prepopulated_fields`, `save_as` — see [Coming from Django](#coming-from-django) |
+| 📝 **Rich text, without bundling an editor** | `ui={"richtext_url": …, "richtext_editor": "ckeditor5"}` and every `richtext` field is CKEditor 5 (or TinyMCE), started by FastFort under its own strict CSP and drawn in the admin's palette, dark mode included. The textarea underneath stays what submits |
 | 🗑 **Deletes you can trust** | The confirmation counts what actually goes: rows that cascade, rows kept with the link cleared, and rows that block the delete outright — refused with a sentence instead of a constraint violation |
 | 🎨 **A UI you will not want to replace** | Light and dark themes, brand colour from a single setting, ⌘K command palette, full keyboard navigation, real mobile layout |
 | 🔐 **Production-grade auth** | Argon2id hashing, session cookies invalidated by a password change, login lockout with a growing delay, CSRF on every form, and a CSP that starts at `default-src 'none'` |
