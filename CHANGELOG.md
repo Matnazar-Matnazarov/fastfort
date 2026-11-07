@@ -10,6 +10,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-07
+
+Rich text without a second file: name the editor, and FastFort starts it under
+its own CSP and draws it in the admin's palette. Plus screenshots in the README.
+
 ### Added
 
 - **A rich-text editor started by FastFort.** `UISettings.richtext_editor`
@@ -1712,7 +1717,8 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.0.0...v1.1.0
