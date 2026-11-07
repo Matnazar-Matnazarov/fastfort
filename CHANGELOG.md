@@ -10,6 +10,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The admin on a phone.** Below 40rem a list scrolled sideways with rows a
+  hundred pixels tall; each row is now a card — tick box, the record's link
+  and its actions on top, every other column a labelled line beneath — with
+  the column headers kept as a strip of sort chips. The list toolbar lays out
+  as an even grid instead of stranding two buttons at the far edge (the
+  live-update spinner was taking a slot), the sticky save bar is one row
+  instead of three, the change form's "Back to …" collapses to its arrow
+  (its accessible name kept), and cards lose the desktop gutter. Column
+  visibility, live updates, list editing and selection are unchanged: the
+  markup gains one `data-label` per cell.
+
+### Changed
+
+- Budgets: 80,000 bytes for the everyday page and 105,000 for everything, for
+  the phone layout's stylesheet.
+
 ## [1.3.0] - 2026-11-07
 
 Rich text without a second file: name the editor, and FastFort starts it under

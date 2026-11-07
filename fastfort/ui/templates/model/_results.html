@@ -107,7 +107,7 @@
                 </td>
               {% endif %}
               {% for cell in row.cells %}
-                <td data-ff-col="{{ columns[loop.index0].name }}" {% if cell.numeric %}class="ff-numeric"{% endif %}>
+                <td data-ff-col="{{ columns[loop.index0].name }}" data-label="{{ columns[loop.index0].label }}" {% if cell.numeric %}class="ff-numeric"{% endif %}>
                   {# Editable first, before any type branch. A boolean cell
                      reached `ff_bool` and returned a tick, so `is_active`
                      rendered no control at all -- an editable cell draws its
