@@ -101,8 +101,31 @@ class FastFort:
                 store=self._refresh_token_store,
                 signing_key=self._token_signing_key,
                 verifying_key=self._token_verifying_key,
+                account_stamp=self._account_stamp if self.has_user_model else None,
             )
         return self._tokens
+
+    async def _account_stamp(self, subject: str) -> str | None:
+        """The password stamp of an active account, or `None`.
+
+        What a refresh is checked against: a deleted or deactivated account
+        gets `None`, and a changed password a different stamp. The digest is
+        the browser session's, so changing a password ends both kinds of
+        session at once.
+        """
+        # `fort.auth` exists from `mount()` on; a token service used before then
+        # -- a script, a test, a worker that never mounts -- builds its own.
+        auth = self.auth
+        if auth is None:
+            from fastfort.auth.service import AdminAuth
+
+            auth = AdminAuth(self)
+        user = await auth._get_user(subject)
+        config = self.user_config
+        if user is None or not config.is_active(user):
+            return None
+        stamp: str = auth.sessions.stamp_for(config.password_hash_of(user))
+        return stamp
 
     def configure_tokens(
         self,

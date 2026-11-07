@@ -41,9 +41,11 @@ so a project can back it with Redis or a table.
 
 from __future__ import annotations
 
+import hmac
 import secrets
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -69,6 +71,13 @@ __all__ = [
 #: which is a fifteen-minute credential silently promoted to a fortnight-long one.
 ACCESS = "access"
 REFRESH = "refresh"
+
+#: What `TokenService` asks about the account behind a refresh token: its
+#: current stamp (a keyed digest of the password hash) while it exists and is
+#: active, `None` once it does not or is not. Supplied by `FastFort`, which
+#: knows the user model; a bare `TokenService` has none and checks only the
+#: token, which is what it always did.
+AccountStamp = Callable[[str], Awaitable[str | None]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,10 +195,12 @@ class TokenService:
         store: RefreshTokenStore | None = None,
         signing_key: str | None = None,
         verifying_key: str | None = None,
+        account_stamp: AccountStamp | None = None,
     ) -> None:
         self._settings = settings
         self._auth = settings.auth
         self._store = store or InMemoryRefreshTokenStore()
+        self._account_stamp = account_stamp
         secret = settings.secret_key.get_secret_value()
         self._signing_key = signing_key or secret
         self._verifying_key = verifying_key or signing_key or secret
@@ -215,7 +226,14 @@ class TokenService:
         out of a fortnight-old token is a permission that was revoked a fortnight
         ago and still works.
         """
-        return await self._mint(subject, family=uuid.uuid4().hex, claims=claims)
+        stamp = await self._account_stamp(subject) if self._account_stamp else None
+        return await self._mint(
+            subject,
+            family=uuid.uuid4().hex,
+            claims=claims,
+            signed_in_at=int(time.time()),
+            stamp=stamp,
+        )
 
     async def refresh(self, token: str) -> TokenPair:
         """Exchange a refresh token for a new pair, retiring the one presented.
@@ -228,12 +246,27 @@ class TokenService:
         payload = self._decode(token, expect=REFRESH)
         jti = str(payload.get("jti", ""))
         subject = str(payload.get("sub", ""))
+        family = str(payload.get("fam", "")) or uuid.uuid4().hex
+        # A token minted before 1.2 has no `ath`; its own `iat` is the closest
+        # honest reading, and it means an upgrade signs no API client out.
+        signed_in_at = int(payload.get("ath", payload.get("iat", 0)))
+
+        # Before the store is consulted, so a refusal here spends nothing an
+        # honest client might still need -- and before the rotation branch, so
+        # turning rotation off gives up replay detection and nothing else.
+        if signed_in_at + self._auth.effective_refresh_max_age <= time.time():
+            await self._store.revoke_family(family)
+            raise SecurityError(
+                "This sign-in is too old to refresh.",
+                hint="Sign in again with a password; refresh_token_max_age has passed.",
+            )
+        stamp = await self._check_account(subject, payload, family)
 
         if not self._auth.rotate_refresh_tokens:
             # No rotation means no spending, so there is nothing to replay and
             # nothing to detect. The token stays valid until it expires.
             return await self._mint(
-                subject, family=str(payload.get("fam", uuid.uuid4().hex)), claims={}
+                subject, family=family, claims={}, signed_in_at=signed_in_at, stamp=stamp
             )
 
         record = await self._store.spend(jti)
@@ -241,9 +274,7 @@ class TokenService:
             # Either already spent or never issued by this store. Both readings
             # are indistinguishable from theft, so both are treated as theft.
             if self._auth.revoke_family_on_reuse:
-                family = str(payload.get("fam", ""))
-                if family:
-                    await self._store.revoke_family(family)
+                await self._store.revoke_family(family)
             raise SecurityError(
                 "That refresh token has already been used.",
                 hint=(
@@ -253,12 +284,64 @@ class TokenService:
                 ),
             )
 
-        return await self._mint(record.subject, family=record.family, claims={})
+        return await self._mint(
+            record.subject,
+            family=record.family,
+            claims={},
+            signed_in_at=signed_in_at,
+            stamp=stamp,
+        )
 
-    async def _mint(self, subject: str, *, family: str, claims: dict[str, Any]) -> TokenPair:
+    async def _check_account(
+        self, subject: str, payload: dict[str, Any], family: str
+    ) -> str | None:
+        """Refuse a refresh for an account that is gone, closed, or re-keyed.
+
+        Rotation answers "has this token been spent?" and nothing else, so in
+        1.1.1 a refresh token went on minting access tokens for an account that
+        had been deactivated or deleted, and survived a password change -- the
+        one thing a person does when they think a credential was stolen. The
+        stamp is the same keyed digest of the password hash the browser session
+        carries, so both kinds of session end on the same event, however the
+        password was changed.
+
+        The family is revoked rather than the request merely declined: an
+        account reactivated tomorrow must not get yesterday's session back.
+        """
+        if self._account_stamp is None:
+            return None
+        current = await self._account_stamp(subject)
+        issued = payload.get("stp")
+        stale = current is None or (
+            isinstance(issued, str) and not hmac.compare_digest(issued, current)
+        )
+        if stale:
+            await self._store.revoke_family(family)
+            # The same sentence for every reason. Saying "deactivated" or
+            # "password changed" tells whoever holds a stolen token which it was.
+            raise SecurityError(
+                "That refresh token no longer identifies an active account.",
+                hint="Sign in again.",
+            )
+        return current
+
+    async def _mint(
+        self,
+        subject: str,
+        *,
+        family: str,
+        claims: dict[str, Any],
+        signed_in_at: int,
+        stamp: str | None,
+    ) -> TokenPair:
         now = int(time.time())
         access_ttl = self._auth.access_token_ttl
-        refresh_ttl = self._auth.refresh_token_ttl
+        # Capped at the chain's maximum age, so the last token of a chain
+        # expires when the chain does rather than a full TTL past it.
+        refresh_expires = min(
+            now + self._auth.refresh_token_ttl,
+            signed_in_at + self._auth.effective_refresh_max_age,
+        )
         refresh_jti = uuid.uuid4().hex
 
         access = self._encode(
@@ -273,16 +356,20 @@ class TokenService:
                 "jti": secrets.token_urlsafe(12),
             }
         )
-        refresh = self._encode(
-            {
-                "sub": subject,
-                "typ": REFRESH,
-                "iat": now,
-                "exp": now + refresh_ttl,
-                "jti": refresh_jti,
-                "fam": family,
-            }
-        )
+        refresh_claims: dict[str, Any] = {
+            "sub": subject,
+            "typ": REFRESH,
+            "iat": now,
+            "exp": refresh_expires,
+            "jti": refresh_jti,
+            "fam": family,
+            # When the password was last presented. Carried unchanged through
+            # every rotation; see `refresh_token_max_age`.
+            "ath": signed_in_at,
+        }
+        if stamp is not None:
+            refresh_claims["stp"] = stamp
+        refresh = self._encode(refresh_claims)
 
         if self._auth.rotate_refresh_tokens:
             await self._store.remember(
@@ -290,7 +377,7 @@ class TokenService:
                     jti=refresh_jti,
                     family=family,
                     subject=subject,
-                    expires_at=now + refresh_ttl,
+                    expires_at=refresh_expires,
                 )
             )
 
