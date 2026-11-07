@@ -76,6 +76,15 @@ class AuthSettings(BaseModel):
     rotate_refresh_tokens: bool = True
     revoke_family_on_reuse: bool = True
 
+    #: The longest a chain of rotated refresh tokens may run, counted from the
+    #: password sign-in that started it. Each refresh mints a token valid for
+    #: `refresh_token_ttl` from *now*, so without a ceiling a chain had no end:
+    #: a stolen token refreshed by the thief before the real client refreshed
+    #: lived as long as the thief kept using it. After this, the client signs in
+    #: with a password again. Never shorter than one token's own lifetime -- see
+    #: `effective_refresh_max_age`.
+    refresh_token_max_age: Annotated[int, Field(ge=300, le=31_536_000)] = 7_776_000
+
     #: Signing algorithm. HS256 needs only the secret key; RS256 and EdDSA are
     #: available for deployments that verify tokens in another service.
     algorithm: Literal["HS256", "HS384", "HS512", "RS256", "EdDSA"] = "HS256"
@@ -140,6 +149,17 @@ class AuthSettings(BaseModel):
     #: the one a demo usually wants: visitors may tidy up the accounts they
     #: made, and the administrator the demo signs in as stays where it is.
     allow_superuser_delete: bool = True
+
+    @property
+    def effective_refresh_max_age(self) -> int:
+        """`refresh_token_max_age`, but never less than `refresh_token_ttl`.
+
+        A project that raised the TTL to a year and never heard of the new
+        ceiling must not find its clients signed out after ninety days -- nor
+        fail to start over a setting it did not write. The longer of the two
+        wins, which is exactly the behaviour it had before the ceiling existed.
+        """
+        return max(self.refresh_token_max_age, self.refresh_token_ttl)
 
 
 class AdminSettings(BaseModel):
@@ -622,7 +642,8 @@ class FastFortSettings(BaseSettings):
         if not self.auth.rotate_refresh_tokens:
             issues.append(
                 "auth.rotate_refresh_tokens=False means a stolen refresh token can be "
-                "used indefinitely without detection."
+                "used until refresh_token_max_age without detection, and /auth/logout "
+                "cannot revoke it: with nothing stored there is nothing to retire."
             )
         if not self.rate_limit.enabled:
             issues.append(
