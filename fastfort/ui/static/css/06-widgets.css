@@ -3060,3 +3060,51 @@ a.ff-upload__name {
 .ff-audit__who {
   margin-inline-start: auto;
 }
+
+/* --- A rich-text editor the project loads (`ui.richtext_editor`) ------------
+ * CKEditor 5 draws itself in its own palette: white, grey borders, blue focus.
+ * On a dark admin that was a white slab in the middle of the form. Every
+ * colour it uses is a custom property, so pointing them at the admin's tokens
+ * makes it follow the theme, the accent hue and dark mode with no script.
+ * Scoped to `.ff-field` so an editor a project uses elsewhere is untouched. */
+.ff-field .ck {
+  --ck-color-base-background: var(--ff-surface);
+  --ck-color-base-foreground: var(--ff-surface-sunken);
+  --ck-color-base-border: var(--ff-border);
+  --ck-color-base-text: var(--ff-text);
+  --ck-color-text: var(--ff-text);
+  --ck-color-toolbar-background: var(--ff-surface-sunken);
+  --ck-color-toolbar-border: var(--ff-border);
+  --ck-color-button-default-hover-background: var(--ff-surface-hover);
+  --ck-color-button-on-background: var(--ff-accent-subtle);
+  --ck-color-button-on-hover-background: var(--ff-accent-muted);
+  --ck-color-button-on-color: var(--ff-accent);
+  --ck-color-dropdown-panel-background: var(--ff-surface-raised);
+  --ck-color-dropdown-panel-border: var(--ff-border);
+  --ck-color-panel-background: var(--ff-surface-raised);
+  --ck-color-panel-border: var(--ff-border);
+  --ck-color-input-background: var(--ff-surface);
+  --ck-color-input-border: var(--ff-border);
+  --ck-color-input-text: var(--ff-text);
+  --ck-color-labeled-field-label-background: var(--ff-surface-raised);
+  --ck-color-list-background: var(--ff-surface-raised);
+  --ck-color-list-button-hover-background: var(--ff-surface-hover);
+  --ck-color-focus-border: var(--ff-accent);
+  --ck-color-shadow-inner: transparent;
+  --ck-color-link-default: var(--ff-accent);
+  --ck-border-radius: var(--ff-radius-md);
+  --ck-font-face: inherit;
+}
+
+.ff-field .ck-editor__editable {
+  min-block-size: 12rem;
+  /* The editable area takes its colour from CKEditor's content stylesheet, not
+   * from the custom properties above, so on a dark admin the text was black on
+   * near-black. Pinned to the admin's own text colour, as is inline code. */
+  color: var(--ff-text);
+}
+
+.ff-field .ck-content code {
+  background: var(--ff-surface-sunken);
+  color: var(--ff-text);
+}
