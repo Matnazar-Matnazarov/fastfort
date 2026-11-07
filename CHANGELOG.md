@@ -10,6 +10,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-11-07
+
+The admin on a phone: list rows as cards, an even toolbar, a one-row save bar.
+
 ### Fixed
 
 - **The admin on a phone.** Below 40rem a list scrolled sideways with rows a
@@ -1735,7 +1739,8 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.1.0...v1.1.1
