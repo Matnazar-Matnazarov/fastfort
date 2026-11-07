@@ -10,6 +10,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-07
+
+A security release. Refresh tokens are now checked against the account they
+were issued for and stop at an absolute lifetime; CSV exports cannot carry a
+spreadsheet formula; the XLSX importer's entity guard can no longer be walked
+around. Upgrading is recommended for every deployment with `auth.api_enabled`
+or with `importable` models. Minor rather than patch only because it adds one
+setting, `refresh_token_max_age`; nothing is removed or renamed.
+
 ### Security
 
 - **Refresh tokens outlived the account they were issued for.** `/auth/refresh`
@@ -1682,7 +1691,8 @@ The first release. Everything below is new, because there was nothing before it.
   installed environment, so the unpublished project itself is not treated as an
   unauditable dependency.
 
-[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Matnazar-Matnazarov/fastfort/compare/v0.8.1...v1.0.0
