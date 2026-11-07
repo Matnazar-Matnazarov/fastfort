@@ -8,8 +8,15 @@ priority.
 
 **Please do not open a public issue.**
 
-Report through a GitHub Security Advisory:
-<https://github.com/Matnazar-Matnazarov/fastfort/security/advisories/new>
+Report it privately through GitHub: open the repository's **Security** tab and
+choose **Report a vulnerability**, or go straight to
+<https://github.com/Matnazar-Matnazarov/fastfort/security/advisories/new>.
+The report, the discussion and any fix stay private until an advisory is
+published.
+
+If that page does not open for you, open a public issue that says only that you
+have something to report privately — no details — and a private channel will be
+arranged with you there.
 
 Including the following speeds up triage considerably:
 

@@ -23,6 +23,16 @@ PostGIS & pgvector · SQLAlchemy & Tortoise · **No Node.js required**
 > [Versioning](#versioning). The badge above is the released version; this
 > README describes `main`, which may be ahead of it.
 
+**Contents** —
+[Why FastFort?](#why-fastfort) ·
+[Features](#features) ·
+[Coming from Django](#coming-from-django) ·
+[How it is put together](#how-it-is-put-together) ·
+[Installation](#installation) ·
+[Security](#security) ·
+[Versioning](#versioning) ·
+[Development](#development)
+
 ---
 
 ## Why FastFort?
@@ -158,7 +168,7 @@ the token expired.
 | 🗑 **Deletes you can trust** | The confirmation counts what actually goes: rows that cascade, rows kept with the link cleared, and rows that block the delete outright — refused with a sentence instead of a constraint violation |
 | 🎨 **A UI you will not want to replace** | Light and dark themes, brand colour from a single setting, ⌘K command palette, full keyboard navigation, real mobile layout |
 | 🔐 **Production-grade auth** | Argon2id hashing, session cookies invalidated by a password change, login lockout with a growing delay, CSRF on every form, and a CSP that starts at `default-src 'none'` |
-| 🎫 **A token API in one setting** | `auth={"api_enabled": True}` mounts `/auth/token`, `/refresh`, `/logout` and `/me` in OAuth 2's shapes. Refresh rotation with reuse detection: a token presented twice revokes the whole family. `bearer_user(fort)` is a `Depends` for your own routes, and it hands them the user *row* |
+| 🎫 **A token API in one setting** | `auth={"api_enabled": True}` mounts `/auth/token`, `/refresh`, `/logout` and `/me` in OAuth 2's shapes. Refresh rotation with reuse detection: a token presented twice revokes the whole family. A refresh is refused once the account is deactivated, deleted or has a new password, and no chain outlives `refresh_token_max_age`. `bearer_user(fort)` is a `Depends` for your own routes, and it hands them the user *row* |
 | 🚦 **Rate limiting, on by default** | Three budgets — reads, writes, and sign-in. Argon2 is slow by design, which makes the sign-in form the cheapest thing on any site to attack, so it is charged in middleware *before* the handler and a refused request never reaches the hash |
 | 📎 **Uploads that are what they say** | Extension allow-list per field kind, a deny-list checked alongside it, magic numbers checked against the name, and a `Content-Type` at serve time decided from the bytes rather than the filename. `hack.exe.png` is stored as `hack_exe.png` |
 | 🗄 **Three databases** | SQLite · PostgreSQL · MySQL, with identical behaviour |
@@ -170,6 +180,28 @@ the token expired.
 | ⌨️ **A CLI that matters** | `createsuperuser` so a fresh install has a way in, and `check --deploy` that exits non-zero |
 | 📤 **Export and import** | The current view out as CSV, Excel or JSON — filters, search and ordering included. And back in again: the same parsers the form uses, foreign keys resolved by name or id, every bad cell reported at once with its line number, and nothing written unless the whole file parses. No openpyxl, no pandas |
 | 📦 **No Node.js** | CSS and JavaScript are hand-written files inside the package, served Brotli-compressed with a gzip fallback. An ordinary page costs about 32 KB of CSS and 33 KB of script on the wire; the map and the data editors are separate files, fetched only by a page that needs them. A test weighs the lot and fails when it grows |
+
+---
+
+## Coming from Django
+
+The `ModelAdmin` vocabulary is Django's, so most of an existing `admin.py`
+reads the same here. What is supported, option by option:
+
+| Django option | FastFort | Notes |
+|---|---|---|
+| `list_display`, `list_display_links`, `list_filter`, `search_fields`, `ordering`, `list_per_page` | ✅ | Checked against the model at start-up |
+| `list_select_related` | ✅ `select_related` / `prefetch_related` | |
+| `list_editable` | ✅ | One form, one transaction, works without JavaScript |
+| `date_hierarchy` | ✅ | Two queries; each level is an ordinary filter URL |
+| `readonly_fields`, `fieldsets`, `inlines` (`TabularInline`) | ✅ | Collapsed sections are `<details>` |
+| `prepopulated_fields` | ✅ | Add form only; keeps a published slug stable |
+| `save_as`, `save_on_top`, *Save and add another / continue* | ✅ | *Save as new* refused beside `inlines` |
+| `empty_value_display` | ✅ | |
+| `actions`, `@admin.action`, `@admin.display` | ✅ | |
+| `formfield_overrides` | ✅ | Keyed by field name or by type |
+| `autocomplete_fields`, `raw_id_fields` | automatic | A relation becomes a search box once its table outgrows a dropdown |
+| `has_*_permission`, object-level permissions | not yet | See [Not in the box yet](#not-in-the-box-yet) |
 
 ---
 
@@ -282,6 +314,34 @@ browser rather than trusting a `200`: a refused request often answers with a
 perfectly valid picture of an error — OpenStreetMap's "Access blocked", or
 CARTO's "API KEY REQUIRED", which is why CARTO is no longer in this table. Each provider requires its credit line in
 `map_attribution`, and has usage terms worth reading before you ship.
+
+---
+
+## Security
+
+Security is the half of an admin that is not visible until it fails, so it is
+tested as a feature: `tests/security/` holds a regression test for every
+control below, and a fix for a reported issue lands with the test that failed
+before it.
+
+- **Sessions** — signed cookies, `HttpOnly`, `SameSite=Lax`, `Secure` by default;
+  a password change signs every device out.
+- **Passwords** — Argon2id, rehashed on sign-in when the parameters change;
+  lockout with a growing delay; a timing-equalised path for unknown accounts.
+- **Tokens** — JWT access tokens verified against exactly one configured
+  algorithm; refresh rotation with family revocation on reuse, refused for a
+  deactivated, deleted or re-passworded account, with an absolute chain
+  lifetime. Personal access tokens stored only as a digest.
+- **The browser** — CSRF on every form; a CSP starting at `default-src 'none'`
+  with no inline script; open redirects refused; HTML never compressed (BREACH).
+- **Data in and out** — mass assignment bounded by `FieldSpec.editable`; uploads
+  typed by their bytes, not their name; CSV exports defused against formula
+  injection; workbook imports refuse XML entity declarations in any encoding.
+- **Deployment** — `fastfort check --deploy` exits non-zero on an unsafe
+  configuration.
+
+Found a vulnerability? Please **do not open a public issue** — see
+[SECURITY.md](SECURITY.md) for how to report it privately.
 
 ---
 

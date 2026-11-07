@@ -10,6 +10,45 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **Refresh tokens outlived the account they were issued for.** `/auth/refresh`
+  checked only that the token had not been spent, so it went on minting access
+  tokens for an account that had been deactivated or deleted, and survived a
+  password change — browser sessions were signed out by the password stamp,
+  API sessions were not. A refresh now loads the account and is refused, with
+  the family revoked, unless it is still active and carries the same password
+  stamp as when the chain began. Tokens issued by 1.1.1 carry no stamp and are
+  checked for an active account only, so the upgrade signs no client out.
+  Found in an audit of refresh rotation prompted by an outside report.
+- **A rotated refresh chain had no end.** Each refresh set a fresh
+  `refresh_token_ttl`, so a stolen token kept alive by the thief lived for as
+  long as the thief kept refreshing it. The original sign-in time now travels
+  through every rotation (`ath`), and no chain outlives the new
+  `refresh_token_max_age` (90 days by default, never less than
+  `refresh_token_ttl`).
+- **CSV export did not defuse spreadsheet formulas (CWE-1236).** A cell
+  starting with `=`, `+`, `-`, `@`, a tab or a carriage return is written with
+  a leading `'`, OWASP's recipe; the CSV importer takes it off again, so an
+  export uploaded back is the data that was exported. XLSX was never affected.
+- **The XLSX importer's entity guard could be walked past.** It searched the
+  first 4 KB for `<!DOCTYPE`, so a long comment before the declaration, or a
+  part encoded as UTF-16, reached the parser and expanded nested entities
+  ("billion laughs"). The declaration is now refused by expat itself, at any
+  offset and in any encoding.
+
+### Added
+
+- `AuthSettings.refresh_token_max_age` — see above.
+
+### Fixed
+
+- Date fields in the filter panel, in `list_editable` cells and in inline rows
+  opened the browser's own calendar while every form opened the admin's; they
+  now all draw the same picker.
+- `fastfort check --deploy` now says that with `rotate_refresh_tokens=False`
+  `/auth/logout` cannot revoke a token.
+
 ## [1.1.1] - 2026-11-06
 
 The map beside a MULTIPOINT field draws its points, and the README stops
